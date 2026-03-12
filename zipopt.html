@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manga Archive Optimizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root { --primary: #3b82f6; --bg: #f3f4f6; --card: #ffffff; --text: #1f2937; --border: #e5e7eb; --success: #10b981; --danger: #ef4444; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg); color: var(--text); display: flex; justify-content: center; padding: 20px; margin: 0; }
+        .container { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); width: 100%; max-width: 600px; }
+        h1 { margin-top: 0; font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+        .description { color: #6b7280; margin-bottom: 20px; font-size: 0.9rem; }
+        .upload-area { border: 2px dashed var(--border); border-radius: 8px; padding: 40px; text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 20px; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: #eff6ff; }
+        .upload-area p { margin: 5px 0; }
+        .supported { font-size: 0.8rem; color: #9ca3af; }
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; }
+        select, input { padding: 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%; box-sizing: border-box; }
+        .stats-box { background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-size: 0.9rem; }
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .stat-row strong { color: var(--text); }
+        .progress-bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+        .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+        .status-text { text-align: right; font-size: 0.8rem; margin-top: 5px; color: #6b7280; }
+        .actions { display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-secondary { background: #e5e7eb; color: var(--text); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .queue-status { margin-top: 15px; font-size: 0.85rem; color: #6b7280; text-align: center; min-height: 1.2em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📚 Manga Archive Optimizer</h1>
+    <p class="description">Upload CBZ/ZIP archives, optimize images to WebP (Q75), and reduce file size</p>
+
+    <div class="upload-area" id="dropZone">
+        <p>📦 Drop Archives Here or Click to Upload</p>
+        <p class="supported">Supports: CBZ, ZIP (images: JPG, PNG, WEBP, GIF)</p>
+        <input type="file" id="fileInput" multiple accept=".cbz,.zip" style="display: none;">
+    </div>
+
+    <div class="settings-grid">
+        <div class="form-group">
+            <label>Output Format</label>
+            <select id="format">
+                <option value="image/webp">WebP (Recommended)</option>
+                <option value="image/jpeg">JPEG</option>
+                <option value="image/png">PNG</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Quality (1-100)</label>
+            <input type="number" id="quality" value="75" min="1" max="100">
+        </div>
+        <div class="form-group">
+            <label>Concurrency</label>
+            <select id="concurrency">
+                <option value="1">1 (Low Memory)</option>
+                <option value="5" selected>5 (Balanced)</option>
+                <option value="10">10 (Fast)</option>
+                <option value="20">20 (Very Fast)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Max Width (px)</label>
+            <input type="number" id="maxWidth" placeholder="Optional">
+        </div>
+        <div class="form-group">
+            <label>Max Height (px)</label>
+            <input type="number" id="maxHeight" placeholder="Optional">
+        </div>
+    </div>
+
+    <div class="stats-box">
+        <div class="stat-row"><span>Total Images:</span> <strong id="statTotal">0</strong></div>
+        <div class="stat-row"><span>Original Size:</span> <strong id="statOrig">0 MB</strong></div>
+        <div class="stat-row"><span>Optimized Size:</span> <strong id="statOpt">0 MB</strong></div>
+        <div class="stat-row"><span>Space Saved:</span> <strong id="statSaved">0 MB (0%)</strong></div>
+        <div class="stat-row"><span>Archive Type:</span> <strong id="statType">-</strong></div>
+        <div class="stat-row"><span>Failed:</span> <strong id="statFailed" style="color: var(--danger)">0</strong></div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="status-text" id="progressText">Status Ready</div>
+    </div>
+
+    <div class="actions">
+        <button class="btn-primary" id="btnOptimize" disabled>⚡ Optimize Archive</button>
+        <button class="btn-secondary" id="btnReset">🔄 Reset</button>
+    </div>
+    <div class="queue-status" id="queueStatus"></div>
+</div>
+
+<script>
+    let fileQueue = [];
+    let isProcessing = false;
+    
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const btnOptimize = document.getElementById('btnOptimize');
+    const btnReset = document.getElementById('btnReset');
+    const queueStatus = document.getElementById('queueStatus');
+    const statTotal = document.getElementById('statTotal');
+    const statOrig = document.getElementById('statOrig');
+    const statOpt = document.getElementById('statOpt');
+    const statSaved = document.getElementById('statSaved');
+    const statType = document.getElementById('statType');
+    const statFailed = document.getElementById('statFailed');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+
+    const getSettings = () => ({
+        format: document.getElementById('format').value,
+        quality: parseInt(document.getElementById('quality').value) / 100,
+        concurrency: parseInt(document.getElementById('concurrency').value),
+        maxWidth: parseInt(document.getElementById('maxWidth').value) || null,
+        maxHeight: parseInt(document.getElementById('maxHeight').value) || null
+    });
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+    btnOptimize.addEventListener('click', () => { if(fileQueue.length > 0 && !isProcessing) processQueue(); });
+    btnReset.addEventListener('click', () => { fileQueue = []; isProcessing = false; resetStats(); queueStatus.textContent = ''; btnOptimize.disabled = true; fileInput.value = ''; });
+
+    function handleFiles(files) {
+        const validTypes = ['.cbz', '.zip'];
+        for (let file of files) {
+            const ext = '.' + file.name.split('.').pop().toLowerCase();
+            if (validTypes.includes(ext)) fileQueue.push(file);
+        }
+        updateQueueStatus();
+        if (fileQueue.length > 0) btnOptimize.disabled = false;
+    }
+
+    function updateQueueStatus() {
+        queueStatus.textContent = fileQueue.length > 0 ? `📂 ${fileQueue.length} file(s) in queue` : '';
+    }
+
+    function resetStats() {
+        statTotal.textContent = '0'; statOrig.textContent = '0 MB'; statOpt.textContent = '0 MB';
+        statSaved.textContent = '0 MB (0%)'; statType.textContent = '-'; statFailed.textContent = '0';
+        progressFill.style.width = '0%'; progressText.textContent = 'Status Ready';
+    }
+
+    // Fast concurrency pool
+    async function asyncPool(poolLimit, array, iteratorFn) {
+        const ret = [];
+        const executing = [];
+        for (const item of array) {
+            const p = Promise.resolve().then(() => iteratorFn(item));
+            ret.push(p);
+            const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+            executing.push(e);
+            if (executing.length >= poolLimit) await Promise.race(executing);
+        }
+        return Promise.all(ret);
+    }
+
+    async function processQueue() {
+        if (fileQueue.length === 0 || isProcessing) return;
+        isProcessing = true;
+        btnOptimize.disabled = true;
+        btnReset.disabled = true;
+
+        while (fileQueue.length > 0) {
+            const file = fileQueue.shift();
+            updateQueueStatus();
+            await processSingleFile(file);
+            // No delay - immediate next file for speed
+        }
+
+        isProcessing = false;
+        btnOptimize.disabled = false;
+        btnReset.disabled = false;
+        queueStatus.textContent = '✅ All files processed';
+    }
+
+    async function processSingleFile(file) {
+        resetStats();
+        progressText.textContent = `Processing: ${file.name}...`;
+        statType.textContent = file.name.split('.').pop().toUpperCase();
+        
+        let failedCount = 0;
+        
+        try {
+            const archive = await JSZip.loadAsync(file);
+            const settings = getSettings();
+            const imageFiles = [];
+            const validExts = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            
+            archive.forEach((relativePath, zipEntry) => {
+                if (!zipEntry.dir) {
+                    const ext = relativePath.split('.').pop().toLowerCase();
+                    if (validExts.includes(ext)) imageFiles.push(zipEntry);
+                }
+            });
+
+            statTotal.textContent = imageFiles.length;
+            statOrig.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+
+            const newZip = new JSZip();
+            let optimizedSize = 0;
+            let processedCount = 0;
+
+            await asyncPool(settings.concurrency, imageFiles, async (entry) => {
+                try {
+                    const blob = await entry.async("blob");
+                    const optimizedBlob = await optimizeImage(blob, settings);
+                    
+                    let newName = entry.name.replace(/\.[^/.]+$/, ""); 
+                    let ext = settings.format.split('/')[1];
+                    if(ext === 'jpeg') ext = 'jpg';
+                    
+                    newZip.file(`${newName}.${ext}`, optimizedBlob);
+                    optimizedSize += optimizedBlob.size;
+                    processedCount++;
+                    
+                    const percent = Math.round((processedCount / imageFiles.length) * 100);
+                    progressFill.style.width = `${percent}%`;
+                    progressText.textContent = `${processedCount} / ${imageFiles.length} images`;
+                    statOpt.textContent = (optimizedSize / (1024 * 1024)).toFixed(2) + ' MB';
+                    
+                    const saved = file.size - optimizedSize;
+                    const savedPercent = file.size > 0 ? Math.round((saved / file.size) * 100) : 0;
+                    statSaved.textContent = `${(saved / (1024 * 1024)).toFixed(2)} MB (${savedPercent}%)`;
+                } catch (err) {
+                    failedCount++;
+                    statFailed.textContent = failedCount;
+                }
+            });
+
+            const content = await newZip.generateAsync({ type: "blob" });
+            
+            const lastDotIndex = file.name.lastIndexOf('.');
+            const baseName = lastDotIndex > 0 ? file.name.substring(0, lastDotIndex) : file.name;
+            const originalExt = lastDotIndex > 0 ? file.name.substring(lastDotIndex) : '.zip';
+            const outputName = `${baseName}_ds${originalExt}`;
+
+            downloadBlob(content, outputName);
+            progressText.textContent = `✅ Completed: ${outputName}`;
+
+        } catch (err) {
+            progressText.textContent = `❌ Error: ${err.message}`;
+            alert(`Error processing ${file.name}: ${err.message}`);
+        }
+    }
+
+    function optimizeImage(blob, settings) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            const imgSrc = URL.createObjectURL(blob);
+            
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (settings.maxWidth && width > settings.maxWidth) {
+                    height = Math.round(height * (settings.maxWidth / width));
+                    width = settings.maxWidth;
+                }
+                if (settings.maxHeight && height > settings.maxHeight) {
+                    width = Math.round(width * (settings.maxHeight / height));
+                    height = settings.maxHeight;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                canvas.toBlob((resBlob) => {
+                    URL.revokeObjectURL(imgSrc); // Critical cleanup
+                    resolve(resBlob);
+                }, settings.format, settings.quality);
+            };
+            img.onerror = (e) => { URL.revokeObjectURL(imgSrc); reject(e); };
+            img.src = imgSrc;
+        });
+    }
+
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+    }
+</script>
+
+</body>
+</html>
