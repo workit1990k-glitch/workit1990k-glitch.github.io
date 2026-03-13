@@ -799,15 +799,20 @@ function updateConsoleProgress(current, total, images, sizeMB) {
     const percent = total > 0 ? (current / total) * 100 : 0;
     document.getElementById('consoleProgressFill').style.width = `${percent}%`;
     document.getElementById('statChapters').textContent = `${current}/${total}`;
-    document.getElementById('statImages').textContent = images.toLocaleString();
-    document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
+    
+    if (images !== undefined && images !== null) {
+        document.getElementById('statImages').textContent = images.toLocaleString();
+    }
+    if (sizeMB !== undefined && sizeMB !== null) {
+        document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
+    }
 }
 function clearConsole() {
-document.getElementById('consoleLog').innerHTML = '';
-updateConsoleProgress(0, 0);
-totalDownloadedBytes = 0;
-totalImages = 0;
-updateConsoleStats();
+    document.getElementById('consoleLog').innerHTML = '';
+    updateConsoleProgress(0, 0, 0, 0);  // ✅ Pass all 4 params
+    totalDownloadedBytes = 0;
+    totalImagesDownloaded = 0;
+    updateConsoleStats();
 }
 // ============ DRAGGABLE CONSOLE ============
 let isDragging = false;
