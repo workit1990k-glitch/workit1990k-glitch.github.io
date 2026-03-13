@@ -1405,7 +1405,7 @@ mangaInfoEl.classList.remove('found', 'not-found');
 btn.disabled = true;
 btn.innerHTML = 'Loading... <span id="countBadge">-</span>';
 try {
-const response = await fetch('https://raw.githubusercontent.com/YuushaExa/man-com/refs/heads/main/list.json');
+const response = await fetch('https://github.com/workit1990k-glitch/workit1990k-glitch.github.io/raw/refs/heads/main/list.json');
 if (!response.ok) {
 throw new Error(`HTTP error! status: ${response.status}`);
 }
