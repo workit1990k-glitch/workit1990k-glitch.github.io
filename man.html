@@ -737,7 +737,7 @@ const HEADERS = { 'Referer': 'https://comix.to/', 'User-Agent': 'Mozilla/5.0' };
 const MAX_ZIP_SIZE_MB = 500;
 const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
 const RATE_LIMIT_PER_MINUTE = 240; // 4 per second = 240 per minute
-const RATE_LIMIT_DELAY_MS = 60000 / RATE_LIMIT_PER_MINUTE; // 250ms
+const RATE_LIMIT_DELAY_MS = 1000; // 250ms
 const IMAGE_CONCURRENCY = 4; // 🔥 NEW: 4 images at once
 
 let isDownloading = new Set();
@@ -789,7 +789,6 @@ await new Promise(resolve => setTimeout(resolve, 5000));
 }
 };
 
-// ============ RATE LIMITED IMAGE DOWNLOAD ============
 // ============ RATE LIMITED IMAGE DOWNLOAD (4 CONCURRENT) ============
 async function downloadImageWithRateLimit(url, zipFolder, fileName, retryCount = 0) {
     return new Promise((resolve, reject) => {
@@ -1506,136 +1505,162 @@ return Array.from(chapters).sort((a, b) => a - b);
 
 // ============ BATCH DOWNLOAD WITH SIZE SPLITTING ============
 async function startBatchDownload() {
-if (selectedChapters.size === 0) {
-alert('Please select at least one chapter');
-return;
-}
-if (isBatchDownloading) {
-if (!confirm('Download in progress. Cancel?')) return;
-batchDownloadCancelled = true;
-return;
-}
+    if (selectedChapters.size === 0) {
+        alert('Please select at least one chapter');
+        return;
+    }
+    if (isBatchDownloading) {
+        if (!confirm('Download in progress. Cancel?')) return;
+        batchDownloadCancelled = true;
+        return;
+    }
+    isBatchDownloading = true;
+    batchDownloadCancelled = false;
+    downloadQueue = [];
+    isProcessingQueue = false;
+    updateCount();
+    showConsole();
+    clearConsole();
+    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+    const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
+        .replace(/[^a-z0-9\s-]/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 50);
+    logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
+    logConsole(`📚 Manga: ${mangaDataCache?.title || 'Unknown'}`, 'info');
+    logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
+    logConsole(`⚡ Rate limit: ${RATE_LIMIT_PER_MINUTE} images/minute`, 'warning');
 
-isBatchDownloading = true;
-batchDownloadCancelled = false;
-downloadQueue = [];
-isProcessingQueue = false;
-updateCount();
-showConsole();
-clearConsole();
+    let currentZip = new JSZip();
+    let currentZipSize = 0;
+    let completedChapters = 0;
+    let currentRangeStart = null;
+    let currentRangeEnd = null;
+    
+    // 🔥 BUFFER LOGIC: Hold the first ZIP until we know if there's a second one
+    let pendingZipBlob = null;
+    let pendingZipName = null;
+    let zipsCreatedCount = 0;
 
-const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
-const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
-    .replace(/[^a-z0-9\s-]/gi, '')  
-    .replace(/\s+/g, ' ')          
-    .trim()
-    .slice(0, 50);
+    const prepareZipSave = async () => {
+        if (currentZipSize === 0) return null;
+        const rangeStr = `c${String(currentRangeStart).padStart(3, '0')}-${String(currentRangeEnd).padStart(3, '0')}`;
+        const zipName = `${mangaTitle} ${rangeStr}.cbz`;
+        logConsole(`🗜️ Generating ZIP (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
+        const content = await currentZip.generateAsync({ type: 'blob' });
+        return { blob: content, name: zipName, start: currentRangeStart, end: currentRangeEnd };
+    };
 
-logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
-logConsole(`📚 Manga: ${mangaDataCache?.title || 'Unknown'}`, 'info');
-logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
-logConsole(`⚡ Rate limit: ${RATE_LIMIT_PER_MINUTE} images/minute`, 'warning');
+    const savePendingZip = async (isFinal) => {
+        if (!pendingZipBlob) return;
+        let finalName = pendingZipName;
+        // 🔥 If only 1 ZIP total and it's the final one, remove suffix
+        if (isFinal && zipsCreatedCount === 1) {
+            finalName = `${mangaTitle}.cbz`;
+            logConsole(`💾 Saving ${finalName} (Single file)...`, 'info');
+        } else {
+            logConsole(`💾 Saving ${finalName}...`, 'info');
+        }
+        saveAs(pendingZipBlob, finalName);
+        logConsole(`✓ Saved: ${finalName}`, 'success');
+        pendingZipBlob = null;
+        pendingZipName = null;
+    };
 
-let currentZip = new JSZip();
-let currentZipSize = 0;
-let zipIndex = 1;
-let completedChapters = 0;
-let chapterRanges = [];
-let currentRangeStart = null;
-let currentRangeEnd = null;
+    try {
+        for (let i = 0; i < selected.length; i++) {
+            if (batchDownloadCancelled) {
+                logConsole('❌ Download cancelled by user', 'error');
+                break;
+            }
+            const chapter = selected[i];
+            const chapterNum = parseFloat(chapter.number);
+            const chapterName = chapter.name || '';
+            logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''} (${i + 1}/${selected.length})`, 'info');
+            
+            if (currentRangeStart === null) currentRangeStart = chapterNum;
+            currentRangeEnd = chapterNum;
 
-const saveCurrentZip = async () => {
-if (currentZipSize === 0) return;
-const rangeStr = currentRangeStart && currentRangeEnd 
-? `c${String(currentRangeStart).padStart(3, '0')}-${String(currentRangeEnd).padStart(3, '0')}`
-: `part${zipIndex}`;
-const zipName = `${mangaTitle} ${rangeStr}.cbz`;
-logConsole(`💾 Saving ${zipName} (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
-const content = await currentZip.generateAsync({ type: 'blob' });
-saveAs(content, zipName);
-logConsole(`✓ Saved: ${zipName}`, 'success');
-chapterRanges.push({ start: currentRangeStart, end: currentRangeEnd });
-zipIndex++;
-currentZip = new JSZip();
-currentZipSize = 0;
-};
+            try {
+                const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+                const imageUrls = extractImageUrls(chapterRes);
+                if (imageUrls.length === 0) {
+                    logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
+                    continue;
+                }
+                const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
+                let chapterSize = 0;
+                for (let j = 0; j < imageUrls.length; j++) {
+                    if (batchDownloadCancelled) break;
+                    const ext = imageUrls[j].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+                    const fileName = `page_${String(j + 1).padStart(3, '0')}.${ext}`;
+                    try {
+                        const size = await downloadImageWithRateLimit(imageUrls[j], chapterFolder, fileName);
+                        chapterSize += size;
+                        currentZipSize += size;
+                    } catch (err) {
+                        logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
+                    }
+                }
+                logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
+                completedChapters++;
+                updateConsoleProgress(completedChapters, selected.length);
 
-try {
-for (let i = 0; i < selected.length; i++) {
-if (batchDownloadCancelled) {
-logConsole('❌ Download cancelled by user', 'error');
-break;
-}
-const chapter = selected[i];
-const chapterNum = parseFloat(chapter.number);
-const chapterName = chapter.name || '';
-logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''} (${i + 1}/${selected.length})`, 'info');
+                // 🔥 CHECK SIZE LIMIT
+                if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
+                    logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), splitting...`, 'warning');
+                    
+                    // Prepare current zip
+                    const zipData = await prepareZipSave();
+                    if (zipData) {
+                        zipsCreatedCount++;
+                        // If we already have a pending zip, save it now (it's confirmed not to be the only one)
+                        await savePendingZip(false); 
+                        // Set current as pending
+                        pendingZipBlob = zipData.blob;
+                        pendingZipName = zipData.name;
+                    }
 
-if (currentRangeStart === null) currentRangeStart = chapterNum;
-currentRangeEnd = chapterNum;
+                    // Reset for next part
+                    currentZip = new JSZip();
+                    currentZipSize = 0;
+                    currentRangeStart = chapterNum; // New range starts at this chapter
+                }
+            } catch (err) {
+                logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
+            }
+            await new Promise(r => setTimeout(r, 100));
+        }
 
-try {
-const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
-const imageUrls = extractImageUrls(chapterRes);
-if (imageUrls.length === 0) {
-logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
-continue;
-}
+        // Wait for queue to finish
+        while (downloadQueue.length > 0) {
+            await new Promise(r => setTimeout(r, 100));
+        }
 
-const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
-let chapterSize = 0;
+        // 🔥 FINAL SAVE
+        if (currentZipSize > 0) {
+            const zipData = await prepareZipSave();
+            if (zipData) {
+                zipsCreatedCount++;
+                pendingZipBlob = zipData.blob;
+                pendingZipName = zipData.name;
+            }
+        }
+        
+        // Save whatever is left in pending
+        await savePendingZip(true);
 
-for (let j = 0; j < imageUrls.length; j++) {
-if (batchDownloadCancelled) break;
-const ext = imageUrls[j].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
-const fileName = `page_${String(j + 1).padStart(3, '0')}.${ext}`;
-try {
-const size = await downloadImageWithRateLimit(imageUrls[j], chapterFolder, fileName);
-chapterSize += size;
-currentZipSize += size;
-} catch (err) {
-logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
-}
-}
-
-logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
-completedChapters++;
-updateConsoleProgress(completedChapters, selected.length);
-
-// Check if we need to split
-if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
-logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), creating new archive...`, 'warning');
-await saveCurrentZip();
-currentRangeStart = chapterNum;
-}
-} catch (err) {
-logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
-}
-
-await new Promise(r => setTimeout(r, 100));
-}
-
-// Wait for queue to finish
-while (downloadQueue.length > 0) {
-await new Promise(r => setTimeout(r, 100));
-}
-
-// Save final ZIP
-if (currentZipSize > 0) {
-await saveCurrentZip();
-}
-
-logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${chapterRanges.length} archive(s)`, 'success');
-
-} catch (err) {
-logConsole(`❌ Fatal error: ${err.message}`, 'error');
-console.error(err);
-} finally {
-isBatchDownloading = false;
-batchDownloadCancelled = false;
-updateCount();
-document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
-}
+        logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${zipsCreatedCount} archive(s)`, 'success');
+    } catch (err) {
+        logConsole(`❌ Fatal error: ${err.message}`, 'error');
+        console.error(err);
+    } finally {
+        isBatchDownloading = false;
+        batchDownloadCancelled = false;
+        updateCount();
+        document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
+    }
 }
 
 // ============ INDIVIDUAL CHAPTER DOWNLOAD ============
