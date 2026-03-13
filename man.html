@@ -452,7 +452,6 @@ gap: 8px;
 }
 .btn-batch-download:hover { background: #a8d880; }
 .btn-batch-download:disabled { opacity: 0.5; cursor: not-allowed; }
-
 /* ============ DOWNLOAD CONSOLE STYLES ============ */
 .download-console {
 position: fixed;
@@ -567,14 +566,6 @@ font-size: 10px;
 color: var(--text-secondary);
 text-transform: uppercase;
 }
-.rate-limit-info {
-font-size: 10px;
-color: var(--text-secondary);
-text-align: center;
-padding: 4px;
-background: var(--bg-primary);
-border-top: 1px solid var(--border);
-}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -586,10 +577,10 @@ border-top: 1px solid var(--border);
 Check ID
 <span id="countBadge">-</span>
 </button>
-    <button id="saveToListBtn" class="btn btn-secondary" onclick="saveMangaToList()" title="Save manga ID and latest chapter to list.json">
-    Save ID
-  </button>
-  <span id="saveStatus" style="font-size:12px;color:var(--success);margin-left:8px;"></span>
+<button id="saveToListBtn" class="btn btn-secondary" onclick="saveMangaToList()" title="Save manga ID and latest chapter to list.json">
+Save ID
+</button>
+<span id="saveStatus" style="font-size:12px;color:var(--success);margin-left:8px;"></span>
 <span id="statusText"></span>
 </div>
 <div class="url-input-container">
@@ -669,7 +660,6 @@ Enter a manga URL and click FETCH to load chapters
 </div>
 </div>
 </div>
-
 <!-- JSON Modal -->
 <div class="modal-overlay" id="jsonModal">
 <div class="modal">
@@ -693,7 +683,6 @@ Enter a manga URL and click FETCH to load chapters
 </div>
 </div>
 </div>
-
 <!-- Download Console -->
 <div class="download-console" id="downloadConsole">
 <div class="console-header" id="consoleHeader">
@@ -725,29 +714,20 @@ Enter a manga URL and click FETCH to load chapters
 <div class="stat-label">Size</div>
 </div>
 </div>
-<div class="rate-limit-info">
-Rate Limit: 240 images/minute (4/sec)
 </div>
-</div>
-
 <script>
 const WORKER_URL = 'https://plain-night-1447-opt.yuush.workers.dev';
 const API_BASE = 'https://comix.to/api/v2';
 const HEADERS = { 'Referer': 'https://comix.to/', 'User-Agent': 'Mozilla/5.0' };
 const MAX_ZIP_SIZE_MB = 500;
 const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
-const RATE_LIMIT_PER_MINUTE = 250; // 4 per second = 240 per minute
-const RATE_LIMIT_DELAY_MS = 0; // 250ms
-const IMAGE_CONCURRENCY = 4; // 🔥 NEW: 4 images at once
-
+// 🔥 REMOVED: Rate limit constants (no more artificial delays)
 let isDownloading = new Set();
 let isBatchDownloading = false;
 let batchDownloadCancelled = false;
-let downloadQueue = [];
-let isProcessingQueue = false;
+// 🔥 REMOVED: downloadQueue, isProcessingQueue, totalDownloadedBytes, totalImagesDownloaded
+let totalImages = 0;
 let totalDownloadedBytes = 0;
-let totalImagesDownloaded = 0;
-
 const GENRE_MAP = {
 6: "Action", 87264: "Adult", 7: "Adventure", 9: "Comedy", 11: "Drama",
 87265: "Ecchi", 12: "Fantasy", 14: "Historical", 15: "Horror", 16: "Isekai",
@@ -762,7 +742,6 @@ let selectedChapters = new Set();
 let scanlators = new Set();
 let currentJsonData = null;
 let mangaDataCache = null;
-
 const extractCode = (url) => url.replace(/\/$/, '').split('/').pop()?.split('-')[0] || '';
 const fetchRetry = async (url, retries = 3, delay = 1000) => {
 for (let i = 1; i <= retries; i++) {
@@ -788,71 +767,6 @@ await new Promise(resolve => setTimeout(resolve, 5000));
 }
 }
 };
-
-// ============ RATE LIMITED IMAGE DOWNLOAD (4 CONCURRENT) ============
-async function downloadImageWithRateLimit(url, zipFolder, fileName, retryCount = 0) {
-    return new Promise((resolve, reject) => {
-        downloadQueue.push({ url, zipFolder, fileName, resolve, reject, retryCount });
-        if (!isProcessingQueue) {
-            processDownloadQueue();
-        }
-    });
-}
-
-async function processDownloadQueue() {
-    if (isProcessingQueue || downloadQueue.length === 0) return;
-    isProcessingQueue = true;
-    
-    while (downloadQueue.length > 0 && !batchDownloadCancelled) {
-        // 🔥 Take up to 4 items at once
-        const batch = downloadQueue.splice(0, IMAGE_CONCURRENCY);
-        
-        if (batch.length === 0) break;
-        
-        try {
-            // 🔥 Download 4 images concurrently with Promise.all
-            const promises = batch.map(async (item) => {
-                try {
-                    const response = await fetch(WORKER_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: item.url })
-                    });
-                    if (!response.ok) throw new Error(`Failed: ${response.status}`);
-                    const blob = await response.blob();
-                    item.zipFolder.file(item.fileName, blob);
-                    totalDownloadedBytes += blob.size;
-                    totalImagesDownloaded++;
-                    updateConsoleStats();
-                    item.resolve(blob.size);
-                } catch (err) {
-                    // 🔥 RETRY LOGIC - Up to 3 attempts
-                    if (item.retryCount < 3) {
-                        item.retryCount++;
-                        logConsole(`⚠️ Image retry ${item.retryCount}/3: ${item.fileName}`, 'warning');
-                        await new Promise(r => setTimeout(r, 1000 * item.retryCount));
-                        downloadQueue.push(item);
-                        item.reject(err);
-                    } else {
-                        logConsole(`❌ Image failed after 3 retries: ${item.fileName}`, 'error');
-                        item.reject(err);
-                    }
-                }
-            });
-            
-            await Promise.all(promises);
-            
-            // Rate limit delay between batches (250ms = 4 images/second)
-            await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
-            
-        } catch (err) {
-            console.error('Batch download error:', err);
-        }
-    }
-    
-    isProcessingQueue = false;
-}
-
 // ============ CONSOLE FUNCTIONS ============
 function showConsole() {
 document.getElementById('downloadConsole').classList.add('active');
@@ -864,16 +778,8 @@ function minimizeConsole() {
 const consoleEl = document.getElementById('downloadConsole');
 const body = consoleEl.querySelector('.console-body');
 const stats = consoleEl.querySelector('.console-stats');
-const rateInfo = consoleEl.querySelector('.rate-limit-info');
-if (body.style.display === 'none') {
-body.style.display = 'block';
-stats.style.display = 'grid';
-rateInfo.style.display = 'block';
-} else {
-body.style.display = 'none';
-stats.style.display = 'none';
-rateInfo.style.display = 'none';
-}
+body.style.display = body.style.display === 'none' ? 'block' : 'none';
+stats.style.display = stats.style.display === 'none' ? 'grid' : 'none';
 }
 function logConsole(message, type = 'info') {
 const log = document.getElementById('consoleLog');
@@ -887,7 +793,7 @@ log.scrollTop = log.scrollHeight;
 function updateConsoleStats() {
 const sizeMB = totalDownloadedBytes / 1024 / 1024;
 document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
-document.getElementById('statImages').textContent = totalImagesDownloaded.toLocaleString();
+document.getElementById('statImages').textContent = totalImages.toLocaleString();
 }
 function updateConsoleProgress(current, total) {
 const percent = total > 0 ? (current / total) * 100 : 0;
@@ -898,10 +804,9 @@ function clearConsole() {
 document.getElementById('consoleLog').innerHTML = '';
 updateConsoleProgress(0, 0);
 totalDownloadedBytes = 0;
-totalImagesDownloaded = 0;
+totalImages = 0;
 updateConsoleStats();
 }
-
 // ============ DRAGGABLE CONSOLE ============
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
@@ -929,7 +834,6 @@ isDragging = false;
 document.removeEventListener('mousemove', onDrag);
 document.removeEventListener('mouseup', stopDrag);
 }
-
 async function fetchManga() {
 const url = document.getElementById('urlInput').value.trim();
 const btn = document.getElementById('fetchBtn');
@@ -1024,7 +928,7 @@ allChapters.sort((a, b) => {
 const na = parseFloat(a.number);
 const nb = parseFloat(b.number);
 if (!isNaN(na) && !isNaN(nb)) return na - nb;
-return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+return String(a.number).localeCompare(String(a.number), undefined, { numeric: true });
 });
 const filterSelect = document.getElementById('scanlatorFilter');
 filterSelect.innerHTML = '<option value="">All Scanlators</option>';
@@ -1137,7 +1041,6 @@ document.getElementById('selectedCount').textContent = selectedChapters.size;
 document.getElementById('showJsonBtn').disabled = selectedChapters.size === 0;
 document.getElementById('batchDownloadBtn').disabled = selectedChapters.size === 0 || isBatchDownloading;
 }
-
 // ============ PREVIEW FEATURE ============
 async function previewChapter(chapterId) {
 const panel = document.getElementById('previewPanel');
@@ -1277,7 +1180,6 @@ panel.style.display = 'none';
 iframe.srcdoc = '';
 iframe.style.display = 'none';
 }
-
 // ============ JSON FEATURE ============
 function extractImageUrls(data) {
 if (Array.isArray(data)) {
@@ -1502,168 +1404,137 @@ chapters.add(Math.floor(num));
 });
 return Array.from(chapters).sort((a, b) => a - b);
 }
-
-// ============ BATCH DOWNLOAD WITH SIZE SPLITTING ============
+// ============ BATCH DOWNLOAD WITH SIZE SPLITTING (FAST VERSION) ============
 async function startBatchDownload() {
-    if (selectedChapters.size === 0) {
-        alert('Please select at least one chapter');
-        return;
-    }
-    if (isBatchDownloading) {
-        if (!confirm('Download in progress. Cancel?')) return;
-        batchDownloadCancelled = true;
-        return;
-    }
-    isBatchDownloading = true;
-    batchDownloadCancelled = false;
-    downloadQueue = [];
-    isProcessingQueue = false;
-    updateCount();
-    showConsole();
-    clearConsole();
-    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
-    const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
-        .replace(/[^a-z0-9\s-]/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 50);
-    logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
-    logConsole(`📚 Manga: ${mangaDataCache?.title || 'Unknown'}`, 'info');
-    logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
-    logConsole(`⚡ Rate limit: ${RATE_LIMIT_PER_MINUTE} images/minute`, 'warning');
-
-    let currentZip = new JSZip();
-    let currentZipSize = 0;
-    let completedChapters = 0;
-    let currentRangeStart = null;
-    let currentRangeEnd = null;
-    
-    // 🔥 BUFFER LOGIC: Hold the first ZIP until we know if there's a second one
-    let pendingZipBlob = null;
-    let pendingZipName = null;
-    let zipsCreatedCount = 0;
-
-    const prepareZipSave = async () => {
-        if (currentZipSize === 0) return null;
-        const rangeStr = `c${String(currentRangeStart).padStart(3, '0')}-${String(currentRangeEnd).padStart(3, '0')}`;
-        const zipName = `${mangaTitle} ${rangeStr}.cbz`;
-        logConsole(`🗜️ Generating ZIP (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
-        const content = await currentZip.generateAsync({ type: 'blob' });
-        return { blob: content, name: zipName, start: currentRangeStart, end: currentRangeEnd };
-    };
-
-    const savePendingZip = async (isFinal) => {
-        if (!pendingZipBlob) return;
-        let finalName = pendingZipName;
-        // 🔥 If only 1 ZIP total and it's the final one, remove suffix
-        if (isFinal && zipsCreatedCount === 1) {
-            finalName = `${mangaTitle}.cbz`;
-            logConsole(`💾 Saving ${finalName} (Single file)...`, 'info');
-        } else {
-            logConsole(`💾 Saving ${finalName}...`, 'info');
-        }
-        saveAs(pendingZipBlob, finalName);
-        logConsole(`✓ Saved: ${finalName}`, 'success');
-        pendingZipBlob = null;
-        pendingZipName = null;
-    };
-
-    try {
-        for (let i = 0; i < selected.length; i++) {
-            if (batchDownloadCancelled) {
-                logConsole('❌ Download cancelled by user', 'error');
-                break;
-            }
-            const chapter = selected[i];
-            const chapterNum = parseFloat(chapter.number);
-            const chapterName = chapter.name || '';
-            logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''} (${i + 1}/${selected.length})`, 'info');
-            
-            if (currentRangeStart === null) currentRangeStart = chapterNum;
-            currentRangeEnd = chapterNum;
-
-            try {
-                const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
-                const imageUrls = extractImageUrls(chapterRes);
-                if (imageUrls.length === 0) {
-                    logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
-                    continue;
-                }
-                const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
-                let chapterSize = 0;
-                for (let j = 0; j < imageUrls.length; j++) {
-                    if (batchDownloadCancelled) break;
-                    const ext = imageUrls[j].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
-                    const fileName = `page_${String(j + 1).padStart(3, '0')}.${ext}`;
-                    try {
-                        const size = await downloadImageWithRateLimit(imageUrls[j], chapterFolder, fileName);
-                        chapterSize += size;
-                        currentZipSize += size;
-                    } catch (err) {
-                        logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
-                    }
-                }
-                logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
-                completedChapters++;
-                updateConsoleProgress(completedChapters, selected.length);
-
-                // 🔥 CHECK SIZE LIMIT
-                if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
-                    logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), splitting...`, 'warning');
-                    
-                    // Prepare current zip
-                    const zipData = await prepareZipSave();
-                    if (zipData) {
-                        zipsCreatedCount++;
-                        // If we already have a pending zip, save it now (it's confirmed not to be the only one)
-                        await savePendingZip(false); 
-                        // Set current as pending
-                        pendingZipBlob = zipData.blob;
-                        pendingZipName = zipData.name;
-                    }
-
-                    // Reset for next part
-                    currentZip = new JSZip();
-                    currentZipSize = 0;
-                    currentRangeStart = chapterNum; // New range starts at this chapter
-                }
-            } catch (err) {
-                logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
-            }
-            await new Promise(r => setTimeout(r, 100));
-        }
-
-        // Wait for queue to finish
-        while (downloadQueue.length > 0) {
-            await new Promise(r => setTimeout(r, 100));
-        }
-
-        // 🔥 FINAL SAVE
-        if (currentZipSize > 0) {
-            const zipData = await prepareZipSave();
-            if (zipData) {
-                zipsCreatedCount++;
-                pendingZipBlob = zipData.blob;
-                pendingZipName = zipData.name;
-            }
-        }
-        
-        // Save whatever is left in pending
-        await savePendingZip(true);
-
-        logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${zipsCreatedCount} archive(s)`, 'success');
-    } catch (err) {
-        logConsole(`❌ Fatal error: ${err.message}`, 'error');
-        console.error(err);
-    } finally {
-        isBatchDownloading = false;
-        batchDownloadCancelled = false;
-        updateCount();
-        document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
-    }
+if (selectedChapters.size === 0) {
+alert('Please select at least one chapter');
+return;
 }
-
-// ============ INDIVIDUAL CHAPTER DOWNLOAD ============
+if (isBatchDownloading) {
+if (!confirm('Download in progress. Cancel?')) return;
+batchDownloadCancelled = true;
+return;
+}
+isBatchDownloading = true;
+batchDownloadCancelled = false;
+updateCount();
+showConsole();
+clearConsole();
+const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
+.replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
+logConsole(`📚 Manga: ${mangaDataCache?.title || 'Unknown'}`, 'info');
+logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
+let currentZip = new JSZip();
+let currentZipSize = 0;
+let zipIndex = 1;
+let completedChapters = 0;
+let currentRangeStart = null;
+let currentRangeEnd = null;
+const saveCurrentZip = async () => {
+if (currentZipSize === 0) return;
+const rangeStr = currentRangeStart && currentRangeEnd
+? `c${String(currentRangeStart).padStart(3, '0')}-${String(currentRangeEnd).padStart(3, '0')}`
+: `part${zipIndex}`;
+const zipName = `${mangaTitle}_${rangeStr}.cbz`;
+logConsole(`💾 Saving ${zipName} (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
+const content = await currentZip.generateAsync({ type: 'blob' });
+saveAs(content, zipName);
+logConsole(`✓ Saved: ${zipName}`, 'success');
+zipIndex++;
+currentZip = new JSZip();
+currentZipSize = 0;
+};
+const downloadImage = async (url, chapterNum, pageNum, zipFolder) => {
+if (batchDownloadCancelled) throw new Error('Cancelled');
+const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(pageNum).padStart(3, '0')}.${ext}`;
+const response = await fetch(WORKER_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ url: url })
+});
+if (!response.ok) throw new Error(`Failed: ${response.status}`);
+const blob = await response.blob();
+zipFolder.file(fileName, blob);
+return blob.size;
+};
+try {
+for (let i = 0; i < selected.length; i++) {
+if (batchDownloadCancelled) {
+logConsole('❌ Download cancelled by user', 'error');
+break;
+}
+const chapter = selected[i];
+const chapterNum = parseFloat(chapter.number);
+const chapterName = chapter.name || '';
+logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''} (${i + 1}/${selected.length})`, 'info');
+if (currentRangeStart === null) currentRangeStart = chapterNum;
+currentRangeEnd = chapterNum;
+try {
+const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) {
+logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
+continue;
+}
+const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
+let chapterSize = 0;
+const CONCURRENCY = 4;
+const executing = new Set();
+for (let j = 0; j < imageUrls.length; j++) {
+if (batchDownloadCancelled) break;
+const promise = downloadImage(imageUrls[j], chapterNum, j + 1, chapterFolder)
+.then(size => {
+executing.delete(promise);
+chapterSize += size;
+totalImages++;
+totalDownloadedBytes += size;
+updateConsoleStats();
+})
+.catch(err => {
+executing.delete(promise);
+logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
+});
+executing.add(promise);
+if (executing.size >= CONCURRENCY) {
+await Promise.race(executing);
+}
+}
+await Promise.all(executing);
+logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
+completedChapters++;
+updateConsoleProgress(completedChapters, selected.length);
+// Check if we need to split
+if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
+logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), creating new archive...`, 'warning');
+await saveCurrentZip();
+currentRangeStart = chapterNum;
+}
+} catch (err) {
+logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
+}
+// Small delay to prevent overwhelming
+await new Promise(r => setTimeout(r, 100));
+}
+// Save final ZIP
+if (currentZipSize > 0) {
+await saveCurrentZip();
+}
+logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImages} images`, 'success');
+updateConsoleProgress(completedChapters, selected.length);
+} catch (err) {
+logConsole(`❌ Fatal error: ${err.message}`, 'error');
+console.error(err);
+} finally {
+isBatchDownloading = false;
+batchDownloadCancelled = false;
+updateCount();
+document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
+}
+}
+// ============ INDIVIDUAL CHAPTER DOWNLOAD (FAST VERSION) ============
 async function downloadChapter(chapterId, chapterNumber, chapterName) {
 if (isDownloading.has(chapterId)) return;
 const btn = event.target;
@@ -1681,21 +1552,33 @@ const imageUrls = extractImageUrls(chapterRes);
 if (imageUrls.length === 0) throw new Error('No images found');
 const zip = new JSZip();
 const folder = zip.folder(`Ch.${chapterNumber}${chapterName ? ' - ' + chapterName : ''}`);
+const CONCURRENCY = 4;
+const executing = new Set();
 let completed = 0;
+const downloadImage = async (url, index) => {
+const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(index + 1).padStart(3, '0')}.${ext}`;
+const response = await fetch(WORKER_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ url: url })
+});
+if (!response.ok) throw new Error(`Failed: ${response.status}`);
+const blob = await response.blob();
+folder.file(fileName, blob);
+completed++;
+progressEl.textContent = `📥 ${completed}/${imageUrls.length}`;
+};
 for (let i = 0; i < imageUrls.length; i++) {
-    if (imageUrls[i]) {
-        const ext = imageUrls[i].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
-        const fileName = `page_${String(i + 1).padStart(3, '0')}.${ext}`;
-        
-        try {
-            const size = await downloadImageWithRateLimit(imageUrls[i], folder, fileName, 0);
-            completed++;
-            progressEl.textContent = `📥 ${completed}/${imageUrls.length}`;
-        } catch (err) {
-            console.warn(`Image ${i+1} failed after retries:`, err);
-        }
+const promise = downloadImage(imageUrls[i], i).then(() => {
+executing.delete(promise);
+});
+executing.add(promise);
+if (executing.size >= CONCURRENCY) {
+await Promise.race(executing);
 }
 }
+await Promise.all(executing);
 progressEl.textContent = '🗜️ Creating ZIP...';
 const content = await zip.generateAsync({ type: 'blob' });
 const safeTitle = (document.getElementById('mangaTitle')?.textContent || 'manga')
@@ -1716,7 +1599,6 @@ btn.disabled = false;
 btn.innerHTML = originalText;
 }
 }
-
 async function fetchTermNames(termIds, type) {
 if (!termIds?.length) return [];
 const unknownIds = termIds.filter(id => !KNOWN_GENRE_IDS.has(Number(id)));
@@ -1731,7 +1613,6 @@ console.warn(`Failed to fetch ${type} terms:`, err);
 return [];
 }
 }
-
 async function fetchWithConcurrency(items, fetchFn, concurrency = 3, onProgress) {
 const results = [];
 const executing = new Set();
@@ -1750,7 +1631,6 @@ if (onProgress) onProgress(i + 1, items.length);
 }
 return Promise.all(results);
 }
-
 // ============ AUTO-FETCH FROM URL PARAM ============
 document.addEventListener('DOMContentLoaded', () => {
 const params = new URLSearchParams(window.location.search);
@@ -1774,66 +1654,57 @@ console.warn('Failed to parse href parameter:', e);
 }
 }
 });
-
-  // Only this constant needed in frontend:
+// Only this constant needed in frontend:
 const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
-
 async function saveMangaToList() {
-    const saveBtn = document.getElementById('saveToListBtn');
-    const saveStatus = document.getElementById('saveStatus');
-    const mangaId = document.getElementById('mangaid')?.textContent?.trim();
-    const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
-    
-    if (!mangaId || !latestChapter) {
-        alert('Please fetch a manga first');
-        return;
-    }
-  
-  const originalText = saveBtn.innerHTML;
-  saveBtn.disabled = true;
-  saveBtn.innerHTML = '⏳ Saving...';
-  saveStatus.textContent = '';
-  
-  try {
-    // 🔥 Frontend ONLY talks to worker - no GitHub URLs here
-    const response = await fetch(WORKER_SAVE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        manga_id: mangaId,
-        latest_chapter: latestChapter
-      })
-    });
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      saveStatus.textContent = '✓ Saved!';
-      saveStatus.style.color = 'var(--success)';
-      showToast(`✓ ${mangaId}:${latestChapter} saved!`);
-    } else {
-      throw new Error(result.error || 'Save failed');
-    }
-  } catch (err) {
-    console.error(err);
-    saveStatus.textContent = '✗ Failed';
-    saveStatus.style.color = 'var(--error)';
-    alert(`Error: ${err.message}`);
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerHTML = originalText;
-    setTimeout(() => { if (saveStatus.textContent) saveStatus.textContent = ''; }, 4000);
-  }
+const saveBtn = document.getElementById('saveToListBtn');
+const saveStatus = document.getElementById('saveStatus');
+const mangaId = document.getElementById('mangaid')?.textContent?.trim();
+const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
+if (!mangaId || !latestChapter) {
+alert('Please fetch a manga first');
+return;
 }
-
+const originalText = saveBtn.innerHTML;
+saveBtn.disabled = true;
+saveBtn.innerHTML = '⏳ Saving...';
+saveStatus.textContent = '';
+try {
+// 🔥 Frontend ONLY talks to worker - no GitHub URLs here
+const response = await fetch(WORKER_SAVE_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+manga_id: mangaId,
+latest_chapter: latestChapter
+})
+});
+const result = await response.json();
+if (result.success) {
+saveStatus.textContent = '✓ Saved!';
+saveStatus.style.color = 'var(--success)';
+showToast(`✓ ${mangaId}:${latestChapter} saved!`);
+} else {
+throw new Error(result.error || 'Save failed');
+}
+} catch (err) {
+console.error(err);
+saveStatus.textContent = '✗ Failed';
+saveStatus.style.color = 'var(--error)';
+alert(`Error: ${err.message}`);
+} finally {
+saveBtn.disabled = false;
+saveBtn.innerHTML = originalText;
+setTimeout(() => { if (saveStatus.textContent) saveStatus.textContent = ''; }, 4000);
+}
+}
 function showToast(msg) {
-  const toast = document.createElement('div');
-  toast.style.cssText = `position:fixed;top:20px;right:20px;background:var(--bg-secondary);border:1px solid var(--success);border-radius:8px;padding:12px 20px;color:var(--text-primary);font-size:13px;z-index:3000;box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;`;
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-  setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
+const toast = document.createElement('div');
+toast.style.cssText = `position:fixed;top:20px;right:20px;background:var(--bg-secondary);border:1px solid var(--success);border-radius:8px;padding:12px 20px;color:var(--text-primary);font-size:13px;z-index:3000;box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;`;
+toast.textContent = msg;
+document.body.appendChild(toast);
+setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
 }
-  
 </script>
 </body>
 </html>
