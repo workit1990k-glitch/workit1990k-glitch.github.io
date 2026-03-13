@@ -1754,15 +1754,15 @@ console.warn('Failed to parse href parameter:', e);
 const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
 async function saveMangaToList() {
-  const saveBtn = document.getElementById('saveToListBtn');
-  const saveStatus = document.getElementById('saveStatus');
-  const mangaId = document.getElementById('mangaid')?.textContent?.trim();
-  const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
-  
-  if (!mangaId || mangaId === '?' || !latestChapter || latestChapter === '?') {
-    alert('Please fetch a manga first');
-    return;
-  }
+    const saveBtn = document.getElementById('saveToListBtn');
+    const saveStatus = document.getElementById('saveStatus');
+    const mangaId = document.getElementById('mangaid')?.textContent?.trim();
+    const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
+    
+    if (!mangaId || !latestChapter) {
+        alert('Please fetch a manga first');
+        return;
+    }
   
   const originalText = saveBtn.innerHTML;
   saveBtn.disabled = true;
