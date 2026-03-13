@@ -795,10 +795,12 @@ const sizeMB = totalDownloadedBytes / 1024 / 1024;
 document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
 document.getElementById('statImages').textContent = totalImages.toLocaleString();
 }
-function updateConsoleProgress(current, total) {
-const percent = total > 0 ? (current / total) * 100 : 0;
-document.getElementById('consoleProgressFill').style.width = `${percent}%`;
-document.getElementById('statChapters').textContent = `${current}/${total}`;
+function updateConsoleProgress(current, total, images, sizeMB) {
+    const percent = total > 0 ? (current / total) * 100 : 0;
+    document.getElementById('consoleProgressFill').style.width = `${percent}%`;
+    document.getElementById('statChapters').textContent = `${current}/${total}`;
+    document.getElementById('statImages').textContent = images.toLocaleString();
+    document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
 }
 function clearConsole() {
 document.getElementById('consoleLog').innerHTML = '';
@@ -1405,7 +1407,6 @@ chapters.add(Math.floor(num));
 return Array.from(chapters).sort((a, b) => a - b);
 }
 // ============ BATCH DOWNLOAD WITH SIZE SPLITTING (FIXED) ============
-// ============ BATCH DOWNLOAD WITH SIZE SPLITTING (FIXED) ============
 async function startBatchDownload() {
     if (selectedChapters.size === 0) {
         alert('Please select at least one chapter');
@@ -1544,14 +1545,14 @@ async function startBatchDownload() {
                     if (batchDownloadCancelled) break;
                     
                     const promise = downloadImage(imageUrls[j], chapterNum, j + 1, chapterFolder)
-                        .then(size => {
-                            executing.delete(promise);
-                            chapterSize += size;
-                            totalImages++;
-                            currentZipSize += size;
-                            // 🔥 FIX: Update stats after each image
-                            updateConsoleProgress(completedChapters, selected.length, totalImages, currentZipSize / 1024 / 1024);
-                        })
+.then(size => {
+    executing.delete(promise);
+    chapterSize += size;
+    totalImagesDownloaded++;           // global ✓
+    totalDownloadedBytes += size;      // global ✓
+    updateConsoleStats();              // updates Images + Size display ✓
+    updateConsoleProgress(completedChapters, selected.length); // chapters only
+})
                         .catch(err => {
                             executing.delete(promise);
                             logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
