@@ -586,6 +586,10 @@ border-top: 1px solid var(--border);
 Check ID
 <span id="countBadge">-</span>
 </button>
+    <button id="saveToListBtn" class="btn btn-secondary" onclick="saveMangaToList()" title="Save manga ID and latest chapter to list.json">
+    Save ID
+  </button>
+  <span id="saveStatus" style="font-size:12px;color:var(--success);margin-left:8px;"></span>
 <span id="statusText"></span>
 </div>
 <div class="url-input-container">
@@ -1717,6 +1721,66 @@ console.warn('Failed to parse href parameter:', e);
 }
 }
 });
+
+  // Only this constant needed in frontend:
+const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
+
+async function saveMangaToList() {
+  const saveBtn = document.getElementById('saveToListBtn');
+  const saveStatus = document.getElementById('saveStatus');
+  const mangaId = document.getElementById('mangaid')?.textContent?.trim();
+  const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
+  
+  if (!mangaId || mangaId === '?' || !latestChapter || latestChapter === '?') {
+    alert('Please fetch a manga first');
+    return;
+  }
+  
+  const originalText = saveBtn.innerHTML;
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '⏳ Saving...';
+  saveStatus.textContent = '';
+  
+  try {
+    // 🔥 Frontend ONLY talks to worker - no GitHub URLs here
+    const response = await fetch(WORKER_SAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        manga_id: mangaId,
+        latest_chapter: latestChapter
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      saveStatus.textContent = '✓ Saved!';
+      saveStatus.style.color = 'var(--success)';
+      showToast(`✓ ${mangaId}:${latestChapter} saved!`);
+    } else {
+      throw new Error(result.error || 'Save failed');
+    }
+  } catch (err) {
+    console.error(err);
+    saveStatus.textContent = '✗ Failed';
+    saveStatus.style.color = 'var(--error)';
+    alert(`Error: ${err.message}`);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = originalText;
+    setTimeout(() => { if (saveStatus.textContent) saveStatus.textContent = ''; }, 4000);
+  }
+}
+
+function showToast(msg) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `position:fixed;top:20px;right:20px;background:var(--bg-secondary);border:1px solid var(--success);border-radius:8px;padding:12px 20px;color:var(--text-primary);font-size:13px;z-index:3000;box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;`;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
+}
+  
 </script>
 </body>
 </html>
