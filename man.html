@@ -1,0 +1,1722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Downloader 3</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+--bg-primary: #1a1b26;
+--bg-secondary: #24283b;
+--bg-tertiary: #2f3549;
+--text-primary: #c0caf5;
+--text-secondary: #7982a9;
+--accent: #e0af68;
+--accent-hover: #f0bf78;
+--success: #9ece6a;
+--border: #414868;
+--error: #f7768e;
+}
+body {
+font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+background: var(--bg-primary);
+color: var(--text-primary);
+min-height: 100vh;
+}
+.header {
+background: var(--bg-secondary);
+padding: 12px 24px;
+border-bottom: 1px solid var(--border);
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 20px;
+}
+.url-input-container {
+display: flex;
+gap: 10px;
+width: 100%;
+max-width: 900px;
+}
+#urlInput {
+flex: 1;
+padding: 10px 16px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 14px;
+outline: none;
+transition: border-color 0.2s;
+}
+#urlInput:focus { border-color: var(--accent); }
+.btn {
+padding: 10px 24px;
+background: var(--accent);
+color: var(--bg-primary);
+border: none;
+border-radius: 6px;
+font-weight: 600;
+cursor: pointer;
+font-size: 13px;
+transition: background 0.2s;
+}
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary {
+background: var(--bg-tertiary);
+color: var(--text-primary);
+border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+.btn-copy {
+background: var(--success);
+padding: 8px 16px;
+font-size: 12px;
+}
+.btn-copy:hover { background: #a8d880; }
+.container {
+display: flex;
+padding: 20px;
+gap: 20px;
+max-width: 1600px;
+margin: 0 auto;
+}
+.sidebar { width: 280px; flex-shrink: 0; }
+.manga-cover {
+width: 100%;
+border-radius: 8px;
+overflow: hidden;
+margin-bottom: 16px;
+box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.manga-cover img { width: 100%; height: auto; display: block; }
+.manga-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; line-height: 1.3; }
+.manga-info { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.manga-info span { color: var(--text-primary); font-weight: 500; }
+.manga-description {
+font-size: 12px;
+color: var(--text-secondary);
+line-height: 1.6;
+margin-top: 12px;
+max-height: 150px;
+overflow-y: auto;
+}
+#previewPanel {
+display: none;
+margin-top: 20px;
+background: var(--bg-secondary);
+border-radius: 8px;
+border: 1px solid var(--border);
+overflow: hidden;
+transition: all 0.2s ease;
+}
+#previewPanel .preview-header {
+padding: 12px 16px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+#previewPanel .preview-title {
+font-weight: 600;
+font-size: 14px;
+}
+#previewPanel .preview-btn-close {
+padding: 6px 12px;
+font-size: 12px;
+}
+#previewLoading {
+padding: 20px;
+text-align: center;
+color: var(--text-secondary);
+}
+#previewLoading .spinner {
+width: 30px;
+height: 30px;
+margin: 0 auto 12px;
+}
+#previewError {
+padding: 16px;
+color: var(--error);
+text-align: center;
+}
+#previewFrame {
+width: 100%;
+height: 500px;
+border: none;
+background: var(--bg-primary);
+display: none;
+border-radius: 0 0 8px 8px;
+}
+.chapters-panel {
+flex: 1;
+background: var(--bg-secondary);
+border-radius: 8px;
+border: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+min-height: 600px;
+}
+.chapters-header {
+padding: 16px 20px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.chapters-title {
+font-size: 16px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+.chapters-count { font-size: 13px; color: var(--text-secondary); }
+.chapters-list {
+flex: 1;
+overflow-y: auto;
+padding: 12px;
+}
+.chapter-item {
+display: flex;
+align-items: center;
+padding: 12px;
+margin-bottom: 4px;
+border-radius: 6px;
+cursor: pointer;
+transition: background 0.15s;
+flex-wrap: wrap;
+gap: 8px;
+}
+.chapter-item:hover { background: var(--bg-tertiary); }
+.chapter-item.selected {
+background: rgba(224, 175, 104, 0.15);
+border: 1px solid var(--accent);
+}
+.chapter-checkbox {
+margin-right: 8px;
+width: 18px;
+height: 18px;
+cursor: pointer;
+accent-color: var(--accent);
+flex-shrink: 0;
+}
+.chapter-info {
+flex: 1;
+min-width: 0;
+}
+.chapter-number { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.chapter-group { font-size: 12px; color: var(--text-secondary); }
+.chapter-group.official { color: var(--success); }
+.btn-preview {
+padding: 6px 14px;
+font-size: 11px;
+margin-left: 8px;
+flex-shrink: 0;
+}
+.footer {
+background: var(--bg-secondary);
+border-top: 1px solid var(--border);
+padding: 16px 20px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+gap: 20px;
+}
+.footer-left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.footer-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.select-count { font-size: 13px; color: var(--text-secondary); }
+.select-count strong { color: var(--accent); }
+select {
+padding: 8px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 13px;
+outline: none;
+cursor: pointer;
+}
+select:focus { border-color: var(--accent); }
+.btn-show-json {
+padding: 12px 24px;
+font-size: 14px;
+display: flex;
+align-items: center;
+gap: 8px;
+background: var(--success);
+}
+.btn-show-json:hover { background: #a8d880; }
+.loading {
+display: none;
+text-align: center;
+padding: 40px;
+color: var(--text-secondary);
+}
+.loading.active { display: block; }
+.spinner {
+width: 40px;
+height: 40px;
+border: 3px solid var(--border);
+border-top-color: var(--accent);
+border-radius: 50%;
+animation: spin 1s linear infinite;
+margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.modal-overlay {
+display: none;
+position: fixed;
+top: 0; left: 0; right: 0; bottom: 0;
+background: rgba(0,0,0,0.7);
+z-index: 1000;
+align-items: center;
+justify-content: center;
+padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+width: 100%;
+max-width: 900px;
+max-height: 85vh;
+display: flex;
+flex-direction: column;
+box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+.modal-header {
+padding: 16px 20px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.modal-title {
+font-size: 16px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+.modal-close {
+background: none;
+border: none;
+color: var(--text-secondary);
+font-size: 24px;
+cursor: pointer;
+padding: 4px 8px;
+border-radius: 4px;
+}
+.modal-close:hover {
+background: var(--bg-tertiary);
+color: var(--text-primary);
+}
+.modal-body {
+flex: 1;
+overflow: hidden;
+display: flex;
+flex-direction: column;
+}
+.modal-loading {
+padding: 40px;
+text-align: center;
+color: var(--text-secondary);
+}
+.modal-error {
+padding: 20px;
+color: var(--error);
+text-align: center;
+}
+.json-container {
+flex: 1;
+overflow: auto;
+padding: 16px 20px;
+background: var(--bg-primary);
+font-family: 'Consolas', 'Monaco', monospace;
+font-size: 12px;
+line-height: 1.5;
+white-space: pre-wrap;
+word-break: break-all;
+}
+.modal-footer {
+padding: 12px 20px;
+border-top: 1px solid var(--border);
+display: flex;
+justify-content: flex-end;
+gap: 10px;
+background: var(--bg-secondary);
+}
+.copy-status {
+font-size: 12px;
+color: var(--success);
+margin-right: auto;
+align-self: center;
+opacity: 0;
+transition: opacity 0.3s;
+}
+.copy-status.show { opacity: 1; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb {
+background: var(--border);
+border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+@media (max-width: 900px) {
+.container { flex-direction: column; }
+.sidebar { width: 100%; }
+#previewFrame { height: 400px; }
+}
+@media (max-width: 600px) {
+.chapter-item {
+flex-direction: column;
+align-items: stretch;
+}
+.chapter-item > .btn-preview {
+margin-left: 26px;
+margin-top: 4px;
+align-self: flex-start;
+}
+.footer-left, .footer-right {
+flex-wrap: wrap;
+}
+}
+.manga-info.found { color: #ff0000 !important; }
+.manga-info.not-found { color: #28a745 !important; }
+.checker-container {
+display: flex;
+align-items: center;
+gap: 10px;
+margin: 20px 0;
+}
+#checkBtn {
+padding: 10px 20px;
+background: #007bff;
+color: white;
+border: none;
+border-radius: 5px;
+cursor: pointer;
+font-size: 14px;
+display: flex;
+align-items: center;
+gap: 8px;
+transition: background 0.2s;
+}
+#checkBtn:hover { background: #0056b3; }
+#checkBtn:disabled { background: #ccc; cursor: not-allowed; }
+#countBadge {
+background: #6c757d;
+color: white;
+padding: 2px 5px;
+border-radius: 10px;
+font-size: 12px;
+min-width: 24px;
+text-align: center;
+}
+.loading { color: #666; font-style: italic; }
+.error { color: #dc3545; font-size: 13px; margin-top: 5px; }
+.range-selector {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+#chapterRange {
+padding: 8px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 13px;
+width: 180px;
+outline: none;
+}
+#chapterRange:focus { border-color: var(--accent); }
+.btn-download {
+background: var(--success);
+padding: 6px 14px;
+font-size: 11px;
+margin-left: 8px;
+flex-shrink: 0;
+}
+.btn-download:hover { background: #a8d880; }
+.btn-download:disabled { opacity: 0.6; cursor: wait; }
+.btn-batch-download {
+background: var(--success);
+padding: 10px 20px;
+font-size: 13px;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.btn-batch-download:hover { background: #a8d880; }
+.btn-batch-download:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ============ DOWNLOAD CONSOLE STYLES ============ */
+.download-console {
+position: fixed;
+bottom: 20px;
+right: 20px;
+width: 450px;
+background: var(--bg-secondary);
+border: 1px solid var(--border);
+border-radius: 8px;
+box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+z-index: 2000;
+display: none;
+flex-direction: column;
+overflow: hidden;
+}
+.download-console.active { display: flex; }
+.console-header {
+background: var(--bg-tertiary);
+padding: 10px 16px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+border-bottom: 1px solid var(--border);
+cursor: move;
+}
+.console-title {
+font-size: 13px;
+font-weight: 600;
+color: var(--text-primary);
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.console-controls {
+display: flex;
+gap: 8px;
+}
+.console-btn {
+background: var(--bg-primary);
+border: 1px solid var(--border);
+color: var(--text-secondary);
+width: 24px;
+height: 24px;
+border-radius: 4px;
+cursor: pointer;
+font-size: 14px;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.console-btn:hover { background: var(--border); color: var(--text-primary); }
+.console-btn.close:hover { background: var(--error); color: white; }
+.console-body {
+padding: 12px;
+max-height: 300px;
+overflow-y: auto;
+font-family: 'Consolas', 'Monaco', monospace;
+font-size: 11px;
+}
+.console-log {
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.console-line {
+display: flex;
+align-items: flex-start;
+gap: 8px;
+padding: 4px 8px;
+border-radius: 4px;
+background: var(--bg-primary);
+}
+.console-line.info { color: var(--text-secondary); }
+.console-line.success { color: var(--success); }
+.console-line.error { color: var(--error); }
+.console-line.warning { color: var(--accent); }
+.console-timestamp {
+color: var(--text-secondary);
+font-size: 10px;
+min-width: 70px;
+}
+.console-progress-bar {
+height: 4px;
+background: var(--bg-primary);
+border-radius: 2px;
+margin-top: 8px;
+overflow: hidden;
+}
+.console-progress-fill {
+height: 100%;
+background: var(--success);
+transition: width 0.3s;
+}
+.console-stats {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 8px;
+padding: 12px;
+background: var(--bg-tertiary);
+border-top: 1px solid var(--border);
+}
+.stat-item {
+text-align: center;
+}
+.stat-value {
+font-size: 14px;
+font-weight: 700;
+color: var(--accent);
+}
+.stat-label {
+font-size: 10px;
+color: var(--text-secondary);
+text-transform: uppercase;
+}
+.rate-limit-info {
+font-size: 10px;
+color: var(--text-secondary);
+text-align: center;
+padding: 4px;
+background: var(--bg-primary);
+border-top: 1px solid var(--border);
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+<div class="header">
+<div class="checker-container">
+<button id="checkBtn">
+Check ID
+<span id="countBadge">-</span>
+</button>
+<span id="statusText"></span>
+</div>
+<div class="url-input-container">
+<input type="text" id="urlInput" placeholder="Paste comix.to/title/... URL here">
+<button class="btn" id="fetchBtn" onclick="fetchManga()">FETCH</button>
+</div>
+</div>
+<div class="container">
+<div class="sidebar">
+<div id="mangaInfo" style="display: none;">
+<div class="manga-cover">
+<img id="coverImg" src="" alt="Cover">
+</div>
+<div class="manga-title" id="mangaTitle"></div>
+<div class="manga-info">Type: <span id="mangaType"></span></div>
+<div class="manga-info">Language: <span id="mangaLang"></span></div>
+<div class="manga-info">Status: <span id="mangaStatus"></span></div>
+<div class="manga-info">Year: <span id="mangaYear"></span></div>
+<div class="manga-info">Latest: <span id="mangaLatest"></span></div>
+<div class="manga-info">Followers: <span id="mangaFollowers"></span></div>
+<div class="manga-info">Id: <span id="mangaid"></span></div>
+<div class="manga-info" id="genresRow" style="display:none">Genres: <span id="mangaGenres"></span></div>
+<div class="manga-info" id="authorsRow" style="display:none">Authors: <span id="mangaAuthors"></span></div>
+<div class="manga-info" id="artistsRow" style="display:none">Artists: <span id="mangaArtists"></span></div>
+<div class="manga-description" id="mangaDesc"></div>
+</div>
+<div id="previewPanel">
+<div class="preview-header">
+<div class="preview-title">📖 Chapter Preview</div>
+<button class="btn btn-secondary preview-btn-close" onclick="closePreview()">✕ Close</button>
+</div>
+<div id="previewLoading" style="display: none;">
+<div class="spinner"></div>
+<div>Loading preview...</div>
+</div>
+<div id="previewError" style="display: none;"></div>
+<iframe id="previewFrame"></iframe>
+</div>
+</div>
+<div id="errorMsg" class="error"></div>
+<div class="chapters-panel">
+<div class="chapters-header">
+<div class="chapters-title">Chapters</div>
+<div class="chapters-count" id="chaptersCount">0 shown (of 0)</div>
+</div>
+<div class="loading" id="loading">
+<div class="spinner"></div>
+<div>Fetching chapters...</div>
+</div>
+<div class="chapters-list" id="chaptersList">
+<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+Enter a manga URL and click FETCH to load chapters
+</div>
+</div>
+<div class="footer">
+<div class="footer-left">
+<button class="btn btn-secondary" onclick="selectAll()">Select All</button>
+<div class="range-selector">
+<input type="text" id="chapterRange" placeholder="e.g., 1-30 or 5,10,15">
+<button class="btn btn-secondary" onclick="selectByRange()">Select Range</button>
+</div>
+<button class="btn btn-secondary" onclick="selectUniqueChapters()">Unique Only</button>
+<button class="btn btn-secondary" onclick="deselectAll()">None</button>
+<select id="scanlatorFilter" onchange="filterChapters()">
+<option value="">All Scanlators</option>
+</select>
+</div>
+<div class="footer-right">
+<div class="select-count"><strong id="selectedCount">0</strong> selected</div>
+<button class="btn btn-show-json" onclick="showJsonSelected()" id="showJsonBtn" disabled>
+<span>📋</span> SHOW JSON
+</button>
+<button class="btn btn-batch-download" onclick="startBatchDownload()" id="batchDownloadBtn" disabled>
+<span>⬇</span> DOWNLOAD SELECTED
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- JSON Modal -->
+<div class="modal-overlay" id="jsonModal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title">Chapter Images JSON</div>
+<button class="modal-close" onclick="closeJsonModal()">&times;</button>
+</div>
+<div class="modal-body">
+<div class="modal-loading" id="jsonLoading" style="display: none;">
+<div class="spinner"></div>
+<div>Fetching image links for <strong id="fetchingCount">0</strong> chapters...</div>
+<div style="font-size: 11px; margin-top: 8px; color: var(--text-secondary);" id="fetchProgress"></div>
+</div>
+<div class="modal-error" id="jsonError" style="display: none;"></div>
+<pre class="json-container" id="jsonOutput"></pre>
+</div>
+<div class="modal-footer">
+<span class="copy-status" id="copyStatus">✓ Copied to clipboard!</span>
+<button class="btn btn-secondary" onclick="closeJsonModal()">Close</button>
+<button class="btn btn-copy" id="copyJsonBtn" onclick="copyJsonToClipboard()">📋 Copy JSON</button>
+</div>
+</div>
+</div>
+
+<!-- Download Console -->
+<div class="download-console" id="downloadConsole">
+<div class="console-header" id="consoleHeader">
+<div class="console-title">
+<span>⬇</span> Download Progress
+</div>
+<div class="console-controls">
+<button class="console-btn" onclick="minimizeConsole()">−</button>
+<button class="console-btn close" onclick="closeConsole()">✕</button>
+</div>
+</div>
+<div class="console-body">
+<div class="console-log" id="consoleLog"></div>
+<div class="console-progress-bar">
+<div class="console-progress-fill" id="consoleProgressFill" style="width: 0%"></div>
+</div>
+</div>
+<div class="console-stats">
+<div class="stat-item">
+<div class="stat-value" id="statChapters">0/0</div>
+<div class="stat-label">Chapters</div>
+</div>
+<div class="stat-item">
+<div class="stat-value" id="statImages">0</div>
+<div class="stat-label">Images</div>
+</div>
+<div class="stat-item">
+<div class="stat-value" id="statSize">0.0 MB</div>
+<div class="stat-label">Size</div>
+</div>
+</div>
+<div class="rate-limit-info">
+Rate Limit: 240 images/minute (4/sec)
+</div>
+</div>
+
+<script>
+const WORKER_URL = 'https://plain-night-1447-opt.yuush.workers.dev';
+const API_BASE = 'https://comix.to/api/v2';
+const HEADERS = { 'Referer': 'https://comix.to/', 'User-Agent': 'Mozilla/5.0' };
+const MAX_ZIP_SIZE_MB = 500;
+const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
+const RATE_LIMIT_PER_MINUTE = 240;
+const RATE_LIMIT_DELAY_MS = 60000 / RATE_LIMIT_PER_MINUTE; // 250ms between requests
+
+let isDownloading = new Set();
+let isBatchDownloading = false;
+let batchDownloadCancelled = false;
+let downloadQueue = [];
+let isProcessingQueue = false;
+let totalDownloadedBytes = 0;
+let totalImagesDownloaded = 0;
+
+const GENRE_MAP = {
+6: "Action", 87264: "Adult", 7: "Adventure", 9: "Comedy", 11: "Drama",
+87265: "Ecchi", 12: "Fantasy", 14: "Historical", 15: "Horror", 16: "Isekai",
+87267: "Mature", 18: "Mecha", 20: "Mystery", 22: "Psychological", 23: "Romance",
+24: "Sci-Fi", 25: "Slice of Life", 87268: "Smut", 26: "Sports", 27: "Superhero",
+28: "Thriller", 29: "Tragedy", 30: "Wuxia"
+};
+const KNOWN_GENRE_IDS = new Set(Object.keys(GENRE_MAP).map(Number));
+let allChapters = [];
+let filteredChapters = [];
+let selectedChapters = new Set();
+let scanlators = new Set();
+let currentJsonData = null;
+let mangaDataCache = null;
+
+const extractCode = (url) => url.replace(/\/$/, '').split('/').pop()?.split('-')[0] || '';
+const fetchRetry = async (url, retries = 3, delay = 1000) => {
+for (let i = 1; i <= retries; i++) {
+try {
+const res = await fetch(url, { headers: HEADERS });
+if (!res.ok) throw new Error('HTTP ' + res.status);
+return await res.json();
+} catch (e) {
+if (i === retries) throw e;
+await new Promise(r => setTimeout(r, delay * i));
+}
+}
+};
+const fetchChapterWithRetry = async (chapterId, maxRetries = 3) => {
+for (let attempt = 1; attempt <= maxRetries; attempt++) {
+try {
+const res = await fetch(`${API_BASE}/chapters/${chapterId}/`, { headers: HEADERS });
+if (!res.ok) throw new Error('HTTP ' + res.status);
+return await res.json();
+} catch (err) {
+if (attempt === maxRetries) throw err;
+await new Promise(resolve => setTimeout(resolve, 5000));
+}
+}
+};
+
+// ============ RATE LIMITED IMAGE DOWNLOAD ============
+async function downloadImageWithRateLimit(url, zipFolder, fileName) {
+return new Promise((resolve, reject) => {
+downloadQueue.push({ url, zipFolder, fileName, resolve, reject });
+if (!isProcessingQueue) {
+processDownloadQueue();
+}
+});
+}
+
+async function processDownloadQueue() {
+if (isProcessingQueue || downloadQueue.length === 0) return;
+isProcessingQueue = true;
+
+while (downloadQueue.length > 0 && !batchDownloadCancelled) {
+const item = downloadQueue.shift();
+try {
+const response = await fetch(WORKER_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ url: item.url })
+});
+if (!response.ok) throw new Error(`Failed: ${response.status}`);
+const blob = await response.blob();
+item.zipFolder.file(item.fileName, blob);
+totalDownloadedBytes += blob.size;
+totalImagesDownloaded++;
+updateConsoleStats();
+item.resolve(blob.size);
+} catch (err) {
+item.reject(err);
+}
+// Rate limit delay
+await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+}
+isProcessingQueue = false;
+}
+
+// ============ CONSOLE FUNCTIONS ============
+function showConsole() {
+document.getElementById('downloadConsole').classList.add('active');
+}
+function closeConsole() {
+document.getElementById('downloadConsole').classList.remove('active');
+}
+function minimizeConsole() {
+const consoleEl = document.getElementById('downloadConsole');
+const body = consoleEl.querySelector('.console-body');
+const stats = consoleEl.querySelector('.console-stats');
+const rateInfo = consoleEl.querySelector('.rate-limit-info');
+if (body.style.display === 'none') {
+body.style.display = 'block';
+stats.style.display = 'grid';
+rateInfo.style.display = 'block';
+} else {
+body.style.display = 'none';
+stats.style.display = 'none';
+rateInfo.style.display = 'none';
+}
+}
+function logConsole(message, type = 'info') {
+const log = document.getElementById('consoleLog');
+const line = document.createElement('div');
+line.className = `console-line ${type}`;
+const timestamp = new Date().toLocaleTimeString();
+line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
+log.appendChild(line);
+log.scrollTop = log.scrollHeight;
+}
+function updateConsoleStats() {
+const sizeMB = totalDownloadedBytes / 1024 / 1024;
+document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
+document.getElementById('statImages').textContent = totalImagesDownloaded.toLocaleString();
+}
+function updateConsoleProgress(current, total) {
+const percent = total > 0 ? (current / total) * 100 : 0;
+document.getElementById('consoleProgressFill').style.width = `${percent}%`;
+document.getElementById('statChapters').textContent = `${current}/${total}`;
+}
+function clearConsole() {
+document.getElementById('consoleLog').innerHTML = '';
+updateConsoleProgress(0, 0);
+totalDownloadedBytes = 0;
+totalImagesDownloaded = 0;
+updateConsoleStats();
+}
+
+// ============ DRAGGABLE CONSOLE ============
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+document.getElementById('consoleHeader').addEventListener('mousedown', (e) => {
+isDragging = true;
+const consoleEl = document.getElementById('downloadConsole');
+const rect = consoleEl.getBoundingClientRect();
+dragOffset.x = e.clientX - rect.left;
+dragOffset.y = e.clientY - rect.top;
+document.addEventListener('mousemove', onDrag);
+document.addEventListener('mouseup', stopDrag);
+});
+function onDrag(e) {
+if (!isDragging) return;
+const consoleEl = document.getElementById('downloadConsole');
+const x = e.clientX - dragOffset.x;
+const y = e.clientY - dragOffset.y;
+consoleEl.style.left = `${x}px`;
+consoleEl.style.top = `${y}px`;
+consoleEl.style.right = 'auto';
+consoleEl.style.bottom = 'auto';
+}
+function stopDrag() {
+isDragging = false;
+document.removeEventListener('mousemove', onDrag);
+document.removeEventListener('mouseup', stopDrag);
+}
+
+async function fetchManga() {
+const url = document.getElementById('urlInput').value.trim();
+const btn = document.getElementById('fetchBtn');
+const loading = document.getElementById('loading');
+const list = document.getElementById('chaptersList');
+if (!url.includes('comix.to/title/')) {
+alert('Please enter a valid comix.to URL');
+return;
+}
+btn.disabled = true;
+loading.classList.add('active');
+list.innerHTML = '';
+allChapters = [];
+selectedChapters.clear();
+scanlators.clear();
+mangaDataCache = null;
+closePreview();
+['genresRow', 'authorsRow', 'artistsRow'].forEach(id => {
+const el = document.getElementById(id);
+if (el) {
+el.style.display = 'none';
+const span = el.querySelector('span');
+if (span) span.textContent = '';
+}
+});
+try {
+const code = extractCode(url);
+const mangaRes = await fetchRetry(`${API_BASE}/manga/${code}/`);
+const manga = mangaRes.result;
+mangaDataCache = manga;
+const termIds = manga.term_ids || [];
+const genreNames = [];
+const authorIds = [];
+const artistIds = [];
+for (const id of termIds) {
+const numId = Number(id);
+if (KNOWN_GENRE_IDS.has(numId)) {
+genreNames.push(GENRE_MAP[numId]);
+} else {
+authorIds.push(id);
+artistIds.push(id);
+}
+}
+const [authors, artists] = await Promise.all([
+fetchTermNames(authorIds, 'author'),
+fetchTermNames(artistIds, 'artist')
+]);
+mangaDataCache.resolvedGenres = [...new Set(genreNames)];
+mangaDataCache.resolvedAuthors = [...new Set(authors)];
+mangaDataCache.resolvedArtists = [...new Set(artists)];
+document.getElementById('mangaInfo').style.display = 'block';
+document.getElementById('coverImg').src = manga.poster?.large || manga.poster?.medium || '';
+document.getElementById('mangaTitle').textContent = manga.title;
+document.getElementById('mangaType').textContent = manga.type || 'Unknown';
+document.getElementById('mangaLang').textContent = manga.original_language || 'Unknown';
+document.getElementById('mangaStatus').textContent = manga.status || 'Unknown';
+document.getElementById('mangaYear').textContent = manga.year || '?';
+document.getElementById('mangaLatest').textContent = manga.latest_chapter || '?';
+document.getElementById('mangaFollowers').textContent = manga.follows_total?.toLocaleString() || '0';
+document.getElementById('mangaid').textContent = manga.hash_id;
+document.getElementById('mangaDesc').textContent = manga.synopsis || 'No description available.';
+function updateInfoRow(rowId, spanId, items) {
+const row = document.getElementById(rowId);
+const span = document.getElementById(spanId);
+if (row && span && items?.length) {
+span.textContent = items.join(', ');
+row.style.display = 'block';
+} else if (row) {
+row.style.display = 'none';
+}
+}
+updateInfoRow('genresRow', 'mangaGenres', mangaDataCache.resolvedGenres);
+updateInfoRow('authorsRow', 'mangaAuthors', mangaDataCache.resolvedAuthors);
+updateInfoRow('artistsRow', 'mangaArtists', mangaDataCache.resolvedArtists);
+let page = 1, hasMore = true;
+while (hasMore) {
+const chapRes = await fetchRetry(`${API_BASE}/manga/${code}/chapters?limit=100&page=${page}&order[number]=asc`);
+const items = chapRes.result?.items || [];
+if (!items.length) hasMore = false;
+else {
+allChapters.push(...items);
+items.forEach(ch => {
+const group = ch.scanlation_group?.name || 'Unknown';
+scanlators.add(group);
+});
+hasMore = items.length === 100;
+page++;
+}
+await new Promise(r => setTimeout(r, 100));
+}
+allChapters.sort((a, b) => {
+const na = parseFloat(a.number);
+const nb = parseFloat(b.number);
+if (!isNaN(na) && !isNaN(nb)) return na - nb;
+return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+});
+const filterSelect = document.getElementById('scanlatorFilter');
+filterSelect.innerHTML = '<option value="">All Scanlators</option>';
+Array.from(scanlators).sort().forEach(group => {
+const opt = document.createElement('option');
+opt.value = group;
+opt.textContent = group === 'Unknown' ? '• No Group •' : group;
+filterSelect.appendChild(opt);
+});
+filteredChapters = [...allChapters];
+renderChapters();
+updateCount();
+} catch (err) {
+alert('Error: ' + err.message);
+console.error(err);
+} finally {
+btn.disabled = false;
+loading.classList.remove('active');
+}
+}
+function renderChapters() {
+const list = document.getElementById('chaptersList');
+list.innerHTML = '';
+if (filteredChapters.length === 0) {
+list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No chapters found</div>';
+return;
+}
+filteredChapters.forEach(chapter => {
+const div = document.createElement('div');
+div.className = 'chapter-item' + (selectedChapters.has(chapter.chapter_id) ? ' selected' : '');
+div.onclick = (e) => {
+if (e.target.tagName !== 'INPUT' && !e.target.closest('.btn-preview') && !e.target.closest('.btn-download')) {
+toggleChapter(chapter.chapter_id);
+}
+};
+const group = chapter.scanlation_group?.name || 'Unknown';
+const isOfficial = chapter.is_official || group.toLowerCase() === 'official';
+div.innerHTML = `
+<input type="checkbox" class="chapter-checkbox"
+${selectedChapters.has(chapter.chapter_id) ? 'checked' : ''}
+onclick="event.stopPropagation(); toggleChapter('${chapter.chapter_id}')">
+<div class="chapter-info">
+<div class="chapter-number">Ch. ${chapter.number}${chapter.name ? ' — ' + chapter.name : ''}</div>
+<div class="chapter-group ${isOfficial ? 'official' : ''}">${group}</div>
+</div>
+<button class="btn btn-secondary btn-preview"
+onclick="event.stopPropagation(); previewChapter(${chapter.chapter_id})">
+👁 Preview
+</button>
+<button class="btn btn-secondary btn-download"
+onclick="event.stopPropagation(); downloadChapter('${chapter.chapter_id}', '${String(chapter.number).replace(/'/g, "\\'")}', '${chapter.name ? String(chapter.name).replace(/'/g, "\\'") : ''}')"
+title="Download chapter images"
+${isDownloading?.has(chapter.chapter_id) ? 'disabled' : ''}>
+${isDownloading?.has(chapter.chapter_id) ? '⏳...' : '⬇ Download'}
+</button>
+`;
+list.appendChild(div);
+});
+document.getElementById('chaptersCount').textContent = `${filteredChapters.length} shown (of ${allChapters.length})`;
+}
+function toggleChapter(id) {
+if (selectedChapters.has(id)) {
+selectedChapters.delete(id);
+} else {
+selectedChapters.add(id);
+}
+renderChapters();
+updateCount();
+}
+function selectAll() {
+filteredChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
+renderChapters();
+updateCount();
+}
+function deselectAll() {
+selectedChapters.clear();
+renderChapters();
+updateCount();
+}
+function selectUniqueChapters() {
+selectedChapters.clear();
+const seenChapterNums = new Set();
+filteredChapters.forEach(ch => {
+const chapterNum = parseFloat(ch.number);
+if (!isNaN(chapterNum) && chapterNum === Math.floor(chapterNum)) {
+if (!seenChapterNums.has(chapterNum)) {
+seenChapterNums.add(chapterNum);
+selectedChapters.add(ch.chapter_id);
+}
+}
+});
+renderChapters();
+updateCount();
+}
+function filterChapters() {
+const filter = document.getElementById('scanlatorFilter').value;
+if (!filter) {
+filteredChapters = [...allChapters];
+} else {
+filteredChapters = allChapters.filter(ch => {
+const group = ch.scanlation_group?.name || 'Unknown';
+return group === filter;
+});
+}
+renderChapters();
+updateCount();
+}
+function updateCount() {
+document.getElementById('selectedCount').textContent = selectedChapters.size;
+document.getElementById('showJsonBtn').disabled = selectedChapters.size === 0;
+document.getElementById('batchDownloadBtn').disabled = selectedChapters.size === 0 || isBatchDownloading;
+}
+
+// ============ PREVIEW FEATURE ============
+async function previewChapter(chapterId) {
+const panel = document.getElementById('previewPanel');
+const loading = document.getElementById('previewLoading');
+const error = document.getElementById('previewError');
+const iframe = document.getElementById('previewFrame');
+panel.style.display = 'block';
+loading.style.display = 'block';
+error.style.display = 'none';
+iframe.style.display = 'none';
+iframe.srcdoc = '';
+if (window.innerWidth <= 900) {
+panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+try {
+let chapter = allChapters.find(ch => ch.chapter_id == chapterId);
+if (!chapter) {
+console.log(`Chapter ${chapterId} not in cache, fetching directly...`);
+const chapterRes = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
+chapter = chapterRes.result;
+if (!chapter) throw new Error('Chapter not found in API response');
+}
+const chapterRes = await fetchChapterWithRetry(chapterId);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) {
+throw new Error('No images found for this chapter');
+}
+const htmlContent = buildPreviewHTML(chapter, imageUrls);
+iframe.srcdoc = htmlContent;
+iframe.onload = () => {
+loading.style.display = 'none';
+iframe.style.display = 'block';
+};
+} catch (err) {
+console.error('Preview error:', err);
+loading.style.display = 'none';
+error.textContent = 'Error loading preview: ' + err.message;
+error.style.display = 'block';
+}
+}
+function buildPreviewHTML(chapter, imageUrls) {
+const title = `Ch. ${chapter.number}${chapter.name ? ' — ' + chapter.name : ''}`;
+const group = chapter.scanlation_group?.name || 'Unknown';
+return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+background: #1a1b26;
+color: #c0caf5;
+padding: 16px;
+line-height: 1.5;
+}
+.header {
+position: sticky;
+top: 0;
+background: #24283b;
+padding: 12px 16px;
+border-radius: 8px;
+margin-bottom: 16px;
+border: 1px solid #414868;
+z-index: 10;
+}
+.chapter-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+.chapter-meta { font-size: 12px; color: #7982a9; }
+.pages-container {
+display: flex;
+flex-direction: column;
+gap: 12px;
+max-width: 900px;
+margin: 0 auto;
+}
+.page-card {
+background: #2f3549;
+border-radius: 8px;
+overflow: hidden;
+border: 1px solid #414868;
+}
+.page-card img {
+width: 100%;
+height: auto;
+display: block;
+max-height: 80vh;
+object-fit: contain;
+}
+.page-number {
+padding: 8px 12px;
+font-size: 11px;
+color: #7982a9;
+background: #24283b;
+text-align: center;
+}
+.loading-placeholder {
+min-height: 200px;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #7982a9;
+font-size: 13px;
+}
+@media (min-width: 768px) {
+.pages-container {
+display: grid;
+grid-template-columns: repeat(2, 1fr);
+gap: 16px;
+}
+}
+</style>
+</head>
+<body>
+<div class="header">
+<div class="chapter-title">${title}</div>
+<div class="chapter-meta">${group} • ${imageUrls.length} pages</div>
+</div>
+<div class="pages-container">
+${imageUrls.map((url, idx) => `
+<div class="page-card">
+<img src="${WORKER_URL}?url=${encodeURIComponent(url)}" alt="Page ${idx + 1}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'loading-placeholder\\'>Failed to load image</div>'">
+<div class="page-number">Page ${idx + 1}</div>
+</div>
+`).join('')}
+</div>
+</body>
+</html>
+`;
+}
+function closePreview() {
+const panel = document.getElementById('previewPanel');
+const iframe = document.getElementById('previewFrame');
+panel.style.display = 'none';
+iframe.srcdoc = '';
+iframe.style.display = 'none';
+}
+
+// ============ JSON FEATURE ============
+function extractImageUrls(data) {
+if (Array.isArray(data)) {
+return data.map(item =>
+item.image_url || item.url || item.src || item.data || item
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.pages && Array.isArray(data.pages)) {
+return data.pages.map(page =>
+page.image_url || page.url || page.src || page.data || page
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.images && Array.isArray(data.images)) {
+return data.images.map(img =>
+img.image_url || img.url || img.src || img.data || img
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.result) {
+return extractImageUrls(data.result);
+}
+return [];
+}
+async function showJsonSelected() {
+if (selectedChapters.size === 0) return;
+const modal = document.getElementById('jsonModal');
+const loading = document.getElementById('jsonLoading');
+const error = document.getElementById('jsonError');
+const output = document.getElementById('jsonOutput');
+const copyBtn = document.getElementById('copyJsonBtn');
+const progress = document.getElementById('fetchProgress');
+modal.classList.add('active');
+loading.style.display = 'block';
+error.style.display = 'none';
+output.textContent = '';
+copyBtn.disabled = true;
+document.getElementById('fetchingCount').textContent = selectedChapters.size;
+progress.textContent = '';
+try {
+const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+const mangaObj = {
+title: mangaDataCache?.title || document.getElementById('mangaTitle').textContent,
+url: document.getElementById('urlInput').value.trim(),
+cover: mangaDataCache?.poster?.large || mangaDataCache?.poster?.medium || '',
+description: mangaDataCache?.synopsis || document.getElementById('mangaDesc').textContent || '',
+type: mangaDataCache?.type || document.getElementById('mangaType').textContent || '',
+language: mangaDataCache?.original_language || document.getElementById('mangaLang').textContent || '',
+status: mangaDataCache?.status || document.getElementById('mangaStatus').textContent || '',
+year: mangaDataCache?.year || document.getElementById('mangaYear').textContent || '',
+latest_chapter: mangaDataCache?.latest_chapter || document.getElementById('mangaLatest').textContent || '',
+genres: mangaDataCache?.resolvedGenres || [],
+authors: mangaDataCache?.resolvedAuthors || [],
+artists: mangaDataCache?.resolvedArtists || []
+};
+const result = {
+manga: mangaObj,
+chapters: []
+};
+const fetchChapterData = async (chapter, index, total) => {
+progress.textContent = `Fetching ${index + 1} of ${total}: Ch. ${chapter.number}`;
+try {
+const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+const imageUrls = extractImageUrls(chapterRes);
+return {
+chapter_id: chapter.chapter_id,
+number: chapter.number,
+name: chapter.name || null,
+scanlation_group: chapter.scanlation_group?.name || 'Unknown',
+language: chapter.language || 'en',
+pages_count: imageUrls.length,
+images: imageUrls
+};
+} catch (err) {
+console.warn(`Failed to fetch images for chapter ${chapter.chapter_id}:`, err);
+return {
+chapter_id: chapter.chapter_id,
+number: chapter.number,
+name: chapter.name || null,
+scanlation_group: chapter.scanlation_group?.name || 'Unknown',
+error: `Failed to fetch images after retries: ${err.message}`,
+images: []
+};
+}
+};
+const CONCURRENCY = 4;
+const chapterResults = await fetchWithConcurrency(
+selected,
+fetchChapterData,
+CONCURRENCY,
+(done, total) => {
+progress.textContent = `Progress: ${done}/${total} chapters fetched`;
+}
+);
+result.chapters = chapterResults;
+currentJsonData = result;
+output.textContent = JSON.stringify(result, null, 2);
+copyBtn.disabled = false;
+} catch (err) {
+error.textContent = 'Error: ' + err.message;
+error.style.display = 'block';
+output.textContent = '';
+console.error(err);
+} finally {
+loading.style.display = 'none';
+}
+}
+function closeJsonModal() {
+document.getElementById('jsonModal').classList.remove('active');
+document.getElementById('copyStatus').classList.remove('show');
+currentJsonData = null;
+}
+async function copyJsonToClipboard() {
+if (!currentJsonData) return;
+try {
+await navigator.clipboard.writeText(JSON.stringify(currentJsonData, null, 2));
+const status = document.getElementById('copyStatus');
+status.classList.add('show');
+setTimeout(() => status.classList.remove('show'), 2000);
+} catch (err) {
+const textarea = document.createElement('textarea');
+textarea.value = JSON.stringify(currentJsonData, null, 2);
+document.body.appendChild(textarea);
+textarea.select();
+document.execCommand('copy');
+document.body.removeChild(textarea);
+const status = document.getElementById('copyStatus');
+status.classList.add('show');
+setTimeout(() => status.classList.remove('show'), 2000);
+}
+}
+document.getElementById('jsonModal').addEventListener('click', (e) => {
+if (e.target.id === 'jsonModal') closeJsonModal();
+});
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape') {
+closeJsonModal();
+closePreview();
+}
+});
+document.getElementById('urlInput').addEventListener('keypress', (e) => {
+if (e.key === 'Enter') fetchManga();
+});
+document.getElementById('checkBtn').addEventListener('click', async function() {
+const btn = this;
+const countBadge = document.getElementById('countBadge');
+const statusText = document.getElementById('statusText');
+const errorMsg = document.getElementById('errorMsg');
+const mangaInfoEl = document.querySelector('.manga-info');
+const mangaIdSpan = document.getElementById('mangaid');
+errorMsg.textContent = '';
+statusText.textContent = '';
+mangaInfoEl.classList.remove('found', 'not-found');
+btn.disabled = true;
+btn.innerHTML = 'Loading... <span id="countBadge">-</span>';
+try {
+const response = await fetch('https://raw.githubusercontent.com/YuushaExa/man-com/refs/heads/main/list.json');
+if (!response.ok) {
+throw new Error(`HTTP error! status: ${response.status}`);
+}
+const data = await response.json();
+const totalCount = Object.keys(data).length;
+countBadge.textContent = totalCount;
+const currentMangaId = mangaIdSpan?.textContent?.trim();
+if (!currentMangaId) {
+throw new Error('Could not find manga ID on page');
+}
+const isFound = data.hasOwnProperty(currentMangaId);
+if (isFound) {
+mangaInfoEl.classList.add('found');
+statusText.textContent = '✓ ID found in list';
+statusText.style.color = '#ff0000';
+} else {
+mangaInfoEl.classList.add('not-found');
+statusText.textContent = '✓ ID not in list';
+statusText.style.color = '#28a745';
+}
+} catch (error) {
+console.error('Error:', error);
+errorMsg.textContent = `Error: ${error.message}. Check console for details.`;
+countBadge.textContent = 'Err';
+} finally {
+btn.disabled = false;
+btn.innerHTML = `Check ID <span id="countBadge">${countBadge.textContent}</span>`;
+}
+});
+function selectByRange() {
+const input = document.getElementById('chapterRange').value.trim();
+if (!input) {
+alert('Please enter a chapter range (e.g., 1-30 or 5,10,15)');
+return;
+}
+selectedChapters.clear();
+const chaptersToSelect = parseChapterRange(input);
+chaptersToSelect.forEach(chapterNum => {
+const chapter = filteredChapters.find(ch => {
+const chNum = parseFloat(ch.number);
+return !isNaN(chNum) && chNum === chapterNum;
+});
+if (chapter) {
+selectedChapters.add(chapter.chapter_id);
+}
+});
+renderChapters();
+updateCount();
+}
+function parseChapterRange(input) {
+const chapters = new Set();
+const parts = input.split(',').map(p => p.trim());
+parts.forEach(part => {
+if (part.includes('-')) {
+const [start, end] = part.split('-').map(n => parseFloat(n.trim()));
+if (!isNaN(start) && !isNaN(end)) {
+for (let i = Math.floor(start); i <= Math.floor(end); i++) {
+chapters.add(i);
+}
+}
+} else {
+const num = parseFloat(part);
+if (!isNaN(num)) {
+chapters.add(Math.floor(num));
+}
+}
+});
+return Array.from(chapters).sort((a, b) => a - b);
+}
+
+// ============ BATCH DOWNLOAD WITH SIZE SPLITTING ============
+async function startBatchDownload() {
+if (selectedChapters.size === 0) {
+alert('Please select at least one chapter');
+return;
+}
+if (isBatchDownloading) {
+if (!confirm('Download in progress. Cancel?')) return;
+batchDownloadCancelled = true;
+return;
+}
+
+isBatchDownloading = true;
+batchDownloadCancelled = false;
+downloadQueue = [];
+isProcessingQueue = false;
+updateCount();
+showConsole();
+clearConsole();
+
+const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
+.replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+
+logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
+logConsole(`📚 Manga: ${mangaDataCache?.title || 'Unknown'}`, 'info');
+logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
+logConsole(`⚡ Rate limit: ${RATE_LIMIT_PER_MINUTE} images/minute`, 'warning');
+
+let currentZip = new JSZip();
+let currentZipSize = 0;
+let zipIndex = 1;
+let completedChapters = 0;
+let chapterRanges = [];
+let currentRangeStart = null;
+let currentRangeEnd = null;
+
+const saveCurrentZip = async () => {
+if (currentZipSize === 0) return;
+const rangeStr = currentRangeStart && currentRangeEnd 
+? `c${String(currentRangeStart).padStart(3, '0')}-${String(currentRangeEnd).padStart(3, '0')}`
+: `part${zipIndex}`;
+const zipName = `${mangaTitle}_${rangeStr}.cbz`;
+logConsole(`💾 Saving ${zipName} (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
+const content = await currentZip.generateAsync({ type: 'blob' });
+saveAs(content, zipName);
+logConsole(`✓ Saved: ${zipName}`, 'success');
+chapterRanges.push({ start: currentRangeStart, end: currentRangeEnd });
+zipIndex++;
+currentZip = new JSZip();
+currentZipSize = 0;
+};
+
+try {
+for (let i = 0; i < selected.length; i++) {
+if (batchDownloadCancelled) {
+logConsole('❌ Download cancelled by user', 'error');
+break;
+}
+const chapter = selected[i];
+const chapterNum = parseFloat(chapter.number);
+const chapterName = chapter.name || '';
+logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''} (${i + 1}/${selected.length})`, 'info');
+
+if (currentRangeStart === null) currentRangeStart = chapterNum;
+currentRangeEnd = chapterNum;
+
+try {
+const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) {
+logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
+continue;
+}
+
+const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
+let chapterSize = 0;
+
+for (let j = 0; j < imageUrls.length; j++) {
+if (batchDownloadCancelled) break;
+const ext = imageUrls[j].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(j + 1).padStart(3, '0')}.${ext}`;
+try {
+const size = await downloadImageWithRateLimit(imageUrls[j], chapterFolder, fileName);
+chapterSize += size;
+currentZipSize += size;
+} catch (err) {
+logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
+}
+}
+
+logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
+completedChapters++;
+updateConsoleProgress(completedChapters, selected.length);
+
+// Check if we need to split
+if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
+logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), creating new archive...`, 'warning');
+await saveCurrentZip();
+currentRangeStart = chapterNum;
+}
+} catch (err) {
+logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
+}
+
+await new Promise(r => setTimeout(r, 100));
+}
+
+// Wait for queue to finish
+while (downloadQueue.length > 0) {
+await new Promise(r => setTimeout(r, 100));
+}
+
+// Save final ZIP
+if (currentZipSize > 0) {
+await saveCurrentZip();
+}
+
+logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${chapterRanges.length} archive(s)`, 'success');
+
+} catch (err) {
+logConsole(`❌ Fatal error: ${err.message}`, 'error');
+console.error(err);
+} finally {
+isBatchDownloading = false;
+batchDownloadCancelled = false;
+updateCount();
+document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
+}
+}
+
+// ============ INDIVIDUAL CHAPTER DOWNLOAD ============
+async function downloadChapter(chapterId, chapterNumber, chapterName) {
+if (isDownloading.has(chapterId)) return;
+const btn = event.target;
+const originalText = btn.innerHTML;
+try {
+isDownloading.add(chapterId);
+btn.disabled = true;
+btn.innerHTML = '⏳...';
+const progressEl = document.createElement('div');
+progressEl.className = 'download-progress';
+progressEl.style.cssText = 'font-size:11px;color:var(--text-secondary);margin-top:4px;';
+btn.parentNode.appendChild(progressEl);
+const chapterRes = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) throw new Error('No images found');
+const zip = new JSZip();
+const folder = zip.folder(`Ch.${chapterNumber}${chapterName ? ' - ' + chapterName : ''}`);
+let completed = 0;
+for (let i = 0; i < imageUrls.length; i++) {
+if (imageUrls[i]) {
+const ext = imageUrls[i].split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(i + 1).padStart(3, '0')}.${ext}`;
+const response = await fetch(WORKER_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ url: imageUrls[i] })
+});
+if (!response.ok) throw new Error(`Failed: ${response.status}`);
+const blob = await response.blob();
+folder.file(fileName, blob);
+completed++;
+progressEl.textContent = `📥 ${completed}/${imageUrls.length}`;
+await new Promise(r => setTimeout(r, RATE_LIMIT_DELAY_MS));
+}
+}
+progressEl.textContent = '🗜️ Creating ZIP...';
+const content = await zip.generateAsync({ type: 'blob' });
+const safeTitle = (document.getElementById('mangaTitle')?.textContent || 'manga')
+.replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+const zipName = `${safeTitle}_Ch.${chapterNumber}.zip`;
+saveAs(content, zipName);
+progressEl.textContent = '✓ Done!';
+setTimeout(() => progressEl.remove(), 2000);
+} catch (err) {
+console.error('Download error:', err);
+alert(`Download failed: ${err.message}`);
+if (btn.parentNode.querySelector('.download-progress')) {
+btn.parentNode.querySelector('.download-progress').remove();
+}
+} finally {
+isDownloading.delete(chapterId);
+btn.disabled = false;
+btn.innerHTML = originalText;
+}
+}
+
+async function fetchTermNames(termIds, type) {
+if (!termIds?.length) return [];
+const unknownIds = termIds.filter(id => !KNOWN_GENRE_IDS.has(Number(id)));
+if (!unknownIds.length) return [];
+try {
+const params = unknownIds.map(id => `ids[]=${id}`).join('&');
+const url = `${API_BASE}/terms?type=${type}&${params}`;
+const res = await fetchRetry(url);
+return (res.result?.items || []).map(item => item.title).filter(Boolean);
+} catch (err) {
+console.warn(`Failed to fetch ${type} terms:`, err);
+return [];
+}
+}
+
+async function fetchWithConcurrency(items, fetchFn, concurrency = 3, onProgress) {
+const results = [];
+const executing = new Set();
+for (let i = 0; i < items.length; i++) {
+const item = items[i];
+const promise = fetchFn(item, i, items.length).then(result => {
+executing.delete(promise);
+return result;
+});
+executing.add(promise);
+results.push(promise);
+if (executing.size >= concurrency) {
+await Promise.race(executing);
+}
+if (onProgress) onProgress(i + 1, items.length);
+}
+return Promise.all(results);
+}
+
+// ============ AUTO-FETCH FROM URL PARAM ============
+document.addEventListener('DOMContentLoaded', () => {
+const params = new URLSearchParams(window.location.search);
+const hrefParam = params.get('href');
+if (hrefParam) {
+try {
+const decodedUrl = decodeURIComponent(hrefParam.trim());
+if (decodedUrl.includes('/title/')) {
+const urlInput = document.getElementById('urlInput');
+urlInput.value = decodedUrl;
+setTimeout(() => {
+fetchManga();
+if (window.history.replaceState) {
+const cleanUrl = window.location.pathname;
+window.history.replaceState({}, document.title, cleanUrl);
+}
+}, 300);
+}
+} catch (e) {
+console.warn('Failed to parse href parameter:', e);
+}
+}
+});
+</script>
+</body>
+</html>
