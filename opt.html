@@ -26,10 +26,24 @@ color: var(--text-primary);
 min-height: 100vh;
 padding: 20px;
 }
-.container { max-width: 1000px; margin: 0 auto; }
-.header { text-align: center; margin-bottom: 30px; }
-.header h1 { font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
-.header p { color: var(--text-secondary); font-size: 14px; }
+.container {
+max-width: 1000px;
+margin: 0 auto;
+}
+.header {
+text-align: center;
+margin-bottom: 30px;
+}
+.header h1 {
+font-size: 28px;
+font-weight: 700;
+color: var(--accent);
+margin-bottom: 8px;
+}
+.header p {
+color: var(--text-secondary);
+font-size: 14px;
+}
 .upload-area {
 background: var(--bg-secondary);
 border: 2px dashed var(--border);
@@ -44,11 +58,76 @@ margin-bottom: 20px;
 border-color: var(--accent);
 background: rgba(224, 175, 104, 0.05);
 }
-.upload-area.has-file { border-style: solid; border-color: var(--success); }
-.upload-icon { font-size: 48px; margin-bottom: 16px; }
-.upload-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-.upload-subtitle { font-size: 13px; color: var(--text-secondary); }
+.upload-area.has-file {
+border-style: solid;
+border-color: var(--success);
+}
+.upload-icon {
+font-size: 48px;
+margin-bottom: 16px;
+}
+.upload-title {
+font-size: 18px;
+font-weight: 600;
+margin-bottom: 8px;
+}
+.upload-subtitle {
+font-size: 13px;
+color: var(--text-secondary);
+}
 #fileInput { display: none; }
+.queue-panel {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+display: none;
+}
+.queue-panel.active { display: block; }
+.queue-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 16px;
+}
+.queue-title {
+font-size: 14px;
+font-weight: 600;
+}
+.queue-stats {
+font-size: 12px;
+color: var(--text-secondary);
+}
+.queue-list {
+max-height: 200px;
+overflow-y: auto;
+background: var(--bg-primary);
+border-radius: 8px;
+padding: 8px;
+}
+.queue-item {
+display: flex;
+justify-content: space-between;
+align-items: center;
+padding: 8px 12px;
+background: var(--bg-tertiary);
+border-radius: 6px;
+margin-bottom: 4px;
+font-size: 12px;
+}
+.queue-item.processing { border-left: 3px solid var(--accent); }
+.queue-item.completed { border-left: 3px solid var(--success); }
+.queue-item.failed { border-left: 3px solid var(--error); }
+.queue-item-name {
+color: var(--text-primary);
+word-break: break-all;
+}
+.queue-item-status {
+color: var(--text-secondary);
+min-width: 80px;
+text-align: right;
+}
 .archive-info {
 background: var(--bg-secondary);
 border-radius: 12px;
@@ -77,7 +156,11 @@ text-transform: uppercase;
 letter-spacing: 0.5px;
 margin-bottom: 8px;
 }
-.info-value { font-size: 20px; font-weight: 700; color: var(--accent); }
+.info-value {
+font-size: 20px;
+font-weight: 700;
+color: var(--accent);
+}
 .info-value.success { color: var(--success); }
 .info-value.error { color: var(--error); }
 .archive-name {
@@ -90,7 +173,12 @@ border-radius: 8px;
 margin-bottom: 16px;
 word-break: break-all;
 }
-.btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn-group {
+display: flex;
+gap: 12px;
+justify-content: center;
+flex-wrap: wrap;
+}
 .btn {
 padding: 12px 32px;
 background: var(--accent);
@@ -113,7 +201,9 @@ color: var(--text-primary);
 border: 1px solid var(--border);
 }
 .btn-secondary:hover { background: var(--border); }
-.btn-success { background: var(--success); }
+.btn-success {
+background: var(--success);
+}
 .btn-success:hover { background: #a8d880; }
 .progress-panel {
 background: var(--bg-secondary);
@@ -130,8 +220,14 @@ justify-content: space-between;
 align-items: center;
 margin-bottom: 16px;
 }
-.progress-title { font-size: 14px; font-weight: 600; }
-.progress-stats { font-size: 12px; color: var(--text-secondary); }
+.progress-title {
+font-size: 14px;
+font-weight: 600;
+}
+.progress-stats {
+font-size: 12px;
+color: var(--text-secondary);
+}
 .progress-bar-container {
 height: 8px;
 background: var(--bg-tertiary);
@@ -167,7 +263,10 @@ gap: 8px;
 .console-line.success { color: var(--success); }
 .console-line.error { color: var(--error); }
 .console-line.warning { color: var(--accent); }
-.console-timestamp { color: var(--text-secondary); min-width: 70px; }
+.console-timestamp {
+color: var(--text-secondary);
+min-width: 70px;
+}
 .result-panel {
 background: var(--bg-secondary);
 border-radius: 12px;
@@ -195,7 +294,11 @@ color: var(--text-secondary);
 text-transform: uppercase;
 margin-bottom: 8px;
 }
-.result-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+.result-value {
+font-size: 24px;
+font-weight: 700;
+margin-bottom: 4px;
+}
 .result-value.before { color: var(--text-primary); }
 .result-value.after { color: var(--success); }
 .result-value.savings { color: var(--accent); }
@@ -243,8 +346,15 @@ display: grid;
 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 gap: 16px;
 }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 13px; color: var(--text-secondary); }
+.setting-item {
+display: flex;
+flex-direction: column;
+gap: 8px;
+}
+.setting-label {
+font-size: 13px;
+color: var(--text-secondary);
+}
 .setting-input {
 padding: 10px 12px;
 background: var(--bg-primary);
@@ -288,20 +398,9 @@ border-radius: 4px;
 .btn { width: 100%; justify-content: center; }
 .info-grid, .result-grid { grid-template-columns: 1fr; }
 }
-.rar-notice {
-background: rgba(224, 175, 104, 0.1);
-border: 1px solid var(--accent);
-border-radius: 8px;
-padding: 12px 16px;
-margin-bottom: 16px;
-font-size: 12px;
-color: var(--text-secondary);
-}
-.rar-notice strong { color: var(--accent); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/unrar-js@0.2.3/unrar.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -309,15 +408,21 @@ color: var(--text-secondary);
 <h1>📚 Manga Archive Optimizer</h1>
 <p>Upload CBZ/ZIP/RAR archives, optimize images to WebP (Q75), and reduce file size</p>
 </div>
-
 <!-- Upload Area -->
 <div class="upload-area" id="uploadArea">
 <div class="upload-icon">📦</div>
-<div class="upload-title">Drop Archive Here or Click to Upload</div>
-<div class="upload-subtitle">Supports: CBZ, ZIP, RAR, CBR (images: JPG, PNG, WEBP, GIF)</div>
-<input type="file" id="fileInput" accept=".cbz,.zip,.rar,.cbr,.zipx">
+<div class="upload-title">Drop Archives Here or Click to Upload</div>
+<div class="upload-subtitle">Supports: CBZ, ZIP, RAR (images: JPG, PNG, WEBP, GIF) - Multiple files supported</div>
+<input type="file" id="fileInput" accept=".cbz,.zip,.rar,.cbr" multiple>
 </div>
-
+<!-- Queue Panel -->
+<div class="queue-panel" id="queuePanel">
+<div class="queue-header">
+<div class="queue-title">📋 Processing Queue</div>
+<div class="queue-stats" id="queueStats">0 files pending</div>
+</div>
+<div class="queue-list" id="queueList"></div>
+</div>
 <!-- Settings Panel -->
 <div class="settings-panel">
 <div class="settings-grid">
@@ -352,13 +457,9 @@ color: var(--text-secondary);
 </div>
 </div>
 </div>
-
 <!-- Archive Info -->
 <div class="archive-info" id="archiveInfo">
 <div class="archive-name" id="archiveName"></div>
-<div class="rar-notice" id="rarNotice" style="display:none">
-⚠️ <strong>RAR Note:</strong> Large archives may take longer to extract. Encrypted RAR files are not supported.
-</div>
 <div class="info-grid">
 <div class="info-card">
 <div class="info-label">Total Images</div>
@@ -382,11 +483,10 @@ color: var(--text-secondary);
 <span>⚡</span> Optimize Archive
 </button>
 <button class="btn btn-secondary" onclick="resetAll()">
-<span>🔄</span> Reset
+<span>🔄</span> Reset All
 </button>
 </div>
 </div>
-
 <!-- Progress Panel -->
 <div class="progress-panel" id="progressPanel">
 <div class="progress-header">
@@ -398,7 +498,6 @@ color: var(--text-secondary);
 </div>
 <div class="console" id="console"></div>
 </div>
-
 <!-- Result Panel -->
 <div class="result-panel" id="resultPanel">
 <div class="result-grid">
@@ -418,7 +517,7 @@ color: var(--text-secondary);
 </div>
 <div class="btn-group">
 <button class="btn btn-success" id="downloadBtn" onclick="downloadOptimized()">
-<span>⬇</span> Download Optimized CBZ
+<span>⬇</span> Download Optimized ZIP
 </button>
 <button class="btn btn-secondary" onclick="resetAll()">
 <span>🔄</span> Start Over
@@ -427,29 +526,34 @@ color: var(--text-secondary);
 <div class="image-preview" id="imagePreview"></div>
 </div>
 </div>
-
 <script>
 // Global variables
+let fileQueue = [];
+let currentFileIndex = 0;
 let originalFile = null;
 let originalArchive = null;
-let archiveType = '';
 let optimizedArchive = null;
 let imageFiles = [];
+let processedImages = [];
 let originalSizeBytes = 0;
 let optimizedSizeBytes = 0;
 let isOptimizing = false;
 let isCancelled = false;
+let isQueueMode = false;
+let queueProcessing = false;
 
 // DOM Elements
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
+const queuePanel = document.getElementById('queuePanel');
+const queueList = document.getElementById('queueList');
+const queueStats = document.getElementById('queueStats');
 const archiveInfo = document.getElementById('archiveInfo');
 const progressPanel = document.getElementById('progressPanel');
 const resultPanel = document.getElementById('resultPanel');
 const consoleEl = document.getElementById('console');
 const optimizeBtn = document.getElementById('optimizeBtn');
 const downloadBtn = document.getElementById('downloadBtn');
-const rarNotice = document.getElementById('rarNotice');
 
 // Upload Area Events
 uploadArea.addEventListener('click', () => fileInput.click());
@@ -464,10 +568,10 @@ uploadArea.addEventListener('drop', (e) => {
 e.preventDefault();
 uploadArea.classList.remove('dragover');
 const files = e.dataTransfer.files;
-if (files.length > 0) handleFile(files[0]);
+if (files.length > 0) handleFiles(files);
 });
 fileInput.addEventListener('change', (e) => {
-if (e.target.files.length > 0) handleFile(e.target.files[0]);
+if (e.target.files.length > 0) handleFiles(e.target.files);
 });
 
 // Log to console
@@ -485,7 +589,7 @@ function clearConsole() {
 consoleEl.innerHTML = '';
 }
 
-// Format bytes to human readable
+// Format bytes
 function formatBytes(bytes, decimals = 2) {
 if (bytes === 0) return '0 Bytes';
 const k = 1024;
@@ -506,109 +610,120 @@ const ext = getFileExtension(filename);
 return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
 }
 
-// Extract RAR archive using unrar-js (browser-compatible)
-async function extractRarFile(file) {
-return new Promise((resolve, reject) => {
-log('📦 Extracting RAR archive...', 'info');
+// Update queue display
+function updateQueueDisplay() {
+queueList.innerHTML = '';
+let pending = 0;
+let completed = 0;
+let failed = 0;
 
-const reader = new FileReader();
-reader.onload = function(e) {
+for (let i = 0; i < fileQueue.length; i++) {
+const item = fileQueue[i];
+const div = document.createElement('div');
+div.className = 'queue-item';
+
+if (i < currentFileIndex) {
+div.classList.add(item.failed ? 'failed' : 'completed');
+completed++;
+} else if (i === currentFileIndex && isOptimizing) {
+div.classList.add('processing');
+} else {
+pending++;
+}
+
+div.innerHTML = `
+<span class="queue-item-name">${i + 1}. ${item.file.name}</span>
+<span class="queue-item-status">${i < currentFileIndex ? (item.failed ? '❌ Failed' : '✅ Done') : (i === currentFileIndex && isOptimizing ? '⏳ Processing' : '⏸ Pending')}</span>
+`;
+queueList.appendChild(div);
+}
+
+queueStats.textContent = `${pending} pending | ${completed} completed | ${failed} failed`;
+queuePanel.classList.toggle('active', fileQueue.length > 0);
+}
+
+// Handle multiple uploaded files
+function handleFiles(files) {
+const validFiles = Array.from(files).filter(f => {
+const ext = getFileExtension(f.name);
+return ['cbz', 'zip', 'rar', 'cbr'].includes(ext);
+});
+
+if (validFiles.length === 0) {
+alert('No valid archive files found. Please upload CBZ, ZIP, RAR, or CBR files.');
+return;
+}
+
+// Add to queue
+for (const file of validFiles) {
+fileQueue.push({ file: file, failed: false });
+}
+
+log(`📦 Added ${validFiles.length} file(s) to queue`, 'info');
+isQueueMode = fileQueue.length > 1;
+updateQueueDisplay();
+
+// Start processing if not already processing
+if (!queueProcessing && currentFileIndex < fileQueue.length) {
+queueProcessing = true;
+processNextFile();
+}
+}
+
+// Process next file in queue
+async function processNextFile() {
+if (currentFileIndex >= fileQueue.length) {
+log(`🎉 All ${fileQueue.length} files processed!`, 'success');
+isQueueMode = false;
+queueProcessing = false;
+currentFileIndex = 0;
+fileQueue = [];
+updateQueueDisplay();
+return;
+}
+
+const queueItem = fileQueue[currentFileIndex];
+log(`📁 Starting file ${currentFileIndex + 1}/${fileQueue.length}: ${queueItem.file.name}`, 'info');
+
 try {
-const buffer = e.target.result;
-
-// Use unrar-js synchronous API for browser
-// API: unrar(buffer, options)
-const options = {
-onProgress: function(data) {
-const percent = Math.round((data.currentBytesUnarchived / data.totalUncompressedBytesInArchive) * 100);
-log(`📊 RAR extraction: ${percent}%`, 'info');
-}
-};
-
-// Extract files from RAR buffer
-const unpackedFiles = unrar(buffer, options);
-
-if (!unpackedFiles || unpackedFiles.length === 0) {
-reject(new Error('No files extracted from RAR archive'));
-return;
-}
-
-// Filter and collect image files
-const imageFiles = [];
-for (const file of unpackedFiles) {
-if (file.filename && isImageFile(file.filename)) {
-// file.fileData is Uint8Array in browser build
-const blobData = file.fileData instanceof Uint8Array 
-? file.fileData 
-: new Uint8Array(file.fileData);
-const blob = new Blob([blobData], { type: 'application/octet-stream' });
-imageFiles.push({
-name: file.filename,
-blob: blob,
-size: blob.size
-});
-log(`✓ Extracted: ${file.filename}`, 'success');
-}
-}
-
-if (imageFiles.length === 0) {
-reject(new Error('No images found in RAR archive'));
-return;
-}
-
-resolve(imageFiles);
-
+await handleFile(queueItem.file, true);
 } catch (err) {
-console.error('RAR extraction error:', err);
-reject(new Error('Failed to extract RAR: ' + err.message));
+log(`❌ File error: ${err.message}`, 'error');
+queueItem.failed = true;
+updateQueueDisplay();
+currentFileIndex++;
+processNextFile();
 }
-};
-
-reader.onerror = () => reject(new Error('Failed to read RAR file'));
-reader.readAsArrayBuffer(file);
-});
 }
 
-// Handle uploaded file
-async function handleFile(file) {
+// Handle single file
+async function handleFile(file, fromQueue = false) {
+if (!fromQueue) {
 resetAll();
+} else {
+resetCurrentFile();
+}
+
 originalFile = file;
 const ext = getFileExtension(file.name);
 document.getElementById('archiveName').textContent = file.name;
 document.getElementById('archiveType').textContent = ext.toUpperCase();
 uploadArea.classList.add('has-file');
 
-// Show RAR notice if applicable
-rarNotice.style.display = (ext === 'rar' || ext === 'cbr') ? 'block' : 'none';
-
 try {
-log(`📦 Loading archive: ${file.name}`, 'info');
-originalSizeBytes = file.size;
-archiveType = ext;
-
-// Extract image files based on archive type
-imageFiles = [];
-
-if (ext === 'rar' || ext === 'cbr') {
-// Handle RAR/CBR files with unrar-js
-const extractedFiles = await extractRarFile(file);
-imageFiles = extractedFiles;
-} else {
-// Handle ZIP/CBZ files with JSZip
+log(`📦 Loading: ${file.name}`, 'info');
 originalArchive = await JSZip.loadAsync(file);
+originalSizeBytes = file.size;
+
+imageFiles = [];
 const entries = Object.keys(originalArchive.files);
 for (const filename of entries) {
 const zipEntry = originalArchive.files[filename];
 if (!zipEntry.dir && isImageFile(filename)) {
-imageFiles.push({
-name: filename,
-zipEntry: zipEntry
-});
-}
+imageFiles.push({ name: filename, zipEntry: zipEntry });
 }
 }
 
-// Sort images by name (natural sort)
 imageFiles.sort((a, b) => {
 const aNum = parseInt(a.name.match(/\d+/)?.[0] || '0');
 const bNum = parseInt(b.name.match(/\d+/)?.[0] || '0');
@@ -616,31 +731,41 @@ return aNum - bNum;
 });
 
 if (imageFiles.length === 0) {
-throw new Error('No images found in archive');
+throw new Error('No images found');
 }
 
-// Update UI
 document.getElementById('imageCount').textContent = imageFiles.length;
 document.getElementById('originalSize').textContent = formatBytes(originalSizeBytes);
-document.getElementById('archiveStatus').textContent = 'Ready to Optimize';
+document.getElementById('archiveStatus').textContent = 'Optimizing...';
 archiveInfo.classList.add('active');
+updateQueueDisplay();
 
 log(`✓ Found ${imageFiles.length} images`, 'success');
-log(`✓ Archive size: ${formatBytes(originalSizeBytes)}`, 'success');
-log(`✓ Archive type: ${ext.toUpperCase()}`, 'info');
+
+// Auto-start for queue mode
+if (isQueueMode) {
+await startOptimization(true);
+}
 
 } catch (err) {
 log(`❌ Error: ${err.message}`, 'error');
 document.getElementById('archiveStatus').textContent = 'Error';
 document.getElementById('archiveStatus').className = 'info-value error';
-alert(`Failed to load archive: ${err.message}\n\nNote: Encrypted or multi-volume RAR files are not supported.`);
+
+if (isQueueMode) {
+fileQueue[currentFileIndex].failed = true;
+updateQueueDisplay();
+currentFileIndex++;
+processNextFile();
+} else {
+alert(`Failed: ${err.message}`);
+}
 }
 }
 
 // Optimize single image
 async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
 return new Promise((resolve, reject) => {
-try {
 const img = new Image();
 const url = URL.createObjectURL(blob);
 
@@ -649,7 +774,6 @@ URL.revokeObjectURL(url);
 let width = img.width;
 let height = img.height;
 
-// Resize if needed
 if (maxWidth > 0 && width > maxWidth) {
 height = (height * maxWidth) / width;
 width = maxWidth;
@@ -659,59 +783,50 @@ width = (width * maxHeight) / height;
 height = maxHeight;
 }
 
-// Create canvas
 const canvas = document.createElement('canvas');
 canvas.width = width;
 canvas.height = height;
 const ctx = canvas.getContext('2d');
 ctx.drawImage(img, 0, 0, width, height);
 
-// Convert to target format
 canvas.toBlob((optimizedBlob) => {
 if (optimizedBlob) {
-// Change extension if format changed
 let newName = filename;
 const oldExt = getFileExtension(filename);
 if (outputFormat === 'webp' && oldExt !== 'webp') {
 newName = filename.replace(/\.[^.]+$/, '.webp');
-} else if (outputFormat === 'jpeg' && oldExt !== 'jpg' && oldExt !== 'jpeg') {
+} else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
 newName = filename.replace(/\.[^.]+$/, '.jpg');
 } else if (outputFormat === 'png' && oldExt !== 'png') {
 newName = filename.replace(/\.[^.]+$/, '.png');
 }
 resolve({ blob: optimizedBlob, name: newName, originalSize: blob.size, optimizedSize: optimizedBlob.size });
 } else {
-reject(new Error('Failed to optimize image'));
+reject(new Error('Failed to optimize'));
 }
 }, `image/${outputFormat}`, quality / 100);
 };
 
 img.onerror = () => {
 URL.revokeObjectURL(url);
-reject(new Error(`Failed to load image: ${filename}`));
+reject(new Error(`Failed to load: ${filename}`));
 };
-
 img.src = url;
-} catch (err) {
-reject(err);
-}
 });
 }
 
-// Process images with concurrency
+// Process with concurrency
 async function processWithConcurrency(items, processFn, concurrency) {
 const results = [];
 const executing = new Set();
 
 for (let i = 0; i < items.length; i++) {
 if (isCancelled) break;
-
 const item = items[i];
 const promise = processFn(item, i, items.length).then(result => {
 executing.delete(promise);
 return result;
 });
-
 executing.add(promise);
 results.push(promise);
 
@@ -724,15 +839,18 @@ return Promise.all(results);
 }
 
 // Start optimization
-async function startOptimization() {
+async function startOptimization(autoQueue = false) {
 if (isOptimizing || imageFiles.length === 0) return;
 
 isOptimizing = true;
 isCancelled = false;
 optimizeBtn.disabled = true;
+downloadBtn.disabled = true;
 archiveInfo.classList.remove('active');
 progressPanel.classList.add('active');
+resultPanel.classList.remove('active');
 clearConsole();
+processedImages = [];
 
 const quality = parseInt(document.getElementById('quality').value) || 75;
 const maxWidth = parseInt(document.getElementById('maxWidth').value) || 0;
@@ -742,10 +860,7 @@ const concurrency = parseInt(document.getElementById('concurrency').value) || 10
 
 log(`⚡ Starting optimization...`, 'info');
 log(`📊 Quality: ${quality}%, Format: ${outputFormat.toUpperCase()}`, 'info');
-log(`🔀 Concurrency: ${concurrency} images at once`, 'info');
-if (maxWidth > 0) log(`📏 Max Width: ${maxWidth}px`, 'info');
-if (maxHeight > 0) log(`📏 Max Height: ${maxHeight}px`, 'info');
-log(`📁 Total images: ${imageFiles.length}`, 'info');
+log(`📁 Images: ${imageFiles.length}`, 'info');
 
 optimizedArchive = new JSZip();
 let totalOriginalSize = 0;
@@ -757,91 +872,77 @@ try {
 const processImage = async (imageFile, index, total) => {
 if (isCancelled) throw new Error('Cancelled');
 
-const progressBar = document.getElementById('progressBar');
-const progressStats = document.getElementById('progressStats');
-
 try {
-log(`📥 Processing ${index + 1}/${total}: ${imageFile.name}`, 'info');
-
-// Get original image blob
-let originalBlob;
-if (imageFile.blob) {
-// From RAR extraction
-originalBlob = imageFile.blob;
-} else {
-// From ZIP extraction
-originalBlob = await imageFile.zipEntry.async('blob');
-}
+const originalBlob = await imageFile.zipEntry.async('blob');
 totalOriginalSize += originalBlob.size;
 
-// Optimize image
-const result = await optimizeImage(
-originalBlob,
-imageFile.name,
-quality,
-maxWidth,
-maxHeight,
-outputFormat
-);
+const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
 
-// Add to optimized archive
 optimizedArchive.file(result.name, result.blob);
 totalOptimizedSize += result.optimizedSize;
+processedImages.push(result);
 
 const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
-log(`✓ ${result.name} (${formatBytes(result.originalSize)} → ${formatBytes(result.optimizedSize)}, -${savings}%)`, 'success');
-
+log(`✓ ${result.name} (-${savings}%)`, 'success');
 processedCount++;
+
 } catch (err) {
-log(`❌ Failed: ${imageFile.name} - ${err.message}`, 'error');
+log(`❌ Failed: ${imageFile.name}`, 'error');
 failedCount++;
-// Add original file if optimization fails
 try {
-let originalBlob;
-if (imageFile.blob) {
-originalBlob = imageFile.blob;
-} else {
-originalBlob = await imageFile.zipEntry.async('blob');
-}
+const originalBlob = await imageFile.zipEntry.async('blob');
 optimizedArchive.file(imageFile.name, originalBlob);
 totalOptimizedSize += originalBlob.size;
-} catch (e) {
-log(`⚠️ Could not add original: ${imageFile.name}`, 'warning');
-}
+} catch (e) {}
 }
 
-// Update progress
 const percent = ((processedCount + failedCount) / total) * 100;
-progressBar.style.width = `${percent}%`;
-progressStats.textContent = `${processedCount + failedCount} / ${total} images (${failedCount > 0 ? failedCount + ' failed, ' : ''}${processedCount} optimized)`;
+document.getElementById('progressBar').style.width = `${percent}%`;
+document.getElementById('progressStats').textContent = `${processedCount + failedCount}/${total} (${processedCount} optimized)`;
 };
 
-// Process with concurrency
 await processWithConcurrency(imageFiles, processImage, concurrency);
-
 optimizedSizeBytes = totalOptimizedSize;
 
-// Generate optimized CBZ
-log('🗜️ Creating optimized CBZ archive...', 'info');
+log('🗜️ Creating ZIP...', 'info');
 const content = await optimizedArchive.generateAsync({
 type: 'blob',
 compression: 'DEFLATE',
 compressionOptions: { level: 9 }
 });
-
 optimizedArchive.blob = content;
 
-// Show results
 showResults(totalOriginalSize, totalOptimizedSize, processedCount, failedCount);
 
+// Queue mode: auto-download and continue
+if (autoQueue && isQueueMode) {
+await new Promise(resolve => setTimeout(resolve, 500));
+downloadOptimized(true);
+await new Promise(resolve => setTimeout(resolve, 1000));
+cleanupCurrentFile();
+currentFileIndex++;
+updateQueueDisplay();
+isOptimizing = false;
+processNextFile();
+return;
+}
+
 } catch (err) {
-log(`❌ Fatal error: ${err.message}`, 'error');
-console.error(err);
-alert(`Optimization failed: ${err.message}`);
-} finally {
+log(`❌ Fatal: ${err.message}`, 'error');
+if (autoQueue && isQueueMode) {
+fileQueue[currentFileIndex].failed = true;
+updateQueueDisplay();
+cleanupCurrentFile();
+currentFileIndex++;
+isOptimizing = false;
+processNextFile();
+return;
+}
+alert(`Failed: ${err.message}`);
+}
+
 isOptimizing = false;
 optimizeBtn.disabled = false;
-}
 }
 
 // Show results
@@ -857,59 +958,77 @@ document.getElementById('resultAfter').textContent = formatBytes(optimized);
 document.getElementById('resultSavings').textContent = formatBytes(savings);
 document.getElementById('savingsPercent').textContent = `-${savingsPercent}%`;
 
-log(`🎉 Optimization complete!`, 'success');
-log(`✅ Processed: ${processed} images`, 'success');
-if (failed > 0) log(`⚠️ Failed: ${failed} images`, 'warning');
-log(`💾 Original: ${formatBytes(original)}`, 'info');
-log(`💾 Optimized: ${formatBytes(optimized)}`, 'info');
-log(`💾 Saved: ${formatBytes(savings)} (${savingsPercent}%)`, 'success');
+log(`🎉 Complete! Saved ${savingsPercent}%`, 'success');
 
-// Show image preview (first 20 images)
+// Preview first 5 images
 const previewContainer = document.getElementById('imagePreview');
 previewContainer.innerHTML = '';
-const previewImages = imageFiles.slice(0, 20);
-for (const imgFile of previewImages) {
+processedImages.slice(0, 5).forEach(imgItem => {
 const div = document.createElement('div');
 div.className = 'preview-item';
 const img = document.createElement('img');
-img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%232f3549" width="100" height="100"/%3E%3Ctext x="50" y="55" text-anchor="middle" fill="%237982a9" font-size="12"%3E' + encodeURIComponent(imgFile.name) + '%3C/text%3E%3C/svg%3E';
+img.src = URL.createObjectURL(imgItem.blob);
 div.appendChild(img);
 previewContainer.appendChild(div);
-}
+});
 
 downloadBtn.disabled = false;
 }
 
-// Download optimized CBZ
-function downloadOptimized() {
-if (!optimizedArchive || !optimizedArchive.blob) {
-alert('No optimized archive available');
-return;
-}
-
-const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr|zipx)$/i, '');
-const newName = `${originalName}_optimized.cbz`;
-
+// Download
+function downloadOptimized(autoQueue = false) {
+if (!optimizedArchive || !optimizedArchive.blob) return;
+const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr)$/i, '');
+const newName = `${originalName}_ds.zip`;
 log(`⬇️ Downloading: ${newName}`, 'info');
 saveAs(optimizedArchive.blob, newName);
 }
 
-// Reset all
-function resetAll() {
-originalFile = null;
+// Cleanup current file
+function cleanupCurrentFile() {
+const previewContainer = document.getElementById('imagePreview');
+Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+});
+processedImages = [];
+originalArchive = null;
+optimizedArchive = null;
+imageFiles = [];
+log(`🧹 Memory cleared`, 'info');
+}
+
+// Reset current file only
+function resetCurrentFile() {
+const previewContainer = document.getElementById('imagePreview');
+Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+});
+processedImages = [];
 originalArchive = null;
 optimizedArchive = null;
 imageFiles = [];
 originalSizeBytes = 0;
 optimizedSizeBytes = 0;
+previewContainer.innerHTML = '';
+clearConsole();
+}
+
+// Reset all
+function resetAll() {
+cleanupCurrentFile();
+fileQueue = [];
+currentFileIndex = 0;
+originalFile = null;
 isOptimizing = false;
 isCancelled = false;
-archiveType = '';
+isQueueMode = false;
+queueProcessing = false;
 
 uploadArea.classList.remove('has-file');
 archiveInfo.classList.remove('active');
 progressPanel.classList.remove('active');
 resultPanel.classList.remove('active');
+queuePanel.classList.remove('active');
 fileInput.value = '';
 
 document.getElementById('imageCount').textContent = '0';
@@ -919,31 +1038,30 @@ document.getElementById('archiveStatus').textContent = 'Ready';
 document.getElementById('archiveStatus').className = 'info-value success';
 document.getElementById('progressBar').style.width = '0%';
 document.getElementById('progressStats').textContent = '0 / 0 images';
-document.getElementById('downloadBtn').disabled = true;
-rarNotice.style.display = 'none';
+downloadBtn.disabled = true;
 
+queueList.innerHTML = '';
+queueStats.textContent = '0 files pending';
 clearConsole();
-log('🔄 Ready for new archive', 'info');
+log('🔄 Ready', 'info');
 }
 
-// Cancel optimization
+// Cancel
 function cancelOptimization() {
 if (isOptimizing) {
 isCancelled = true;
-log('⚠️ Cancelling...', 'warning');
+isOptimizing = false;
+queueProcessing = false;
+log('⚠️ Cancelled', 'warning');
 optimizeBtn.disabled = false;
 }
 }
 
-// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-if (e.key === 'Escape' && isOptimizing) {
-cancelOptimization();
-}
+if (e.key === 'Escape' && isOptimizing) cancelOptimization();
 });
 
-// Initialize
-log('👋 Welcome! Upload a CBZ/ZIP/RAR archive to begin', 'info');
+log('👋 Welcome! Upload archives to begin', 'info');
 </script>
 </body>
 </html>
