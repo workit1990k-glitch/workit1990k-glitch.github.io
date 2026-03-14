@@ -725,8 +725,7 @@ const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
 let isDownloading = new Set();
 let isBatchDownloading = false;
 let batchDownloadCancelled = false;
-// 🔥 REMOVED: downloadQueue, isProcessingQueue, totalDownloadedBytes, totalImagesDownloaded
-let totalImages = 0;
+let totalImagesDownloaded = 0; // Unified name for console stats
 let totalDownloadedBytes = 0;
 const GENRE_MAP = {
 6: "Action", 87264: "Adult", 7: "Adventure", 9: "Comedy", 11: "Drama",
@@ -793,7 +792,7 @@ log.scrollTop = log.scrollHeight;
 function updateConsoleStats() {
 const sizeMB = totalDownloadedBytes / 1024 / 1024;
 document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
-document.getElementById('statImages').textContent = totalImages.toLocaleString();
+document.getElementById('statImages').textContent = totalImagesDownloaded.toLocaleString();
 }
 function updateConsoleProgress(current, total, images, sizeMB) {
     const percent = total > 0 ? (current / total) * 100 : 0;
@@ -1442,7 +1441,6 @@ async function startBatchDownload() {
     let currentZip = new JSZip();
     let currentZipSize = 0;
     let zipIndex = 1;
-    let totalImages = 0;
     let completedChapters = 0;
     let chapterRanges = [];
     let currentRangeStart = null;
