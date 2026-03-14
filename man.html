@@ -1328,47 +1328,52 @@ document.getElementById('urlInput').addEventListener('keypress', (e) => {
 if (e.key === 'Enter') fetchManga();
 });
 document.getElementById('checkBtn').addEventListener('click', async function() {
-const btn = this;
-const countBadge = document.getElementById('countBadge');
-const statusText = document.getElementById('statusText');
-const errorMsg = document.getElementById('errorMsg');
-const mangaInfoEl = document.querySelector('.manga-info');
-const mangaIdSpan = document.getElementById('mangaid');
-errorMsg.textContent = '';
-statusText.textContent = '';
-mangaInfoEl.classList.remove('found', 'not-found');
-btn.disabled = true;
-btn.innerHTML = 'Loading... <span id="countBadge">-</span>';
-try {
-const response = await fetch('https://github.com/workit1990k-glitch/workit1990k-glitch.github.io/raw/refs/heads/main/list.json');
-if (!response.ok) {
-throw new Error(`HTTP error! status: ${response.status}`);
-}
-const data = await response.json();
-const totalCount = Object.keys(data).length;
-countBadge.textContent = totalCount;
-const currentMangaId = mangaIdSpan?.textContent?.trim();
-if (!currentMangaId) {
-throw new Error('Could not find manga ID on page');
-}
-const isFound = data.hasOwnProperty(currentMangaId);
-if (isFound) {
-mangaInfoEl.classList.add('found');
-statusText.textContent = '✓ ID found in list';
-statusText.style.color = '#ff0000';
-} else {
-mangaInfoEl.classList.add('not-found');
-statusText.textContent = '✓ ID not in list';
-statusText.style.color = '#28a745';
-}
-} catch (error) {
-console.error('Error:', error);
-errorMsg.textContent = `Error: ${error.message}. Check console for details.`;
-countBadge.textContent = 'Err';
-} finally {
-btn.disabled = false;
-btn.innerHTML = `Check ID <span id="countBadge">${countBadge.textContent}</span>`;
-}
+    const btn = this;
+    const countBadge = document.getElementById('countBadge');
+    const statusText = document.getElementById('statusText');
+    const errorMsg = document.getElementById('errorMsg');
+    const mangaInfoEl = document.querySelector('.manga-info');
+    const mangaIdSpan = document.getElementById('mangaid');
+    
+    errorMsg.textContent = '';
+    statusText.textContent = '';
+    mangaInfoEl.classList.remove('found', 'not-found');
+    btn.disabled = true;
+    btn.innerHTML = 'Loading... <span id="countBadge">-</span>';
+    
+    try {
+        const response = await fetch('https://cdn.jsdelivr.net/gh/workit1990k-glitch/workit1990k-glitch.github.io@main/list.json');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        const totalCount = Object.keys(data).length;
+        countBadge.textContent = totalCount;
+        
+        const currentMangaId = mangaIdSpan?.textContent?.trim();
+        if (!currentMangaId) {
+            throw new Error('Could not find manga ID on page');
+        }
+        
+        const isFound = data.hasOwnProperty(currentMangaId);
+        if (isFound) {
+            mangaInfoEl.classList.add('found');
+            statusText.textContent = '✓ ID found in list';
+            statusText.style.color = '#ff0000';
+        } else {
+            mangaInfoEl.classList.add('not-found');
+            statusText.textContent = '✓ ID not in list';
+            statusText.style.color = '#28a745';
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        errorMsg.textContent = `Error: ${error.message}. Check console for details.`;
+        countBadge.textContent = 'Err';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `Check ID <span id="countBadge">${countBadge.textContent}</span>`;
+    }
 });
 function selectByRange() {
 const input = document.getElementById('chapterRange').value.trim();
