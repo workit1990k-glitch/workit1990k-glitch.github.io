@@ -1467,8 +1467,8 @@ async function startBatchDownload() {
         logConsole(`🗜️ Generating ZIP (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
         const content = await currentZip.generateAsync({
             type: 'blob',
-            compression: 'DEFLATE',
-            compressionOptions: { level: 6 }
+            compression: 'STORE', 
+            compressionOptions: { level: 0 }
         });
         zipsCreated++;
         
@@ -1579,6 +1579,10 @@ async function startBatchDownload() {
         await flushPendingZip();
         logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${zipsCreated} archive(s)`, 'success');
         updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, 0);
+
+          if (completedChapters > 0 && mangaDataCache) {
+            await saveMangaToList();
+        }
     } catch (err) {
         logConsole(`❌ Fatal error: ${err.message}`, 'error');
         console.error(err);
