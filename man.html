@@ -1600,7 +1600,7 @@ async function startBatchDownload() {
         // Flush any pending ZIP
         await flushPendingZip();
         
-        logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImages} images, ${zipsCreated} archive(s)`, 'success');
+logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${totalImagesDownloaded} images, ${zipsCreated} archive(s)`, 'success');
         updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, 0);
         
     } catch (err) {
