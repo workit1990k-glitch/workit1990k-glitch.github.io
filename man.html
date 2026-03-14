@@ -1559,7 +1559,7 @@ async function startBatchDownload() {
     totalImagesDownloaded++;           // global ✓
     totalDownloadedBytes += size;      // global ✓
     updateConsoleStats();              // updates Images + Size display ✓
-    updateConsoleProgress(completedChapters, selected.length); // chapters only
+updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, totalDownloadedBytes / 1024 / 1024);
 })
                         .catch(err => {
                             executing.delete(promise);
