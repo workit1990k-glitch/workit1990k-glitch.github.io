@@ -1573,17 +1573,15 @@ async function startBatchDownload() {
                     }
                 }
                 
-                await Promise.all(executing);
-                
-                logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
-                completedChapters++;
-                
-                // Check if we need to split
-                if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
-                    logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), creating new archive...`, 'warning');
-                    await saveCurrentZip(false);
-                    currentRangeStart = chapterNum;
-                }
+await Promise.all(executing);
+logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages, ${(chapterSize / 1024 / 1024).toFixed(1)} MB)`, 'success');
+completedChapters++;
+currentZipSize += chapterSize;
+if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
+    logConsole(`📦 ZIP size limit reached (${(currentZipSize / 1024 / 1024).toFixed(1)} MB), creating new archive...`, 'warning');
+    await saveCurrentZip(false);
+    currentRangeStart = chapterNum;
+}
                 
             } catch (err) {
                 logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
