@@ -764,55 +764,75 @@ alert(`Failed: ${err.message}`);
 }
 
 // Optimize single image
+// Optimize single image
 async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
-return new Promise((resolve, reject) => {
-const img = new Image();
-const url = URL.createObjectURL(blob);
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(blob);
 
-img.onload = () => {
-URL.revokeObjectURL(url);
-let width = img.width;
-let height = img.height;
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            let width = img.width;
+            let height = img.height;
 
-if (maxWidth > 0 && width > maxWidth) {
-height = (height * maxWidth) / width;
-width = maxWidth;
-}
-if (maxHeight > 0 && height > maxHeight) {
-width = (width * maxHeight) / height;
-height = maxHeight;
-}
+            // Resize logic
+            if (maxWidth > 0 && width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            if (maxHeight > 0 && height > maxHeight) {
+                width = (width * maxHeight) / height;
+                height = maxHeight;
+            }
 
-const canvas = document.createElement('canvas');
-canvas.width = width;
-canvas.height = height;
-const ctx = canvas.getContext('2d');
-ctx.drawImage(img, 0, 0, width, height);
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
 
-canvas.toBlob((optimizedBlob) => {
-if (optimizedBlob) {
-let newName = filename;
-const oldExt = getFileExtension(filename);
-if (outputFormat === 'webp' && oldExt !== 'webp') {
-newName = filename.replace(/\.[^.]+$/, '.webp');
-} else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
-newName = filename.replace(/\.[^.]+$/, '.jpg');
-} else if (outputFormat === 'png' && oldExt !== 'png') {
-newName = filename.replace(/\.[^.]+$/, '.png');
-}
-resolve({ blob: optimizedBlob, name: newName, originalSize: blob.size, optimizedSize: optimizedBlob.size });
-} else {
-reject(new Error('Failed to optimize'));
-}
-}, `image/${outputFormat}`, quality / 100);
-};
+            canvas.toBlob((optimizedBlob) => {
+                if (optimizedBlob) {
+                    // 🎯 KEY CHANGE: Skip optimization if result is larger
+                    if (optimizedBlob.size >= blob.size) {
+                        resolve({ 
+                            blob: blob,  // Keep original
+                            name: filename,  // Keep original name/ext
+                            originalSize: blob.size, 
+                            optimizedSize: blob.size,
+                            wasSkipped: true  // Flag for logging
+                        });
+                        return;
+                    }
+                    
+                    let newName = filename;
+                    const oldExt = getFileExtension(filename);
+                    if (outputFormat === 'webp' && oldExt !== 'webp') {
+                        newName = filename.replace(/\.[^.]+$/, '.webp');
+                    } else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
+                        newName = filename.replace(/\.[^.]+$/, '.jpg');
+                    } else if (outputFormat === 'png' && oldExt !== 'png') {
+                        newName = filename.replace(/\.[^.]+$/, '.png');
+                    }
+                    resolve({ 
+                        blob: optimizedBlob, 
+                        name: newName, 
+                        originalSize: blob.size, 
+                        optimizedSize: optimizedBlob.size,
+                        wasSkipped: false
+                    });
+                } else {
+                    reject(new Error('Failed to optimize'));
+                }
+            }, `image/${outputFormat}`, quality / 100);
+        };
 
-img.onerror = () => {
-URL.revokeObjectURL(url);
-reject(new Error(`Failed to load: ${filename}`));
-};
-img.src = url;
-});
+        img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error(`Failed to load: ${filename}`));
+        };
+        img.src = url;
+    });
 }
 
 // Process with concurrency
@@ -870,35 +890,40 @@ let failedCount = 0;
 
 try {
 const processImage = async (imageFile, index, total) => {
-if (isCancelled) throw new Error('Cancelled');
+    if (isCancelled) throw new Error('Cancelled');
 
-try {
-const originalBlob = await imageFile.zipEntry.async('blob');
-totalOriginalSize += originalBlob.size;
+    try {
+        const originalBlob = await imageFile.zipEntry.async('blob');
+        totalOriginalSize += originalBlob.size;
 
-const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
+        const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
 
-optimizedArchive.file(result.name, result.blob);
-totalOptimizedSize += result.optimizedSize;
-processedImages.push(result);
+        optimizedArchive.file(result.name, result.blob);
+        totalOptimizedSize += result.optimizedSize;
+        processedImages.push(result);
 
-const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
-log(`✓ ${result.name} (-${savings}%)`, 'success');
-processedCount++;
+        // 🎯 Updated logging with skip detection
+        if (result.wasSkipped) {
+            log(`⊘ ${imageFile.name} (skipped - no size benefit)`, 'warning');
+        } else {
+            const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
+            log(`✓ ${result.name} (-${savings}%)`, 'success');
+        }
+        processedCount++;
 
-} catch (err) {
-log(`❌ Failed: ${imageFile.name}`, 'error');
-failedCount++;
-try {
-const originalBlob = await imageFile.zipEntry.async('blob');
-optimizedArchive.file(imageFile.name, originalBlob);
-totalOptimizedSize += originalBlob.size;
-} catch (e) {}
-}
+    } catch (err) {
+        log(`❌ Failed: ${imageFile.name}`, 'error');
+        failedCount++;
+        try {
+            const originalBlob = await imageFile.zipEntry.async('blob');
+            optimizedArchive.file(imageFile.name, originalBlob);
+            totalOptimizedSize += originalBlob.size;
+        } catch (e) {}
+    }
 
-const percent = ((processedCount + failedCount) / total) * 100;
-document.getElementById('progressBar').style.width = `${percent}%`;
-document.getElementById('progressStats').textContent = `${processedCount + failedCount}/${total} (${processedCount} optimized)`;
+    const percent = ((processedCount + failedCount) / total) * 100;
+    document.getElementById('progressBar').style.width = `${percent}%`;
+    document.getElementById('progressStats').textContent = `${processedCount + failedCount}/${total} (${processedCount} optimized)`;
 };
 
 await processWithConcurrency(imageFiles, processImage, concurrency);
