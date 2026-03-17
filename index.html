@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manga Archive Optimizer</title>
+<title>Downloader 4</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -17,949 +17,1770 @@
 --success: #9ece6a;
 --border: #414868;
 --error: #f7768e;
---info: #7aa2f7;
 }
 body {
 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 background: var(--bg-primary);
 color: var(--text-primary);
 min-height: 100vh;
-padding: 20px;
 }
-.container { max-width: 1000px; margin: 0 auto; }
-.header { text-align: center; margin-bottom: 30px; }
-.header h1 { font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
-.header p { color: var(--text-secondary); font-size: 14px; }
-.upload-area {
+.header {
 background: var(--bg-secondary);
-border: 2px dashed var(--border);
-border-radius: 12px;
-padding: 60px 40px;
-text-align: center;
-cursor: pointer;
-transition: all 0.3s;
-margin-bottom: 20px;
-}
-.upload-area:hover, .upload-area.dragover {
-border-color: var(--accent);
-background: rgba(224, 175, 104, 0.05);
-}
-.upload-area.has-file { border-style: solid; border-color: var(--success); }
-.upload-icon { font-size: 48px; margin-bottom: 16px; }
-.upload-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-.upload-subtitle { font-size: 13px; color: var(--text-secondary); }
-#fileInput { display: none; }
-.queue-panel {
-background: var(--bg-secondary);
-border-radius: 12px;
-border: 1px solid var(--border);
-padding: 20px;
-margin-bottom: 20px;
-display: none;
-}
-.queue-panel.active { display: block; }
-.queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.queue-title { font-size: 14px; font-weight: 600; }
-.queue-stats { font-size: 12px; color: var(--text-secondary); }
-.queue-list {
-max-height: 200px;
-overflow-y: auto;
-background: var(--bg-primary);
-border-radius: 8px;
-padding: 8px;
-}
-.queue-item {
+padding: 12px 24px;
+border-bottom: 1px solid var(--border);
 display: flex;
-justify-content: space-between;
 align-items: center;
-padding: 8px 12px;
-background: var(--bg-tertiary);
-border-radius: 6px;
-margin-bottom: 4px;
-font-size: 12px;
+justify-content: center;
+gap: 20px;
 }
-.queue-item.processing { border-left: 3px solid var(--accent); }
-.queue-item.completed { border-left: 3px solid var(--success); }
-.queue-item.failed { border-left: 3px solid var(--error); }
-.queue-item-name { color: var(--text-primary); word-break: break-all; }
-.queue-item-status { color: var(--text-secondary); min-width: 80px; text-align: right; }
-.archive-info {
-background: var(--bg-secondary);
-border-radius: 12px;
+.url-input-container {
+display: flex;
+gap: 10px;
+width: 100%;
+max-width: 900px;
+}
+#urlInput {
+flex: 1;
+padding: 10px 16px;
+background: var(--bg-primary);
 border: 1px solid var(--border);
-padding: 20px;
-margin-bottom: 20px;
-display: none;
-}
-.archive-info.active { display: block; }
-.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
-.info-card { background: var(--bg-tertiary); border-radius: 8px; padding: 16px; text-align: center; }
-.info-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-.info-value { font-size: 20px; font-weight: 700; color: var(--accent); }
-.info-value.success { color: var(--success); }
-.info-value.error { color: var(--error); }
-.archive-name {
+border-radius: 6px;
+color: var(--text-primary);
 font-size: 14px;
-color: var(--text-secondary);
-text-align: center;
-padding: 12px;
-background: var(--bg-tertiary);
-border-radius: 8px;
-margin-bottom: 16px;
-word-break: break-all;
+outline: none;
+transition: border-color 0.2s;
 }
-.btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+#urlInput:focus { border-color: var(--accent); }
 .btn {
-padding: 12px 32px;
+padding: 10px 24px;
 background: var(--accent);
 color: var(--bg-primary);
 border: none;
+border-radius: 6px;
+font-weight: 600;
+cursor: pointer;
+font-size: 13px;
+transition: background 0.2s;
+}
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary {
+background: var(--bg-tertiary);
+color: var(--text-primary);
+border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
+.btn-copy {
+background: var(--success);
+padding: 8px 16px;
+font-size: 12px;
+}
+.btn-copy:hover { background: #a8d880; }
+.container {
+display: flex;
+padding: 20px;
+gap: 20px;
+max-width: 1600px;
+margin: 0 auto;
+}
+.sidebar { width: 280px; flex-shrink: 0; }
+.manga-cover {
+width: 100%;
 border-radius: 8px;
+overflow: hidden;
+margin-bottom: 16px;
+box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.manga-cover img { width: 100%; height: auto; display: block; }
+.manga-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; line-height: 1.3; }
+.manga-info { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.manga-info span { color: var(--text-primary); font-weight: 500; }
+.manga-description {
+font-size: 12px;
+color: var(--text-secondary);
+line-height: 1.6;
+margin-top: 12px;
+max-height: 150px;
+overflow-y: auto;
+}
+#previewPanel {
+display: none;
+margin-top: 20px;
+background: var(--bg-secondary);
+border-radius: 8px;
+border: 1px solid var(--border);
+overflow: hidden;
+transition: all 0.2s ease;
+}
+#previewPanel .preview-header {
+padding: 12px 16px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+#previewPanel .preview-title {
 font-weight: 600;
 font-size: 14px;
+}
+#previewPanel .preview-btn-close {
+padding: 6px 12px;
+font-size: 12px;
+}
+#previewLoading {
+padding: 20px;
+text-align: center;
+color: var(--text-secondary);
+}
+#previewLoading .spinner {
+width: 30px;
+height: 30px;
+margin: 0 auto 12px;
+}
+#previewError {
+padding: 16px;
+color: var(--error);
+text-align: center;
+}
+#previewFrame {
+width: 100%;
+height: 500px;
+border: none;
+background: var(--bg-primary);
+display: none;
+border-radius: 0 0 8px 8px;
+}
+.chapters-panel {
+flex: 1;
+background: var(--bg-secondary);
+border-radius: 8px;
+border: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+min-height: 600px;
+}
+.chapters-header {
+padding: 16px 20px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.chapters-title {
+font-size: 16px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+.chapters-count { font-size: 13px; color: var(--text-secondary); }
+.chapters-list {
+flex: 1;
+overflow-y: auto;
+padding: 12px;
+}
+.chapter-item {
+display: flex;
+align-items: center;
+padding: 12px;
+margin-bottom: 4px;
+border-radius: 6px;
 cursor: pointer;
-transition: all 0.2s;
+transition: background 0.15s;
+flex-wrap: wrap;
+gap: 8px;
+}
+.chapter-item:hover { background: var(--bg-tertiary); }
+.chapter-item.selected {
+background: rgba(224, 175, 104, 0.15);
+border: 1px solid var(--accent);
+}
+.chapter-checkbox {
+margin-right: 8px;
+width: 18px;
+height: 18px;
+cursor: pointer;
+accent-color: var(--accent);
+flex-shrink: 0;
+}
+.chapter-info {
+flex: 1;
+min-width: 0;
+}
+.chapter-number { font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.chapter-group { font-size: 12px; color: var(--text-secondary); }
+.chapter-group.official { color: var(--success); }
+.btn-preview {
+padding: 6px 14px;
+font-size: 11px;
+margin-left: 8px;
+flex-shrink: 0;
+}
+.footer {
+background: var(--bg-secondary);
+border-top: 1px solid var(--border);
+padding: 16px 20px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+gap: 20px;
+}
+.footer-left { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.footer-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.select-count { font-size: 13px; color: var(--text-secondary); }
+.select-count strong { color: var(--accent); }
+select {
+padding: 8px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 13px;
+outline: none;
+cursor: pointer;
+}
+select:focus { border-color: var(--accent); }
+.btn-show-json {
+padding: 12px 24px;
+font-size: 14px;
+display: flex;
+align-items: center;
+gap: 8px;
+background: var(--success);
+}
+.btn-show-json:hover { background: #a8d880; }
+.loading {
+display: none;
+text-align: center;
+padding: 40px;
+color: var(--text-secondary);
+}
+.loading.active { display: block; }
+.spinner {
+width: 40px;
+height: 40px;
+border: 3px solid var(--border);
+border-top-color: var(--accent);
+border-radius: 50%;
+animation: spin 1s linear infinite;
+margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.modal-overlay {
+display: none;
+position: fixed;
+top: 0; left: 0; right: 0; bottom: 0;
+background: rgba(0,0,0,0.7);
+z-index: 1000;
+align-items: center;
+justify-content: center;
+padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+width: 100%;
+max-width: 900px;
+max-height: 85vh;
+display: flex;
+flex-direction: column;
+box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+}
+.modal-header {
+padding: 16px 20px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.modal-title {
+font-size: 16px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.5px;
+}
+.modal-close {
+background: none;
+border: none;
+color: var(--text-secondary);
+font-size: 24px;
+cursor: pointer;
+padding: 4px 8px;
+border-radius: 4px;
+}
+.modal-close:hover {
+background: var(--bg-tertiary);
+color: var(--text-primary);
+}
+.modal-body {
+flex: 1;
+overflow: hidden;
+display: flex;
+flex-direction: column;
+}
+.modal-loading {
+padding: 40px;
+text-align: center;
+color: var(--text-secondary);
+}
+.modal-error {
+padding: 20px;
+color: var(--error);
+text-align: center;
+}
+.json-container {
+flex: 1;
+overflow: auto;
+padding: 16px 20px;
+background: var(--bg-primary);
+font-family: 'Consolas', 'Monaco', monospace;
+font-size: 12px;
+line-height: 1.5;
+white-space: pre-wrap;
+word-break: break-all;
+}
+.modal-footer {
+padding: 12px 20px;
+border-top: 1px solid var(--border);
+display: flex;
+justify-content: flex-end;
+gap: 10px;
+background: var(--bg-secondary);
+}
+.copy-status {
+font-size: 12px;
+color: var(--success);
+margin-right: auto;
+align-self: center;
+opacity: 0;
+transition: opacity 0.3s;
+}
+.copy-status.show { opacity: 1; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb {
+background: var(--border);
+border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+@media (max-width: 900px) {
+.container { flex-direction: column; }
+.sidebar { width: 100%; }
+#previewFrame { height: 400px; }
+}
+@media (max-width: 600px) {
+.chapter-item {
+flex-direction: column;
+align-items: stretch;
+}
+.chapter-item > .btn-preview {
+margin-left: 26px;
+margin-top: 4px;
+align-self: flex-start;
+}
+.footer-left, .footer-right {
+flex-wrap: wrap;
+}
+}
+.manga-info.found { color: #ff0000 !important; }
+.manga-info.not-found { color: #28a745 !important; }
+.checker-container {
+display: flex;
+align-items: center;
+gap: 10px;
+margin: 20px 0;
+}
+#checkBtn {
+padding: 10px 20px;
+background: #007bff;
+color: white;
+border: none;
+border-radius: 5px;
+cursor: pointer;
+font-size: 14px;
+display: flex;
+align-items: center;
+gap: 8px;
+transition: background 0.2s;
+}
+#checkBtn:hover { background: #0056b3; }
+#checkBtn:disabled { background: #ccc; cursor: not-allowed; }
+#countBadge {
+background: #6c757d;
+color: white;
+padding: 2px 5px;
+border-radius: 10px;
+font-size: 12px;
+min-width: 24px;
+text-align: center;
+}
+.loading { color: #666; font-style: italic; }
+.error { color: #dc3545; font-size: 13px; margin-top: 5px; }
+.range-selector {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+#chapterRange {
+padding: 8px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 13px;
+width: 180px;
+outline: none;
+}
+#chapterRange:focus { border-color: var(--accent); }
+.btn-download {
+background: var(--success);
+padding: 6px 14px;
+font-size: 11px;
+margin-left: 8px;
+flex-shrink: 0;
+}
+.btn-download:hover { background: #a8d880; }
+.btn-download:disabled { opacity: 0.6; cursor: wait; }
+.btn-batch-download {
+background: var(--success);
+padding: 10px 20px;
+font-size: 13px;
 display: flex;
 align-items: center;
 gap: 8px;
 }
-.btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-.btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
-.btn-secondary:hover { background: var(--border); }
-.btn-success { background: var(--success); }
-.btn-success:hover { background: #a8d880; }
-.progress-panel {
+.btn-batch-download:hover { background: #a8d880; }
+.btn-batch-download:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ============ DOWNLOAD CONSOLE STYLES ============ */
+.download-console {
+position: fixed;
+bottom: 20px;
+right: 20px;
+width: 450px;
 background: var(--bg-secondary);
-border-radius: 12px;
 border: 1px solid var(--border);
-padding: 20px;
-margin-bottom: 20px;
-display: none;
-}
-.progress-panel.active { display: block; }
-.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.progress-title { font-size: 14px; font-weight: 600; }
-.progress-stats { font-size: 12px; color: var(--text-secondary); }
-.progress-bar-container {
-height: 8px;
-background: var(--bg-tertiary);
-border-radius: 4px;
-overflow: hidden;
-margin-bottom: 16px;
-}
-.progress-bar {
-height: 100%;
-background: linear-gradient(90deg, var(--accent), var(--success));
-border-radius: 4px;
-transition: width 0.3s;
-width: 0%;
-}
-.console {
-background: var(--bg-primary);
 border-radius: 8px;
+box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+z-index: 2000;
+display: none;
+flex-direction: column;
+overflow: hidden;
+}
+.download-console.active { display: flex; }
+.console-header {
+background: var(--bg-tertiary);
+padding: 10px 16px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+border-bottom: 1px solid var(--border);
+cursor: move;
+}
+.console-title {
+font-size: 13px;
+font-weight: 600;
+color: var(--text-primary);
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.console-controls {
+display: flex;
+gap: 8px;
+}
+.console-btn {
+background: var(--bg-primary);
 border: 1px solid var(--border);
-height: 300px;
-overflow-y: auto;
+color: var(--text-secondary);
+width: 24px;
+height: 24px;
+border-radius: 4px;
+cursor: pointer;
+font-size: 14px;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.console-btn:hover { background: var(--border); color: var(--text-primary); }
+.console-btn.close:hover { background: var(--error); color: white; }
+.console-body {
 padding: 12px;
+max-height: 300px;
+overflow-y: auto;
 font-family: 'Consolas', 'Monaco', monospace;
 font-size: 11px;
 }
-.console-line {
-padding: 4px 8px;
-margin-bottom: 2px;
-border-radius: 4px;
+.console-log {
 display: flex;
+flex-direction: column;
+gap: 4px;
+}
+.console-line {
+display: flex;
+align-items: flex-start;
 gap: 8px;
+padding: 4px 8px;
+border-radius: 4px;
+background: var(--bg-primary);
 }
 .console-line.info { color: var(--text-secondary); }
 .console-line.success { color: var(--success); }
 .console-line.error { color: var(--error); }
 .console-line.warning { color: var(--accent); }
-.console-timestamp { color: var(--text-secondary); min-width: 70px; }
-.result-panel {
-background: var(--bg-secondary);
-border-radius: 12px;
-border: 1px solid var(--border);
-padding: 20px;
-margin-bottom: 20px;
-display: none;
+.console-timestamp {
+color: var(--text-secondary);
+font-size: 10px;
+min-width: 70px;
 }
-.result-panel.active { display: block; }
-.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 20px; }
-.result-card { background: var(--bg-tertiary); border-radius: 8px; padding: 20px; text-align: center; }
-.result-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px; }
-.result-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
-.result-value.before { color: var(--text-primary); }
-.result-value.after { color: var(--success); }
-.result-value.savings { color: var(--accent); }
-.savings-badge {
-display: inline-block;
-background: var(--success);
-color: var(--bg-primary);
-padding: 4px 12px;
-border-radius: 20px;
-font-size: 12px;
-font-weight: 700;
+.console-progress-bar {
+height: 4px;
+background: var(--bg-primary);
+border-radius: 2px;
 margin-top: 8px;
+overflow: hidden;
 }
-.image-preview {
+.console-progress-fill {
+height: 100%;
+background: var(--success);
+transition: width 0.3s;
+}
+.console-stats {
 display: grid;
-grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+grid-template-columns: repeat(3, 1fr);
 gap: 8px;
-margin-top: 16px;
-max-height: 200px;
-overflow-y: auto;
-padding: 8px;
-background: var(--bg-primary);
-border-radius: 8px;
+padding: 12px;
+background: var(--bg-tertiary);
+border-top: 1px solid var(--border);
 }
-.preview-item { aspect-ratio: 1; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
-.preview-item img { width: 100%; height: 100%; object-fit: cover; }
-.settings-panel {
-background: var(--bg-secondary);
-border-radius: 12px;
-border: 1px solid var(--border);
-padding: 20px;
-margin-bottom: 20px;
+.stat-item {
+text-align: center;
 }
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 13px; color: var(--text-secondary); }
-.setting-input {
-padding: 10px 12px;
-background: var(--bg-primary);
-border: 1px solid var(--border);
-border-radius: 6px;
-color: var(--text-primary);
+.stat-value {
 font-size: 14px;
-outline: none;
+font-weight: 700;
+color: var(--accent);
 }
-.setting-input:focus { border-color: var(--accent); }
-.setting-select {
-padding: 10px 12px;
-background: var(--bg-primary);
-border: 1px solid var(--border);
-border-radius: 6px;
-color: var(--text-primary);
-font-size: 14px;
-outline: none;
-cursor: pointer;
-}
-.setting-select:focus { border-color: var(--accent); }
-.spinner {
-width: 20px;
-height: 20px;
-border: 2px solid var(--border);
-border-top-color: var(--accent);
-border-radius: 50%;
-animation: spin 1s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.hidden { display: none !important; }
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
-@media (max-width: 600px) {
-.btn-group { flex-direction: column; }
-.btn { width: 100%; justify-content: center; }
-.info-grid, .result-grid { grid-template-columns: 1fr; }
+.stat-label {
+font-size: 10px;
+color: var(--text-secondary);
+text-transform: uppercase;
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
-<div class="container">
 <div class="header">
-<h1>📚 Manga Archive Optimizer</h1>
-<p>Upload CBZ/ZIP/RAR archives, optimize images to WebP (Q75), and reduce file size</p>
+<div class="checker-container">
+<button id="checkBtn">
+Check ID
+<span id="countBadge">-</span>
+</button>
+<button id="saveToListBtn" class="btn btn-secondary" onclick="saveMangaToList()" title="Save manga ID and latest chapter to list.json">
+Save ID
+</button>
+<span id="saveStatus" style="font-size:12px;color:var(--success);margin-left:8px;"></span>
+<span id="statusText"></span>
 </div>
-
-<!-- Upload Area -->
-<div class="upload-area" id="uploadArea">
-<div class="upload-icon">📦</div>
-<div class="upload-title">Drop Archives Here or Click to Upload</div>
-<div class="upload-subtitle">Supports: CBZ, ZIP, RAR (images: JPG, PNG, WEBP, GIF) - Multiple files supported</div>
-<input type="file" id="fileInput" accept=".cbz,.zip,.rar,.cbr" multiple>
+<div class="url-input-container">
+<input type="text" id="urlInput" placeholder="Paste comix.to/title/... URL here">
+<button class="btn" id="fetchBtn" onclick="fetchManga()">FETCH</button>
 </div>
-
-<!-- Queue Panel -->
-<div class="queue-panel" id="queuePanel">
-<div class="queue-header">
-<div class="queue-title">📋 Processing Queue</div>
-<div class="queue-stats" id="queueStats">0 files pending</div>
 </div>
-<div class="queue-list" id="queueList"></div>
+<div class="container">
+<div class="sidebar">
+<div id="mangaInfo" style="display: none;">
+<div class="manga-cover">
+<img id="coverImg" src="" alt="Cover">
 </div>
-
-<!-- Settings Panel -->
-<div class="settings-panel">
-<div class="settings-grid">
-<div class="setting-item">
-<label class="setting-label">Output Format</label>
-<select class="setting-select" id="outputFormat">
-<option value="webp">WebP (Recommended)</option>
-<option value="jpeg">JPEG</option>
-<option value="png">PNG</option>
+<div class="manga-title" id="mangaTitle"></div>
+<div class="manga-info">Type: <span id="mangaType"></span></div>
+<div class="manga-info">Language: <span id="mangaLang"></span></div>
+<div class="manga-info">Status: <span id="mangaStatus"></span></div>
+<div class="manga-info">Year: <span id="mangaYear"></span></div>
+<div class="manga-info">Latest: <span id="mangaLatest"></span></div>
+<div class="manga-info">Followers: <span id="mangaFollowers"></span></div>
+<div class="manga-info">Id: <span id="mangaid"></span></div>
+<div class="manga-info" id="genresRow" style="display:none">Genres: <span id="mangaGenres"></span></div>
+<div class="manga-info" id="authorsRow" style="display:none">Authors: <span id="mangaAuthors"></span></div>
+<div class="manga-info" id="artistsRow" style="display:none">Artists: <span id="mangaArtists"></span></div>
+<div class="manga-description" id="mangaDesc"></div>
+</div>
+<div id="previewPanel">
+<div class="preview-header">
+<div class="preview-title">📖 Chapter Preview</div>
+<button class="btn btn-secondary preview-btn-close" onclick="closePreview()">✕ Close</button>
+</div>
+<div id="previewLoading" style="display: none;">
+<div class="spinner"></div>
+<div>Loading preview...</div>
+</div>
+<div id="previewError" style="display: none;"></div>
+<iframe id="previewFrame"></iframe>
+</div>
+</div>
+<div id="errorMsg" class="error"></div>
+<div class="chapters-panel">
+<div class="chapters-header">
+<div class="chapters-title">Chapters</div>
+<div class="chapters-count" id="chaptersCount">0 shown (of 0)</div>
+</div>
+<div class="loading" id="loading">
+<div class="spinner"></div>
+<div>Fetching chapters...</div>
+</div>
+<div class="chapters-list" id="chaptersList">
+<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+Enter a manga URL and click FETCH to load chapters
+</div>
+</div>
+<div class="footer">
+<div class="footer-left">
+<button class="btn btn-secondary" onclick="selectAll()">Select All</button>
+<div class="range-selector">
+<input type="text" id="chapterRange" placeholder="e.g., 1-30 or 5,10,15">
+<button class="btn btn-secondary" onclick="selectByRange()">Select Range</button>
+</div>
+<button class="btn btn-secondary" onclick="selectUniqueChapters()">Unique Only</button>
+<button class="btn btn-secondary" onclick="deselectAll()">None</button>
+<select id="scanlatorFilter" onchange="filterChapters()">
+<option value="">All Scanlators</option>
 </select>
 </div>
-<div class="setting-item">
-<label class="setting-label">Quality (1-100)</label>
-<input type="number" class="setting-input" id="quality" value="75" min="1" max="100">
-</div>
-<div class="setting-item">
-<label class="setting-label">Concurrency</label>
-<select class="setting-select" id="concurrency">
-<option value="5">5 images</option>
-<option value="10" selected>10 images</option>
-<option value="15">15 images</option>
-<option value="20">20 images</option>
-</select>
-</div>
-<div class="setting-item">
-<label class="setting-label">Max Width (px)</label>
-<input type="number" class="setting-input" id="maxWidth" value="0" min="0" placeholder="0 = No limit">
-</div>
-<div class="setting-item">
-<label class="setting-label">Max Height (px)</label>
-<input type="number" class="setting-input" id="maxHeight" value="0" min="0" placeholder="0 = No limit">
+<div class="footer-right">
+<div class="select-count"><strong id="selectedCount">0</strong> selected</div>
+<button class="btn btn-show-json" onclick="showJsonSelected()" id="showJsonBtn" disabled>
+<span>📋</span> SHOW JSON
+</button>
+<button class="btn btn-batch-download" onclick="startBatchDownload()" id="batchDownloadBtn" disabled>
+<span>⬇</span> DOWNLOAD SELECTED
+</button>
 </div>
 </div>
 </div>
-
-<!-- Archive Info -->
-<div class="archive-info" id="archiveInfo">
-<div class="archive-name" id="archiveName"></div>
-<div class="info-grid">
-<div class="info-card"><div class="info-label">Total Images</div><div class="info-value" id="imageCount">0</div></div>
-<div class="info-card"><div class="info-label">Original Size</div><div class="info-value" id="originalSize">0 MB</div></div>
-<div class="info-card"><div class="info-label">Archive Type</div><div class="info-value" id="archiveType">-</div></div>
-<div class="info-card"><div class="info-label">Status</div><div class="info-value success" id="archiveStatus">Ready</div></div>
 </div>
-<div class="btn-group">
-<button class="btn" id="optimizeBtn" onclick="startOptimization()"><span>⚡</span> Optimize Archive</button>
-<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Reset All</button>
+<!-- JSON Modal -->
+<div class="modal-overlay" id="jsonModal">
+<div class="modal">
+<div class="modal-header">
+<div class="modal-title">Chapter Images JSON</div>
+<button class="modal-close" onclick="closeJsonModal()">&times;</button>
 </div>
+<div class="modal-body">
+<div class="modal-loading" id="jsonLoading" style="display: none;">
+<div class="spinner"></div>
+<div>Fetching image links for <strong id="fetchingCount">0</strong> chapters...</div>
+<div style="font-size: 11px; margin-top: 8px; color: var(--text-secondary);" id="fetchProgress"></div>
 </div>
-
-<!-- Progress Panel -->
-<div class="progress-panel" id="progressPanel">
-<div class="progress-header">
-<div class="progress-title">⏳ Optimization in Progress...</div>
-<div class="progress-stats" id="progressStats">0 / 0 images</div>
+<div class="modal-error" id="jsonError" style="display: none;"></div>
+<pre class="json-container" id="jsonOutput"></pre>
 </div>
-<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
-<div class="console" id="console"></div>
-</div>
-
-<!-- Result Panel -->
-<div class="result-panel" id="resultPanel">
-<div class="result-grid">
-<div class="result-card"><div class="result-label">Original Size</div><div class="result-value before" id="resultBefore">0 MB</div></div>
-<div class="result-card"><div class="result-label">Optimized Size</div><div class="result-value after" id="resultAfter">0 MB</div></div>
-<div class="result-card"><div class="result-label">Space Saved</div><div class="result-value savings" id="resultSavings">0 MB</div><div class="savings-badge" id="savingsPercent">0%</div></div>
-</div>
-<div class="btn-group">
-<button class="btn btn-success" id="downloadBtn" onclick="downloadOptimized()"><span>⬇</span> Download Optimized ZIP</button>
-<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Start Over</button>
-</div>
-<div class="image-preview" id="imagePreview"></div>
+<div class="modal-footer">
+<span class="copy-status" id="copyStatus">✓ Copied to clipboard!</span>
+<button class="btn btn-secondary" onclick="closeJsonModal()">Close</button>
+<button class="btn btn-copy" id="copyJsonBtn" onclick="copyJsonToClipboard()">📋 Copy JSON</button>
 </div>
 </div>
-
+</div>
+<!-- Download Console -->
+<div class="download-console" id="downloadConsole">
+<div class="console-header" id="consoleHeader">
+<div class="console-title">
+<span>⬇</span> Download Progress
+</div>
+<div class="console-controls">
+<button class="console-btn" onclick="minimizeConsole()">−</button>
+<button class="console-btn close" onclick="closeConsole()">✕</button>
+</div>
+</div>
+<div class="console-body">
+<div class="console-log" id="consoleLog"></div>
+<div class="console-progress-bar">
+<div class="console-progress-fill" id="consoleProgressFill" style="width: 0%"></div>
+</div>
+</div>
+<div class="console-stats">
+<div class="stat-item">
+<div class="stat-value" id="statChapters">0/0</div>
+<div class="stat-label">Chapters</div>
+</div>
+<div class="stat-item">
+<div class="stat-value" id="statImages">0</div>
+<div class="stat-label">Images</div>
+</div>
+<div class="stat-item">
+<div class="stat-value" id="statSize">0.0 MB</div>
+<div class="stat-label">Size</div>
+</div>
+</div>
+</div>
 <script>
-// ============ GLOBAL VARIABLES ============
-let fileQueue = [];
-let currentFileIndex = 0;
-let originalFile = null;
-let originalArchive = null;
-let optimizedArchive = null;
-let imageFiles = [];
-let processedImages = [];
-let originalSizeBytes = 0;
-let optimizedSizeBytes = 0;
-let isOptimizing = false;
-let isCancelled = false;
-let isQueueMode = false;
-let queueProcessing = false;
-
-// ============ DOM ELEMENTS ============
-const uploadArea = document.getElementById('uploadArea');
-const fileInput = document.getElementById('fileInput');
-const queuePanel = document.getElementById('queuePanel');
-const queueList = document.getElementById('queueList');
-const queueStats = document.getElementById('queueStats');
-const archiveInfo = document.getElementById('archiveInfo');
-const progressPanel = document.getElementById('progressPanel');
-const resultPanel = document.getElementById('resultPanel');
-const consoleEl = document.getElementById('console');
-const optimizeBtn = document.getElementById('optimizeBtn');
-const downloadBtn = document.getElementById('downloadBtn');
-
-// ============ BATCHED LOGGING SYSTEM (Optimization #2) ============
-let logBuffer = [];
-let logFlushTimer = null;
-
-function log(message, type = 'info') {
-    logBuffer.push({ message, type, time: new Date() });
+const WORKER_URL = 'https://plain-night-1447-opt.yuush.workers.dev';
+const API_BASE = 'https://comix.to/api/v2';
+const HEADERS = { 'Referer': 'https://comix.to/', 'User-Agent': 'Mozilla/5.0' };
+const MAX_ZIP_SIZE_MB = 500;
+const MAX_ZIP_SIZE_BYTES = MAX_ZIP_SIZE_MB * 1024 * 1024;
+// 🔥 REMOVED: Rate limit constants (no more artificial delays)
+let isDownloading = new Set();
+let isBatchDownloading = false;
+let batchDownloadCancelled = false;
+let totalImagesDownloaded = 0; // Unified name for console stats
+let totalDownloadedBytes = 0;
+const GENRE_MAP = {
+6: "Action", 87264: "Adult", 7: "Adventure", 9: "Comedy", 11: "Drama",
+87265: "Ecchi", 12: "Fantasy", 14: "Historical", 15: "Horror", 16: "Isekai",
+87267: "Mature", 18: "Mecha", 20: "Mystery", 22: "Psychological", 23: "Romance",
+24: "Sci-Fi", 25: "Slice of Life", 87268: "Smut", 26: "Sports", 27: "Superhero",
+28: "Thriller", 29: "Tragedy", 30: "Wuxia"
+};
+const KNOWN_GENRE_IDS = new Set(Object.keys(GENRE_MAP).map(Number));
+let allChapters = [];
+let filteredChapters = [];
+let selectedChapters = new Set();
+let scanlators = new Set();
+let currentJsonData = null;
+let mangaDataCache = null;
+const extractCode = (url) => url.replace(/\/$/, '').split('/').pop()?.split('-')[0] || '';
+const fetchRetry = async (url, retries = 3, delay = 1000) => {
+for (let i = 1; i <= retries; i++) {
+try {
+const res = await fetch(url, { headers: HEADERS });
+if (!res.ok) throw new Error('HTTP ' + res.status);
+return await res.json();
+} catch (e) {
+if (i === retries) throw e;
+await new Promise(r => setTimeout(r, delay * i));
+}
+}
+};
+const fetchChapterWithRetry = async (chapterId, maxRetries = 3) => {
+for (let attempt = 1; attempt <= maxRetries; attempt++) {
+try {
+const res = await fetch(`${API_BASE}/chapters/${chapterId}/`, { headers: HEADERS });
+if (!res.ok) throw new Error('HTTP ' + res.status);
+return await res.json();
+} catch (err) {
+if (attempt === maxRetries) throw err;
+await new Promise(resolve => setTimeout(resolve, 5000));
+}
+}
+};
+// ============ CONSOLE FUNCTIONS ============
+function showConsole() {
+document.getElementById('downloadConsole').classList.add('active');
+}
+function closeConsole() {
+document.getElementById('downloadConsole').classList.remove('active');
+}
+function minimizeConsole() {
+const consoleEl = document.getElementById('downloadConsole');
+const body = consoleEl.querySelector('.console-body');
+const stats = consoleEl.querySelector('.console-stats');
+body.style.display = body.style.display === 'none' ? 'block' : 'none';
+stats.style.display = stats.style.display === 'none' ? 'grid' : 'none';
+}
+function logConsole(message, type = 'info') {
+const log = document.getElementById('consoleLog');
+const line = document.createElement('div');
+line.className = `console-line ${type}`;
+const timestamp = new Date().toLocaleTimeString();
+line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
+log.appendChild(line);
+log.scrollTop = log.scrollHeight;
+}
+function updateConsoleStats() {
+const sizeMB = totalDownloadedBytes / 1024 / 1024;
+document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
+document.getElementById('statImages').textContent = totalImagesDownloaded.toLocaleString();
+}
+function updateConsoleProgress(current, total, images, sizeMB) {
+    const percent = total > 0 ? (current / total) * 100 : 0;
+    document.getElementById('consoleProgressFill').style.width = `${percent}%`;
+    document.getElementById('statChapters').textContent = `${current}/${total}`;
     
-    // Debounce flush: wait up to 100ms or until 10 items accumulate
-    if (logFlushTimer) clearTimeout(logFlushTimer);
-    
-    if (logBuffer.length >= 10) {
-        flushLogs();
-    } else {
-        logFlushTimer = setTimeout(flushLogs, 100);
+    if (images !== undefined && images !== null) {
+        document.getElementById('statImages').textContent = images.toLocaleString();
+    }
+    if (sizeMB !== undefined && sizeMB !== null) {
+        document.getElementById('statSize').textContent = `${sizeMB.toFixed(1)} MB`;
     }
 }
-
-function flushLogs() {
-    if (logBuffer.length === 0) return;
-    
-    const fragment = document.createDocumentFragment();
-    
-    for (const { message, type, time } of logBuffer) {
-        const line = document.createElement('div');
-        line.className = `console-line ${type}`;
-        const timestamp = time.toLocaleTimeString();
-        line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
-        fragment.appendChild(line);
-    }
-    
-    consoleEl.appendChild(fragment);
-    consoleEl.scrollTop = consoleEl.scrollHeight;
-    logBuffer = [];
-    
-    if (logFlushTimer) {
-        clearTimeout(logFlushTimer);
-        logFlushTimer = null;
-    }
-}
-
-// Flush any remaining logs when page unloads
-window.addEventListener('beforeunload', flushLogs);
-
 function clearConsole() {
-    flushLogs(); // Flush first
-    consoleEl.innerHTML = '';
+    document.getElementById('consoleLog').innerHTML = '';
+    updateConsoleProgress(0, 0, 0, 0);  // ✅ Pass all 4 params
+    totalDownloadedBytes = 0;
+    totalImagesDownloaded = 0;
+    updateConsoleStats();
 }
-
-// ============ UTILITY FUNCTIONS ============
-function formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-function getFileExtension(filename) {
-    return filename.split('.').pop().toLowerCase();
-}
-
-function isImageFile(filename) {
-    const ext = getFileExtension(filename);
-    return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
-}
-
-// ============ DYNAMIC CONCURRENCY (Optimization #3) ============
-function getOptimalConcurrency() {
-    const userSetting = parseInt(document.getElementById('concurrency').value) || 10;
-    const hardwareCores = navigator.hardwareConcurrency || 4;
-    const memoryGB = navigator.deviceMemory || 4;
-    
-    // Conservative limits to prevent OOM
-    const coreLimit = Math.max(2, hardwareCores - 1); // Leave 1 core for UI
-    const memoryLimit = Math.max(2, Math.floor(memoryGB * 2)); // ~2 tasks per GB
-    
-    return Math.min(userSetting, coreLimit, memoryLimit, 20); // Cap at 20 max
-}
-
-// ============ QUEUE DISPLAY ============
-function updateQueueDisplay() {
-    queueList.innerHTML = '';
-    let pending = 0, completed = 0, failed = 0;
-
-    for (let i = 0; i < fileQueue.length; i++) {
-        const item = fileQueue[i];
-        const div = document.createElement('div');
-        div.className = 'queue-item';
-
-        if (i < currentFileIndex) {
-            div.classList.add(item.failed ? 'failed' : 'completed');
-            completed++;
-        } else if (i === currentFileIndex && isOptimizing) {
-            div.classList.add('processing');
-        } else {
-            pending++;
-        }
-
-        div.innerHTML = `
-            <span class="queue-item-name">${i + 1}. ${item.file.name}</span>
-            <span class="queue-item-status">${i < currentFileIndex ? (item.failed ? '❌ Failed' : '✅ Done') : (i === currentFileIndex && isOptimizing ? '⏳ Processing' : '⏸ Pending')}</span>
-        `;
-        queueList.appendChild(div);
-    }
-    queueStats.textContent = `${pending} pending | ${completed} completed | ${failed} failed`;
-    queuePanel.classList.toggle('active', fileQueue.length > 0);
-}
-
-// ============ FILE HANDLING ============
-uploadArea.addEventListener('click', () => fileInput.click());
-uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
-uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
-uploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadArea.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+// ============ DRAGGABLE CONSOLE ============
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+document.getElementById('consoleHeader').addEventListener('mousedown', (e) => {
+isDragging = true;
+const consoleEl = document.getElementById('downloadConsole');
+const rect = consoleEl.getBoundingClientRect();
+dragOffset.x = e.clientX - rect.left;
+dragOffset.y = e.clientY - rect.top;
+document.addEventListener('mousemove', onDrag);
+document.addEventListener('mouseup', stopDrag);
 });
-fileInput.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) handleFiles(e.target.files);
+function onDrag(e) {
+if (!isDragging) return;
+const consoleEl = document.getElementById('downloadConsole');
+const x = e.clientX - dragOffset.x;
+const y = e.clientY - dragOffset.y;
+consoleEl.style.left = `${x}px`;
+consoleEl.style.top = `${y}px`;
+consoleEl.style.right = 'auto';
+consoleEl.style.bottom = 'auto';
+}
+function stopDrag() {
+isDragging = false;
+document.removeEventListener('mousemove', onDrag);
+document.removeEventListener('mouseup', stopDrag);
+}
+async function fetchManga() {
+const url = document.getElementById('urlInput').value.trim();
+const btn = document.getElementById('fetchBtn');
+const loading = document.getElementById('loading');
+const list = document.getElementById('chaptersList');
+if (!url.includes('comix.to/title/')) {
+alert('Please enter a valid comix.to URL');
+return;
+}
+btn.disabled = true;
+loading.classList.add('active');
+list.innerHTML = '';
+allChapters = [];
+selectedChapters.clear();
+scanlators.clear();
+mangaDataCache = null;
+closePreview();
+['genresRow', 'authorsRow', 'artistsRow'].forEach(id => {
+const el = document.getElementById(id);
+if (el) {
+el.style.display = 'none';
+const span = el.querySelector('span');
+if (span) span.textContent = '';
+}
 });
-
-function handleFiles(files) {
-    const validFiles = Array.from(files).filter(f => {
-        const ext = getFileExtension(f.name);
-        return ['cbz', 'zip', 'rar', 'cbr'].includes(ext);
-    });
-
-    if (validFiles.length === 0) {
-        alert('No valid archive files found. Please upload CBZ, ZIP, RAR, or CBR files.');
-        return;
-    }
-
-    for (const file of validFiles) {
-        fileQueue.push({ file: file, failed: false });
-    }
-
-    log(`📦 Added ${validFiles.length} file(s) to queue`, 'info');
-    isQueueMode = fileQueue.length > 1;
-    updateQueueDisplay();
-
-    if (!queueProcessing && currentFileIndex < fileQueue.length) {
-        queueProcessing = true;
-        processNextFile();
-    }
+try {
+const code = extractCode(url);
+const mangaRes = await fetchRetry(`${API_BASE}/manga/${code}/`);
+const manga = mangaRes.result;
+mangaDataCache = manga;
+const termIds = manga.term_ids || [];
+const genreNames = [];
+const authorIds = [];
+const artistIds = [];
+for (const id of termIds) {
+const numId = Number(id);
+if (KNOWN_GENRE_IDS.has(numId)) {
+genreNames.push(GENRE_MAP[numId]);
+} else {
+authorIds.push(id);
+artistIds.push(id);
 }
-
-async function processNextFile() {
-    if (currentFileIndex >= fileQueue.length) {
-        log(`🎉 All ${fileQueue.length} files processed!`, 'success');
-        isQueueMode = false;
-        queueProcessing = false;
-        currentFileIndex = 0;
-        fileQueue = [];
-        updateQueueDisplay();
-        return;
-    }
-
-    const queueItem = fileQueue[currentFileIndex];
-    log(`📁 Starting file ${currentFileIndex + 1}/${fileQueue.length}: ${queueItem.file.name}`, 'info');
-
-    try {
-        await handleFile(queueItem.file, true);
-    } catch (err) {
-        log(`❌ File error: ${err.message}`, 'error');
-        queueItem.failed = true;
-        updateQueueDisplay();
-        currentFileIndex++;
-        processNextFile();
-    }
 }
-
-async function handleFile(file, fromQueue = false) {
-    if (!fromQueue) resetAll(); else resetCurrentFile();
-
-    originalFile = file;
-    const ext = getFileExtension(file.name);
-    document.getElementById('archiveName').textContent = file.name;
-    document.getElementById('archiveType').textContent = ext.toUpperCase();
-    uploadArea.classList.add('has-file');
-
-    try {
-        log(`📦 Loading: ${file.name}`, 'info');
-        originalArchive = await JSZip.loadAsync(file);
-        originalSizeBytes = file.size;
-
-        imageFiles = [];
-        const entries = Object.keys(originalArchive.files);
-        for (const filename of entries) {
-            const zipEntry = originalArchive.files[filename];
-            if (!zipEntry.dir && isImageFile(filename)) {
-                imageFiles.push({ name: filename, zipEntry: zipEntry });
-            }
-        }
-
-        imageFiles.sort((a, b) => {
-            const aNum = parseInt(a.name.match(/\d+/)?.[0] || '0');
-            const bNum = parseInt(b.name.match(/\d+/)?.[0] || '0');
-            return aNum - bNum;
-        });
-
-        if (imageFiles.length === 0) throw new Error('No images found');
-
-        document.getElementById('imageCount').textContent = imageFiles.length;
-        document.getElementById('originalSize').textContent = formatBytes(originalSizeBytes);
-        document.getElementById('archiveStatus').textContent = 'Optimizing...';
-        archiveInfo.classList.add('active');
-        updateQueueDisplay();
-
-        log(`✓ Found ${imageFiles.length} images`, 'success');
-
-        if (isQueueMode) await startOptimization(true);
-
-    } catch (err) {
-        log(`❌ Error: ${err.message}`, 'error');
-        document.getElementById('archiveStatus').textContent = 'Error';
-        document.getElementById('archiveStatus').className = 'info-value error';
-
-        if (isQueueMode) {
-            fileQueue[currentFileIndex].failed = true;
-            updateQueueDisplay();
-            currentFileIndex++;
-            processNextFile();
-        } else {
-            alert(`Failed: ${err.message}`);
-        }
-    }
+const [authors, artists] = await Promise.all([
+fetchTermNames(authorIds, 'author'),
+fetchTermNames(artistIds, 'artist')
+]);
+mangaDataCache.resolvedGenres = [...new Set(genreNames)];
+mangaDataCache.resolvedAuthors = [...new Set(authors)];
+mangaDataCache.resolvedArtists = [...new Set(artists)];
+document.getElementById('mangaInfo').style.display = 'block';
+document.getElementById('coverImg').src = manga.poster?.large || manga.poster?.medium || '';
+document.getElementById('mangaTitle').textContent = manga.title;
+document.getElementById('mangaType').textContent = manga.type || 'Unknown';
+document.getElementById('mangaLang').textContent = manga.original_language || 'Unknown';
+document.getElementById('mangaStatus').textContent = manga.status || 'Unknown';
+document.getElementById('mangaYear').textContent = manga.year || '?';
+document.getElementById('mangaLatest').textContent = manga.latest_chapter || '?';
+document.getElementById('mangaFollowers').textContent = manga.follows_total?.toLocaleString() || '0';
+document.getElementById('mangaid').textContent = manga.hash_id;
+document.getElementById('mangaDesc').textContent = manga.synopsis || 'No description available.';
+function updateInfoRow(rowId, spanId, items) {
+const row = document.getElementById(rowId);
+const span = document.getElementById(spanId);
+if (row && span && items?.length) {
+span.textContent = items.join(', ');
+row.style.display = 'block';
+} else if (row) {
+row.style.display = 'none';
 }
-
-// ============ IMAGE OPTIMIZATION WITH createImageBitmap (Optimization #1) ============
-async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
-    try {
-        // Use createImageBitmap for async decoding + optional resize
-        const bitmap = await createImageBitmap(blob, {
-            resizeWidth: maxWidth > 0 ? maxWidth : undefined,
-            resizeHeight: maxHeight > 0 ? maxHeight : undefined,
-            resizeQuality: 'high'
-        });
-
-        const width = bitmap.width;
-        const height = bitmap.height;
-
-        // Create canvas for conversion
-        const canvas = new OffscreenCanvas(width, height);
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, 0, 0, width, height);
-        bitmap.close(); // Free memory immediately
-
-        // Convert to target format
-        const optimizedBlob = await canvas.convertToBlob({
-            type: `image/${outputFormat}`,
-            quality: quality / 100
-        });
-
-        // 🎯 Skip if optimized is larger than original
-        if (optimizedBlob.size >= blob.size) {
-            return {
-                blob: blob,
-                name: filename,
-                originalSize: blob.size,
-                optimizedSize: blob.size,
-                wasSkipped: true
-            };
-        }
-
-        // Determine output filename
-        let newName = filename;
-        const oldExt = getFileExtension(filename);
-        if (outputFormat === 'webp' && oldExt !== 'webp') {
-            newName = filename.replace(/\.[^.]+$/, '.webp');
-        } else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
-            newName = filename.replace(/\.[^.]+$/, '.jpg');
-        } else if (outputFormat === 'png' && oldExt !== 'png') {
-            newName = filename.replace(/\.[^.]+$/, '.png');
-        }
-
-        return {
-            blob: optimizedBlob,
-            name: newName,
-            originalSize: blob.size,
-            optimizedSize: optimizedBlob.size,
-            wasSkipped: false
-        };
-
-    } catch (err) {
-        // Fallback: return original if optimization fails
-        console.warn(`Optimization failed for ${filename}, keeping original:`, err);
-        return {
-            blob: blob,
-            name: filename,
-            originalSize: blob.size,
-            optimizedSize: blob.size,
-            wasSkipped: true,
-            fallback: true
-        };
-    }
 }
-
-// ============ CONCURRENCY PROCESSING ============
-async function processWithConcurrency(items, processFn, concurrency) {
-    const results = [];
-    const executing = new Set();
-
-    for (let i = 0; i < items.length; i++) {
-        if (isCancelled) break;
-        const item = items[i];
-        
-        const promise = processFn(item, i, items.length).then(result => {
-            executing.delete(promise);
-            return result;
-        }).catch(err => {
-            executing.delete(promise);
-            throw err;
-        });
-        
-        executing.add(promise);
-        results.push(promise);
-
-        if (executing.size >= concurrency) {
-            await Promise.race(executing);
-        }
-    }
-    return Promise.all(results);
+updateInfoRow('genresRow', 'mangaGenres', mangaDataCache.resolvedGenres);
+updateInfoRow('authorsRow', 'mangaAuthors', mangaDataCache.resolvedAuthors);
+updateInfoRow('artistsRow', 'mangaArtists', mangaDataCache.resolvedArtists);
+let page = 1, hasMore = true;
+while (hasMore) {
+const chapRes = await fetchRetry(`${API_BASE}/manga/${code}/chapters?limit=100&page=${page}&order[number]=asc`);
+const items = chapRes.result?.items || [];
+if (!items.length) hasMore = false;
+else {
+allChapters.push(...items);
+items.forEach(ch => {
+const group = ch.scanlation_group?.name || 'Unknown';
+scanlators.add(group);
+});
+hasMore = items.length === 100;
+page++;
 }
-
-// ============ MAIN OPTIMIZATION FLOW ============
-async function startOptimization(autoQueue = false) {
-    if (isOptimizing || imageFiles.length === 0) return;
-
-    isOptimizing = true;
-    isCancelled = false;
-    optimizeBtn.disabled = true;
-    downloadBtn.disabled = true;
-    archiveInfo.classList.remove('active');
-    progressPanel.classList.add('active');
-    resultPanel.classList.remove('active');
-    clearConsole();
-    processedImages = [];
-
-    const quality = parseInt(document.getElementById('quality').value) || 75;
-    const maxWidth = parseInt(document.getElementById('maxWidth').value) || 0;
-    const maxHeight = parseInt(document.getElementById('maxHeight').value) || 0;
-    const outputFormat = document.getElementById('outputFormat').value;
-    // 🎯 Use dynamic concurrency
-    const concurrency = getOptimalConcurrency();
-
-    log(`⚡ Starting optimization (concurrency: ${concurrency})...`, 'info');
-    log(`📊 Quality: ${quality}%, Format: ${outputFormat.toUpperCase()}`, 'info');
-    log(`📁 Images: ${imageFiles.length}`, 'info');
-
-    optimizedArchive = new JSZip();
-    let totalOriginalSize = 0;
-    let totalOptimizedSize = 0;
-    let processedCount = 0;
-    let failedCount = 0;
-    let skippedCount = 0;
-
-    try {
-        const processImage = async (imageFile, index, total) => {
-            if (isCancelled) throw new Error('Cancelled');
-
-            try {
-                const originalBlob = await imageFile.zipEntry.async('blob');
-                totalOriginalSize += originalBlob.size;
-
-                const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
-
-                optimizedArchive.file(result.name, result.blob);
-                totalOptimizedSize += result.optimizedSize;
-                processedImages.push(result);
-
-                if (result.wasSkipped) {
-                    log(`⊘ ${imageFile.name} (kept original - no size benefit)`, 'warning');
-                    skippedCount++;
-                } else {
-                    const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
-                    log(`✓ ${result.name} (-${savings}%)`, 'success');
-                }
-                processedCount++;
-
-            } catch (err) {
-                log(`❌ Failed: ${imageFile.name}`, 'error');
-                failedCount++;
-                try {
-                    const originalBlob = await imageFile.zipEntry.async('blob');
-                    optimizedArchive.file(imageFile.name, originalBlob);
-                    totalOptimizedSize += originalBlob.size;
-                } catch (e) {}
-            }
-
-            const percent = ((processedCount + failedCount + skippedCount) / total) * 100;
-            document.getElementById('progressBar').style.width = `${percent}%`;
-            document.getElementById('progressStats').textContent = 
-                `${processedCount + failedCount + skippedCount}/${total} (${processedCount} optimized, ${skippedCount} skipped)`;
-        };
-
-        await processWithConcurrency(imageFiles, processImage, concurrency);
-        optimizedSizeBytes = totalOptimizedSize;
-
-        log('🗜️ Creating ZIP archive...', 'info');
-        const content = await optimizedArchive.generateAsync({
-            type: 'blob',
-            compression: 'DEFLATE',
-            compressionOptions: { level: 9 }
-        });
-        optimizedArchive.blob = content;
-
-        showResults(totalOriginalSize, totalOptimizedSize, processedCount, failedCount, skippedCount);
-
-        if (autoQueue && isQueueMode) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            downloadOptimized(true);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            cleanupCurrentFile();
-            currentFileIndex++;
-            updateQueueDisplay();
-            isOptimizing = false;
-            processNextFile();
-            return;
-        }
-
-    } catch (err) {
-        log(`❌ Fatal: ${err.message}`, 'error');
-        if (autoQueue && isQueueMode) {
-            fileQueue[currentFileIndex].failed = true;
-            updateQueueDisplay();
-            cleanupCurrentFile();
-            currentFileIndex++;
-            isOptimizing = false;
-            processNextFile();
-            return;
-        }
-        alert(`Failed: ${err.message}`);
-    }
-
-    isOptimizing = false;
-    optimizeBtn.disabled = false;
+await new Promise(r => setTimeout(r, 100));
 }
-
-// ============ RESULTS DISPLAY ============
-function showResults(original, optimized, processed, failed, skipped) {
-    progressPanel.classList.remove('active');
-    resultPanel.classList.add('active');
-
-    const savings = original - optimized;
-    const savingsPercent = original > 0 ? ((savings / original) * 100).toFixed(1) : 0;
-
-    document.getElementById('resultBefore').textContent = formatBytes(original);
-    document.getElementById('resultAfter').textContent = formatBytes(optimized);
-    document.getElementById('resultSavings').textContent = formatBytes(savings);
-    document.getElementById('savingsPercent').textContent = `-${savingsPercent}%`;
-
-    let summary = `🎉 Complete!`;
-    if (skipped > 0) summary += ` | ${skipped} kept original`;
-    if (failed > 0) summary += ` | ${failed} failed`;
-    log(`${summary} | Saved ${savingsPercent}%`, 'success');
-
-    // Preview first 5 images
-    const previewContainer = document.getElementById('imagePreview');
-    previewContainer.innerHTML = '';
-    processedImages.slice(0, 5).forEach(imgItem => {
-        const div = document.createElement('div');
-        div.className = 'preview-item';
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(imgItem.blob);
-        div.appendChild(img);
-        previewContainer.appendChild(div);
-    });
-
-    downloadBtn.disabled = false;
+allChapters.sort((a, b) => {
+const na = parseFloat(a.number);
+const nb = parseFloat(b.number);
+if (!isNaN(na) && !isNaN(nb)) return na - nb;
+return String(a.number).localeCompare(String(a.number), undefined, { numeric: true });
+});
+const filterSelect = document.getElementById('scanlatorFilter');
+filterSelect.innerHTML = '<option value="">All Scanlators</option>';
+Array.from(scanlators).sort().forEach(group => {
+const opt = document.createElement('option');
+opt.value = group;
+opt.textContent = group === 'Unknown' ? '• No Group •' : group;
+filterSelect.appendChild(opt);
+});
+filteredChapters = [...allChapters];
+renderChapters();
+updateCount();
+} catch (err) {
+alert('Error: ' + err.message);
+console.error(err);
+} finally {
+btn.disabled = false;
+loading.classList.remove('active');
 }
-
-// ============ DOWNLOAD & CLEANUP ============
-function downloadOptimized(autoQueue = false) {
-    if (!optimizedArchive || !optimizedArchive.blob) return;
-    const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr)$/i, '');
-    const newName = `${originalName}_optimized.zip`;
-    log(`⬇️ Downloading: ${newName}`, 'info');
-    saveAs(optimizedArchive.blob, newName);
 }
-
-function cleanupCurrentFile() {
-    const previewContainer = document.getElementById('imagePreview');
-    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
-        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-    });
-    processedImages = [];
-    originalArchive = null;
-    optimizedArchive = null;
-    imageFiles = [];
-    log(`🧹 Memory cleared`, 'info');
+function renderChapters() {
+const list = document.getElementById('chaptersList');
+list.innerHTML = '';
+if (filteredChapters.length === 0) {
+list.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--text-secondary);">No chapters found</div>';
+return;
 }
-
-function resetCurrentFile() {
-    const previewContainer = document.getElementById('imagePreview');
-    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
-        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-    });
-    processedImages = [];
-    originalArchive = null;
-    optimizedArchive = null;
-    imageFiles = [];
-    originalSizeBytes = 0;
-    optimizedSizeBytes = 0;
-    previewContainer.innerHTML = '';
-    clearConsole();
+filteredChapters.forEach(chapter => {
+const div = document.createElement('div');
+div.className = 'chapter-item' + (selectedChapters.has(chapter.chapter_id) ? ' selected' : '');
+div.onclick = (e) => {
+if (e.target.tagName !== 'INPUT' && !e.target.closest('.btn-preview') && !e.target.closest('.btn-download')) {
+toggleChapter(chapter.chapter_id);
 }
-
-function resetAll() {
-    cleanupCurrentFile();
-    fileQueue = [];
-    currentFileIndex = 0;
-    originalFile = null;
-    isOptimizing = false;
-    isCancelled = false;
-    isQueueMode = false;
-    queueProcessing = false;
-
-    uploadArea.classList.remove('has-file');
-    archiveInfo.classList.remove('active');
-    progressPanel.classList.remove('active');
-    resultPanel.classList.remove('active');
-    queuePanel.classList.remove('active');
-    fileInput.value = '';
-
-    document.getElementById('imageCount').textContent = '0';
-    document.getElementById('originalSize').textContent = '0 MB';
-    document.getElementById('archiveType').textContent = '-';
-    document.getElementById('archiveStatus').textContent = 'Ready';
-    document.getElementById('archiveStatus').className = 'info-value success';
-    document.getElementById('progressBar').style.width = '0%';
-    document.getElementById('progressStats').textContent = '0 / 0 images';
-    downloadBtn.disabled = true;
-
-    queueList.innerHTML = '';
-    queueStats.textContent = '0 files pending';
-    clearConsole();
-    log('🔄 Ready', 'info');
+};
+const group = chapter.scanlation_group?.name || 'Unknown';
+const isOfficial = chapter.is_official || group.toLowerCase() === 'official';
+div.innerHTML = `
+<input type="checkbox" class="chapter-checkbox"
+${selectedChapters.has(chapter.chapter_id) ? 'checked' : ''}
+onclick="event.stopPropagation(); toggleChapter('${chapter.chapter_id}')">
+<div class="chapter-info">
+<div class="chapter-number">Ch. ${chapter.number}${chapter.name ? ' — ' + chapter.name : ''}</div>
+<div class="chapter-group ${isOfficial ? 'official' : ''}">${group}</div>
+</div>
+<button class="btn btn-secondary btn-preview"
+onclick="event.stopPropagation(); previewChapter(${chapter.chapter_id})">
+👁 Preview
+</button>
+<button class="btn btn-secondary btn-download"
+onclick="event.stopPropagation(); downloadChapter('${chapter.chapter_id}', '${String(chapter.number).replace(/'/g, "\\'")}', '${chapter.name ? String(chapter.name).replace(/'/g, "\\'") : ''}')"
+title="Download chapter images"
+${isDownloading?.has(chapter.chapter_id) ? 'disabled' : ''}>
+${isDownloading?.has(chapter.chapter_id) ? '⏳...' : '⬇ Download'}
+</button>
+`;
+list.appendChild(div);
+});
+document.getElementById('chaptersCount').textContent = `${filteredChapters.length} shown (of ${allChapters.length})`;
 }
-
-function cancelOptimization() {
-    if (isOptimizing) {
-        isCancelled = true;
-        isOptimizing = false;
-        queueProcessing = false;
-        log('⚠️ Cancelled by user', 'warning');
-        optimizeBtn.disabled = false;
-    }
+function toggleChapter(id) {
+if (selectedChapters.has(id)) {
+selectedChapters.delete(id);
+} else {
+selectedChapters.add(id);
 }
-
+renderChapters();
+updateCount();
+}
+function selectAll() {
+filteredChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
+renderChapters();
+updateCount();
+}
+function deselectAll() {
+selectedChapters.clear();
+renderChapters();
+updateCount();
+}
+function selectUniqueChapters() {
+selectedChapters.clear();
+const seenChapterNums = new Set();
+filteredChapters.forEach(ch => {
+const chapterNum = parseFloat(ch.number);
+if (!isNaN(chapterNum) && chapterNum === Math.floor(chapterNum)) {
+if (!seenChapterNums.has(chapterNum)) {
+seenChapterNums.add(chapterNum);
+selectedChapters.add(ch.chapter_id);
+}
+}
+});
+renderChapters();
+updateCount();
+}
+function filterChapters() {
+const filter = document.getElementById('scanlatorFilter').value;
+if (!filter) {
+filteredChapters = [...allChapters];
+} else {
+filteredChapters = allChapters.filter(ch => {
+const group = ch.scanlation_group?.name || 'Unknown';
+return group === filter;
+});
+}
+renderChapters();
+updateCount();
+}
+function updateCount() {
+document.getElementById('selectedCount').textContent = selectedChapters.size;
+document.getElementById('showJsonBtn').disabled = selectedChapters.size === 0;
+document.getElementById('batchDownloadBtn').disabled = selectedChapters.size === 0 || isBatchDownloading;
+}
+// ============ PREVIEW FEATURE ============
+async function previewChapter(chapterId) {
+const panel = document.getElementById('previewPanel');
+const loading = document.getElementById('previewLoading');
+const error = document.getElementById('previewError');
+const iframe = document.getElementById('previewFrame');
+panel.style.display = 'block';
+loading.style.display = 'block';
+error.style.display = 'none';
+iframe.style.display = 'none';
+iframe.srcdoc = '';
+if (window.innerWidth <= 900) {
+panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+try {
+let chapter = allChapters.find(ch => ch.chapter_id == chapterId);
+if (!chapter) {
+console.log(`Chapter ${chapterId} not in cache, fetching directly...`);
+const chapterRes = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
+chapter = chapterRes.result;
+if (!chapter) throw new Error('Chapter not found in API response');
+}
+const chapterRes = await fetchChapterWithRetry(chapterId);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) {
+throw new Error('No images found for this chapter');
+}
+const htmlContent = buildPreviewHTML(chapter, imageUrls);
+iframe.srcdoc = htmlContent;
+iframe.onload = () => {
+loading.style.display = 'none';
+iframe.style.display = 'block';
+};
+} catch (err) {
+console.error('Preview error:', err);
+loading.style.display = 'none';
+error.textContent = 'Error loading preview: ' + err.message;
+error.style.display = 'block';
+}
+}
+function buildPreviewHTML(chapter, imageUrls) {
+const title = `Ch. ${chapter.number}${chapter.name ? ' — ' + chapter.name : ''}`;
+const group = chapter.scanlation_group?.name || 'Unknown';
+return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+background: #1a1b26;
+color: #c0caf5;
+padding: 16px;
+line-height: 1.5;
+}
+.header {
+position: sticky;
+top: 0;
+background: #24283b;
+padding: 12px 16px;
+border-radius: 8px;
+margin-bottom: 16px;
+border: 1px solid #414868;
+z-index: 10;
+}
+.chapter-title { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+.chapter-meta { font-size: 12px; color: #7982a9; }
+.pages-container {
+display: flex;
+flex-direction: column;
+gap: 12px;
+max-width: 900px;
+margin: 0 auto;
+}
+.page-card {
+background: #2f3549;
+border-radius: 8px;
+overflow: hidden;
+border: 1px solid #414868;
+}
+.page-card img {
+width: 100%;
+height: auto;
+display: block;
+max-height: 80vh;
+object-fit: contain;
+}
+.page-number {
+padding: 8px 12px;
+font-size: 11px;
+color: #7982a9;
+background: #24283b;
+text-align: center;
+}
+.loading-placeholder {
+min-height: 200px;
+display: flex;
+align-items: center;
+justify-content: center;
+color: #7982a9;
+font-size: 13px;
+}
+@media (min-width: 768px) {
+.pages-container {
+display: grid;
+grid-template-columns: repeat(2, 1fr);
+gap: 16px;
+}
+}
+</style>
+</head>
+<body>
+<div class="header">
+<div class="chapter-title">${title}</div>
+<div class="chapter-meta">${group} • ${imageUrls.length} pages</div>
+</div>
+<div class="pages-container">
+${imageUrls.map((url, idx) => `
+<div class="page-card">
+<img src="${WORKER_URL}?url=${encodeURIComponent(url)}" alt="Page ${idx + 1}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'loading-placeholder\\'>Failed to load image</div>'">
+<div class="page-number">Page ${idx + 1}</div>
+</div>
+`).join('')}
+</div>
+</body>
+</html>
+`;
+}
+function closePreview() {
+const panel = document.getElementById('previewPanel');
+const iframe = document.getElementById('previewFrame');
+panel.style.display = 'none';
+iframe.srcdoc = '';
+iframe.style.display = 'none';
+}
+// ============ JSON FEATURE ============
+function extractImageUrls(data) {
+if (Array.isArray(data)) {
+return data.map(item =>
+item.image_url || item.url || item.src || item.data || item
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.pages && Array.isArray(data.pages)) {
+return data.pages.map(page =>
+page.image_url || page.url || page.src || page.data || page
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.images && Array.isArray(data.images)) {
+return data.images.map(img =>
+img.image_url || img.url || img.src || img.data || img
+).filter(url => typeof url === 'string' && url.startsWith('http'));
+}
+if (data?.result) {
+return extractImageUrls(data.result);
+}
+return [];
+}
+async function showJsonSelected() {
+if (selectedChapters.size === 0) return;
+const modal = document.getElementById('jsonModal');
+const loading = document.getElementById('jsonLoading');
+const error = document.getElementById('jsonError');
+const output = document.getElementById('jsonOutput');
+const copyBtn = document.getElementById('copyJsonBtn');
+const progress = document.getElementById('fetchProgress');
+modal.classList.add('active');
+loading.style.display = 'block';
+error.style.display = 'none';
+output.textContent = '';
+copyBtn.disabled = true;
+document.getElementById('fetchingCount').textContent = selectedChapters.size;
+progress.textContent = '';
+try {
+const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+const mangaObj = {
+title: mangaDataCache?.title || document.getElementById('mangaTitle').textContent,
+url: document.getElementById('urlInput').value.trim(),
+cover: mangaDataCache?.poster?.large || mangaDataCache?.poster?.medium || '',
+description: mangaDataCache?.synopsis || document.getElementById('mangaDesc').textContent || '',
+type: mangaDataCache?.type || document.getElementById('mangaType').textContent || '',
+language: mangaDataCache?.original_language || document.getElementById('mangaLang').textContent || '',
+status: mangaDataCache?.status || document.getElementById('mangaStatus').textContent || '',
+year: mangaDataCache?.year || document.getElementById('mangaYear').textContent || '',
+latest_chapter: mangaDataCache?.latest_chapter || document.getElementById('mangaLatest').textContent || '',
+genres: mangaDataCache?.resolvedGenres || [],
+authors: mangaDataCache?.resolvedAuthors || [],
+artists: mangaDataCache?.resolvedArtists || []
+};
+const result = {
+manga: mangaObj,
+chapters: []
+};
+const fetchChapterData = async (chapter, index, total) => {
+progress.textContent = `Fetching ${index + 1} of ${total}: Ch. ${chapter.number}`;
+try {
+const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+const imageUrls = extractImageUrls(chapterRes);
+return {
+chapter_id: chapter.chapter_id,
+number: chapter.number,
+name: chapter.name || null,
+scanlation_group: chapter.scanlation_group?.name || 'Unknown',
+language: chapter.language || 'en',
+pages_count: imageUrls.length,
+images: imageUrls
+};
+} catch (err) {
+console.warn(`Failed to fetch images for chapter ${chapter.chapter_id}:`, err);
+return {
+chapter_id: chapter.chapter_id,
+number: chapter.number,
+name: chapter.name || null,
+scanlation_group: chapter.scanlation_group?.name || 'Unknown',
+error: `Failed to fetch images after retries: ${err.message}`,
+images: []
+};
+}
+};
+const CONCURRENCY = 4;
+const chapterResults = await fetchWithConcurrency(
+selected,
+fetchChapterData,
+CONCURRENCY,
+(done, total) => {
+progress.textContent = `Progress: ${done}/${total} chapters fetched`;
+}
+);
+result.chapters = chapterResults;
+currentJsonData = result;
+output.textContent = JSON.stringify(result, null, 2);
+copyBtn.disabled = false;
+} catch (err) {
+error.textContent = 'Error: ' + err.message;
+error.style.display = 'block';
+output.textContent = '';
+console.error(err);
+} finally {
+loading.style.display = 'none';
+}
+}
+function closeJsonModal() {
+document.getElementById('jsonModal').classList.remove('active');
+document.getElementById('copyStatus').classList.remove('show');
+currentJsonData = null;
+}
+async function copyJsonToClipboard() {
+if (!currentJsonData) return;
+try {
+await navigator.clipboard.writeText(JSON.stringify(currentJsonData, null, 2));
+const status = document.getElementById('copyStatus');
+status.classList.add('show');
+setTimeout(() => status.classList.remove('show'), 2000);
+} catch (err) {
+const textarea = document.createElement('textarea');
+textarea.value = JSON.stringify(currentJsonData, null, 2);
+document.body.appendChild(textarea);
+textarea.select();
+document.execCommand('copy');
+document.body.removeChild(textarea);
+const status = document.getElementById('copyStatus');
+status.classList.add('show');
+setTimeout(() => status.classList.remove('show'), 2000);
+}
+}
+document.getElementById('jsonModal').addEventListener('click', (e) => {
+if (e.target.id === 'jsonModal') closeJsonModal();
+});
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isOptimizing) cancelOptimization();
-});
-
-// Feature detection fallback for createImageBitmap
-if (typeof createImageBitmap === 'undefined') {
-    log('⚠️ createImageBitmap not supported - using fallback (slower)', 'warning');
-    // Fallback would use Image element (original code)
-    // For brevity, we keep the main path but you could add fallback here
+if (e.key === 'Escape') {
+closeJsonModal();
+closePreview();
 }
+});
+document.getElementById('urlInput').addEventListener('keypress', (e) => {
+if (e.key === 'Enter') fetchManga();
+});
+document.getElementById('checkBtn').addEventListener('click', async function() {
+    const btn = this;
+    const countBadge = document.getElementById('countBadge');
+    const statusText = document.getElementById('statusText');
+    const errorMsg = document.getElementById('errorMsg');
+    const mangaInfoEl = document.querySelector('.manga-info');
+    const mangaIdSpan = document.getElementById('mangaid');
+    
+    errorMsg.textContent = '';
+    statusText.textContent = '';
+    mangaInfoEl.classList.remove('found', 'not-found');
+    btn.disabled = true;
+    btn.innerHTML = 'Loading... <span id="countBadge">-</span>';
+    
+    try {
+        const response = await fetch('https://cdn.jsdelivr.net/gh/workit1990k-glitch/workit1990k-glitch.github.io@main/list.json');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        const totalCount = Object.keys(data).length;
+        countBadge.textContent = totalCount;
+        
+        const currentMangaId = mangaIdSpan?.textContent?.trim();
+        if (!currentMangaId) {
+            throw new Error('Could not find manga ID on page');
+        }
+        
+        const isFound = data.hasOwnProperty(currentMangaId);
+        if (isFound) {
+            mangaInfoEl.classList.add('found');
+            statusText.textContent = '✓ ID found in list';
+            statusText.style.color = '#ff0000';
+        } else {
+            mangaInfoEl.classList.add('not-found');
+            statusText.textContent = '✓ ID not in list';
+            statusText.style.color = '#28a745';
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        errorMsg.textContent = `Error: ${error.message}. Check console for details.`;
+        countBadge.textContent = 'Err';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `Check ID <span id="countBadge">${countBadge.textContent}</span>`;
+    }
+});
+function selectByRange() {
+const input = document.getElementById('chapterRange').value.trim();
+if (!input) {
+alert('Please enter a chapter range (e.g., 1-30 or 5,10,15)');
+return;
+}
+selectedChapters.clear();
+const chaptersToSelect = parseChapterRange(input);
+chaptersToSelect.forEach(chapterNum => {
+const chapter = filteredChapters.find(ch => {
+const chNum = parseFloat(ch.number);
+return !isNaN(chNum) && chNum === chapterNum;
+});
+if (chapter) {
+selectedChapters.add(chapter.chapter_id);
+}
+});
+renderChapters();
+updateCount();
+}
+function parseChapterRange(input) {
+const chapters = new Set();
+const parts = input.split(',').map(p => p.trim());
+parts.forEach(part => {
+if (part.includes('-')) {
+const [start, end] = part.split('-').map(n => parseFloat(n.trim()));
+if (!isNaN(start) && !isNaN(end)) {
+for (let i = Math.floor(start); i <= Math.floor(end); i++) {
+chapters.add(i);
+}
+}
+} else {
+const num = parseFloat(part);
+if (!isNaN(num)) {
+chapters.add(Math.floor(num));
+}
+}
+});
+return Array.from(chapters).sort((a, b) => a - b);
+}
+// ============ BATCH DOWNLOAD WITH SIZE SPLITTING (FIXED) ============
+// ============ BATCH DOWNLOAD (PARALLEL CHAPTERS + OPTIMIZED) ============
+async function startBatchDownload() {
+    if (selectedChapters.size === 0) {
+        alert('Please select at least one chapter');
+        return;
+    }
+    if (isBatchDownloading) {
+        if (!confirm('Download in progress. Cancel?')) return;
+        batchDownloadCancelled = true;
+        return;
+    }
+    isBatchDownloading = true;
+    batchDownloadCancelled = false;
+    updateCount();
+    showConsole();
+    clearConsole();
+    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+    const mangaTitle = (mangaDataCache?.title || document.getElementById('mangaTitle').textContent)
+        .replace(/[\\/:\*\?"<>\|]/g, '')
+        .trim()
+        .slice(0, 50);
+    logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
+    logConsole(`🚀 Mode: Parallel Chapters (3 concurrent)`, 'info');
+    logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
+    
+    let currentZip = new JSZip();
+    let currentZipSize = 0;
+    let zipIndex = 1;
+    let completedChapters = 0;
+    let currentRangeStart = null;
+    let currentRangeEnd = null;
+    let zipsCreated = 0;
+    let pendingZipBlob = null;
+    let pendingZipName = null;
+    
+    // 🔥 Concurrency Limit for Chapters
+    const CHAPTER_CONCURRENCY = 3; 
+    const executingChapters = new Set();
 
-log('👋 Welcome! Upload archives to begin', 'info');
+    const saveCurrentZip = async (isFinal = false) => {
+        if (currentZipSize === 0) return;
+        let rangeStr = `part${zipIndex}`;
+        if (currentRangeStart !== null && currentRangeEnd !== null) {
+            rangeStr = `Ch${Math.floor(currentRangeStart)}-${Math.floor(currentRangeEnd)}`;
+        }
+        const zipName = `${mangaTitle} ${rangeStr}.zip`;
+        logConsole(`🗜️ Generating ZIP (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
+        const content = await currentZip.generateAsync({
+            type: 'blob',
+            compression: 'STORE',
+            compressionOptions: { level: 0 }
+        });
+        zipsCreated++;
+        pendingZipBlob = content;
+        pendingZipName = zipName;
+        if (!isFinal || zipsCreated > 1) {
+            await flushPendingZip();
+        }
+        zipIndex++;
+        currentZip = new JSZip();
+        currentZipSize = 0;
+    };
+
+    const flushPendingZip = async () => {
+        if (!pendingZipBlob) return;
+        logConsole(`💾 Saving ${pendingZipName}...`, 'info');
+        saveAs(pendingZipBlob, pendingZipName);
+        logConsole(`✓ Saved: ${pendingZipName}`, 'success');
+        pendingZipBlob = null;
+        pendingZipName = null;
+    };
+
+    const processChapter = async (chapter) => {
+        if (batchDownloadCancelled) return;
+        const chapterNum = parseFloat(chapter.number);
+        const chapterName = chapter.name || '';
+        logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''}`, 'info');
+        
+        // Update Range
+        if (currentRangeStart === null) currentRangeStart = chapterNum;
+        currentRangeEnd = chapterNum;
+
+        try {
+            const chapterRes = await fetchChapterWithRetry(chapter.chapter_id);
+            const imageUrls = extractImageUrls(chapterRes);
+            if (imageUrls.length === 0) {
+                logConsole(`⚠️ No images found for chapter ${chapter.number}`, 'warning');
+                return 0;
+            }
+            const chapterFolder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
+            let chapterSize = 0;
+            const IMAGE_CONCURRENCY = 4;
+            const executingImages = new Set();
+            
+            for (let j = 0; j < imageUrls.length; j++) {
+                if (batchDownloadCancelled) break;
+                const url = imageUrls[j];
+                const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+                const fileName = `page_${String(j + 1).padStart(3, '0')}.${ext}`;
+                
+                const promise = fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                })
+                .then(async res => {
+                    if (!res.ok) throw new Error(`Failed: ${res.status}`);
+                    const blob = await res.blob();
+                    chapterFolder.file(fileName, blob);
+                    return blob.size;
+                })
+                .then(size => {
+                    executingImages.delete(promise);
+                    chapterSize += size;
+                    totalImagesDownloaded++;
+                    totalDownloadedBytes += size;
+                    updateConsoleStats();
+                    updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, totalDownloadedBytes / 1024 / 1024);
+                })
+                .catch(err => {
+                    executingImages.delete(promise);
+                    logConsole(`⚠️ Image ${j + 1} failed: ${err.message}`, 'warning');
+                });
+                
+                executingImages.add(promise);
+                if (executingImages.size >= IMAGE_CONCURRENCY) {
+                    await Promise.race(executingImages);
+                }
+            }
+            await Promise.all(executingImages);
+            logConsole(`✓ Chapter ${chapter.number} complete (${imageUrls.length} pages)`, 'success');
+            return chapterSize;
+        } catch (err) {
+            logConsole(`❌ Chapter ${chapter.number} failed: ${err.message}`, 'error');
+            return 0;
+        }
+    };
+
+    try {
+        for (let i = 0; i < selected.length; i++) {
+            if (batchDownloadCancelled) break;
+            const chapter = selected[i];
+            
+            // 🔥 Start Chapter Processing
+            const promise = processChapter(chapter).then(async (size) => {
+                executingChapters.delete(promise);
+                if (size > 0) {
+                    completedChapters++;
+                    currentZipSize += size;
+                    
+                    // 🔥 Check ZIP Size Limit AFTER chapter finishes
+                    if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
+                        logConsole(`📦 ZIP size limit reached, creating new archive...`, 'warning');
+                        await saveCurrentZip(false);
+                        currentRangeStart = null;
+                    }
+                }
+            });
+            
+            executingChapters.add(promise);
+            
+            // 🔥 Limit Concurrent Chapters
+            if (executingChapters.size >= CHAPTER_CONCURRENCY) {
+                await Promise.race(executingChapters);
+            }
+        }
+        
+        // 🔥 Wait for all remaining chapters to finish
+        await Promise.all(executingChapters);
+        
+        // Save final ZIP
+        if (currentZipSize > 0) {
+            await saveCurrentZip(true);
+        }
+        await flushPendingZip();
+        
+        // 🔥 AUTO SAVE TO LIST
+        if (completedChapters > 0 && mangaDataCache) {
+            logConsole(`💾 Auto-saving manga to list...`, 'info');
+            await saveMangaToList();
+        }
+        
+        logConsole(`🎉 Batch download complete! ${completedChapters}/${selected.length} chapters, ${zipsCreated} archive(s)`, 'success');
+    } catch (err) {
+        logConsole(`❌ Fatal error: ${err.message}`, 'error');
+        console.error(err);
+    } finally {
+        isBatchDownloading = false;
+        batchDownloadCancelled = false;
+        updateCount();
+        document.getElementById('batchDownloadBtn').innerHTML = '<span>⬇</span> DOWNLOAD SELECTED';
+    }
+}
+    
+// ============ INDIVIDUAL CHAPTER DOWNLOAD (FAST VERSION) ============
+async function downloadChapter(chapterId, chapterNumber, chapterName) {
+if (isDownloading.has(chapterId)) return;
+const btn = event.target;
+const originalText = btn.innerHTML;
+try {
+isDownloading.add(chapterId);
+btn.disabled = true;
+btn.innerHTML = '⏳...';
+const progressEl = document.createElement('div');
+progressEl.className = 'download-progress';
+progressEl.style.cssText = 'font-size:11px;color:var(--text-secondary);margin-top:4px;';
+btn.parentNode.appendChild(progressEl);
+const chapterRes = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
+const imageUrls = extractImageUrls(chapterRes);
+if (imageUrls.length === 0) throw new Error('No images found');
+const zip = new JSZip();
+const folder = zip.folder(`Ch.${chapterNumber}${chapterName ? ' - ' + chapterName : ''}`);
+const CONCURRENCY = 4;
+const executing = new Set();
+let completed = 0;
+const downloadImage = async (url, index) => {
+const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(index + 1).padStart(3, '0')}.${ext}`;
+const response = await fetch(WORKER_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ url: url })
+});
+if (!response.ok) throw new Error(`Failed: ${response.status}`);
+const blob = await response.blob();
+folder.file(fileName, blob);
+completed++;
+progressEl.textContent = `📥 ${completed}/${imageUrls.length}`;
+};
+for (let i = 0; i < imageUrls.length; i++) {
+const promise = downloadImage(imageUrls[i], i).then(() => {
+executing.delete(promise);
+});
+executing.add(promise);
+if (executing.size >= CONCURRENCY) {
+await Promise.race(executing);
+}
+}
+await Promise.all(executing);
+progressEl.textContent = '🗜️ Creating ZIP...';
+const content = await zip.generateAsync({ type: 'blob' });
+const safeTitle = (document.getElementById('mangaTitle')?.textContent || 'manga')
+.replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+const zipName = `${safeTitle}_Ch.${chapterNumber}.zip`;
+saveAs(content, zipName);
+progressEl.textContent = '✓ Done!';
+setTimeout(() => progressEl.remove(), 2000);
+} catch (err) {
+console.error('Download error:', err);
+alert(`Download failed: ${err.message}`);
+if (btn.parentNode.querySelector('.download-progress')) {
+btn.parentNode.querySelector('.download-progress').remove();
+}
+} finally {
+isDownloading.delete(chapterId);
+btn.disabled = false;
+btn.innerHTML = originalText;
+}
+}
+async function fetchTermNames(termIds, type) {
+if (!termIds?.length) return [];
+const unknownIds = termIds.filter(id => !KNOWN_GENRE_IDS.has(Number(id)));
+if (!unknownIds.length) return [];
+try {
+const params = unknownIds.map(id => `ids[]=${id}`).join('&');
+const url = `${API_BASE}/terms?type=${type}&${params}`;
+const res = await fetchRetry(url);
+return (res.result?.items || []).map(item => item.title).filter(Boolean);
+} catch (err) {
+console.warn(`Failed to fetch ${type} terms:`, err);
+return [];
+}
+}
+async function fetchWithConcurrency(items, fetchFn, concurrency = 3, onProgress) {
+const results = [];
+const executing = new Set();
+for (let i = 0; i < items.length; i++) {
+const item = items[i];
+const promise = fetchFn(item, i, items.length).then(result => {
+executing.delete(promise);
+return result;
+});
+executing.add(promise);
+results.push(promise);
+if (executing.size >= concurrency) {
+await Promise.race(executing);
+}
+if (onProgress) onProgress(i + 1, items.length);
+}
+return Promise.all(results);
+}
+// ============ AUTO-FETCH FROM URL PARAM ============
+document.addEventListener('DOMContentLoaded', () => {
+const params = new URLSearchParams(window.location.search);
+const hrefParam = params.get('href');
+if (hrefParam) {
+try {
+const decodedUrl = decodeURIComponent(hrefParam.trim());
+if (decodedUrl.includes('/title/')) {
+const urlInput = document.getElementById('urlInput');
+urlInput.value = decodedUrl;
+setTimeout(() => {
+fetchManga();
+if (window.history.replaceState) {
+const cleanUrl = window.location.pathname;
+window.history.replaceState({}, document.title, cleanUrl);
+}
+}, 300);
+}
+} catch (e) {
+console.warn('Failed to parse href parameter:', e);
+}
+}
+});
+// Only this constant needed in frontend:
+const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
+async function saveMangaToList() {
+const saveBtn = document.getElementById('saveToListBtn');
+const saveStatus = document.getElementById('saveStatus');
+const mangaId = document.getElementById('mangaid')?.textContent?.trim();
+const latestChapter = document.getElementById('mangaLatest')?.textContent?.trim();
+if (!mangaId || !latestChapter) {
+alert('Please fetch a manga first');
+return;
+}
+const originalText = saveBtn.innerHTML;
+saveBtn.disabled = true;
+saveBtn.innerHTML = '⏳ Saving...';
+saveStatus.textContent = '';
+try {
+// 🔥 Frontend ONLY talks to worker - no GitHub URLs here
+const response = await fetch(WORKER_SAVE_URL, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({
+manga_id: mangaId,
+latest_chapter: latestChapter
+})
+});
+const result = await response.json();
+if (result.success) {
+saveStatus.textContent = '✓ Saved!';
+saveStatus.style.color = 'var(--success)';
+showToast(`✓ ${mangaId}:${latestChapter} saved!`);
+} else {
+throw new Error(result.error || 'Save failed');
+}
+} catch (err) {
+console.error(err);
+saveStatus.textContent = '✗ Failed';
+saveStatus.style.color = 'var(--error)';
+alert(`Error: ${err.message}`);
+} finally {
+saveBtn.disabled = false;
+saveBtn.innerHTML = originalText;
+setTimeout(() => { if (saveStatus.textContent) saveStatus.textContent = ''; }, 4000);
+}
+}
+function showToast(msg) {
+const toast = document.createElement('div');
+toast.style.cssText = `position:fixed;top:20px;right:20px;background:var(--bg-secondary);border:1px solid var(--success);border-radius:8px;padding:12px 20px;color:var(--text-primary);font-size:13px;z-index:3000;box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;`;
+toast.textContent = msg;
+document.body.appendChild(toast);
+setTimeout(() => { toast.style.opacity='0'; toast.style.transition='opacity 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
+}
 </script>
 </body>
 </html>
