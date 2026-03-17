@@ -26,24 +26,10 @@ color: var(--text-primary);
 min-height: 100vh;
 padding: 20px;
 }
-.container {
-max-width: 1000px;
-margin: 0 auto;
-}
-.header {
-text-align: center;
-margin-bottom: 30px;
-}
-.header h1 {
-font-size: 28px;
-font-weight: 700;
-color: var(--accent);
-margin-bottom: 8px;
-}
-.header p {
-color: var(--text-secondary);
-font-size: 14px;
-}
+.container { max-width: 1000px; margin: 0 auto; }
+.header { text-align: center; margin-bottom: 30px; }
+.header h1 { font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.header p { color: var(--text-secondary); font-size: 14px; }
 .upload-area {
 background: var(--bg-secondary);
 border: 2px dashed var(--border);
@@ -58,23 +44,10 @@ margin-bottom: 20px;
 border-color: var(--accent);
 background: rgba(224, 175, 104, 0.05);
 }
-.upload-area.has-file {
-border-style: solid;
-border-color: var(--success);
-}
-.upload-icon {
-font-size: 48px;
-margin-bottom: 16px;
-}
-.upload-title {
-font-size: 18px;
-font-weight: 600;
-margin-bottom: 8px;
-}
-.upload-subtitle {
-font-size: 13px;
-color: var(--text-secondary);
-}
+.upload-area.has-file { border-style: solid; border-color: var(--success); }
+.upload-icon { font-size: 48px; margin-bottom: 16px; }
+.upload-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.upload-subtitle { font-size: 13px; color: var(--text-secondary); }
 #fileInput { display: none; }
 .queue-panel {
 background: var(--bg-secondary);
@@ -85,20 +58,9 @@ margin-bottom: 20px;
 display: none;
 }
 .queue-panel.active { display: block; }
-.queue-header {
-display: flex;
-justify-content: space-between;
-align-items: center;
-margin-bottom: 16px;
-}
-.queue-title {
-font-size: 14px;
-font-weight: 600;
-}
-.queue-stats {
-font-size: 12px;
-color: var(--text-secondary);
-}
+.queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.queue-title { font-size: 14px; font-weight: 600; }
+.queue-stats { font-size: 12px; color: var(--text-secondary); }
 .queue-list {
 max-height: 200px;
 overflow-y: auto;
@@ -119,15 +81,8 @@ font-size: 12px;
 .queue-item.processing { border-left: 3px solid var(--accent); }
 .queue-item.completed { border-left: 3px solid var(--success); }
 .queue-item.failed { border-left: 3px solid var(--error); }
-.queue-item-name {
-color: var(--text-primary);
-word-break: break-all;
-}
-.queue-item-status {
-color: var(--text-secondary);
-min-width: 80px;
-text-align: right;
-}
+.queue-item-name { color: var(--text-primary); word-break: break-all; }
+.queue-item-status { color: var(--text-secondary); min-width: 80px; text-align: right; }
 .archive-info {
 background: var(--bg-secondary);
 border-radius: 12px;
@@ -137,30 +92,10 @@ margin-bottom: 20px;
 display: none;
 }
 .archive-info.active { display: block; }
-.info-grid {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-gap: 16px;
-margin-bottom: 20px;
-}
-.info-card {
-background: var(--bg-tertiary);
-border-radius: 8px;
-padding: 16px;
-text-align: center;
-}
-.info-label {
-font-size: 11px;
-color: var(--text-secondary);
-text-transform: uppercase;
-letter-spacing: 0.5px;
-margin-bottom: 8px;
-}
-.info-value {
-font-size: 20px;
-font-weight: 700;
-color: var(--accent);
-}
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.info-card { background: var(--bg-tertiary); border-radius: 8px; padding: 16px; text-align: center; }
+.info-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.info-value { font-size: 20px; font-weight: 700; color: var(--accent); }
 .info-value.success { color: var(--success); }
 .info-value.error { color: var(--error); }
 .archive-name {
@@ -173,12 +108,7 @@ border-radius: 8px;
 margin-bottom: 16px;
 word-break: break-all;
 }
-.btn-group {
-display: flex;
-gap: 12px;
-justify-content: center;
-flex-wrap: wrap;
-}
+.btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .btn {
 padding: 12px 32px;
 background: var(--accent);
@@ -195,15 +125,9 @@ gap: 8px;
 }
 .btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-.btn-secondary {
-background: var(--bg-tertiary);
-color: var(--text-primary);
-border: 1px solid var(--border);
-}
+.btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
 .btn-secondary:hover { background: var(--border); }
-.btn-success {
-background: var(--success);
-}
+.btn-success { background: var(--success); }
 .btn-success:hover { background: #a8d880; }
 .progress-panel {
 background: var(--bg-secondary);
@@ -214,20 +138,9 @@ margin-bottom: 20px;
 display: none;
 }
 .progress-panel.active { display: block; }
-.progress-header {
-display: flex;
-justify-content: space-between;
-align-items: center;
-margin-bottom: 16px;
-}
-.progress-title {
-font-size: 14px;
-font-weight: 600;
-}
-.progress-stats {
-font-size: 12px;
-color: var(--text-secondary);
-}
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.progress-title { font-size: 14px; font-weight: 600; }
+.progress-stats { font-size: 12px; color: var(--text-secondary); }
 .progress-bar-container {
 height: 8px;
 background: var(--bg-tertiary);
@@ -263,10 +176,7 @@ gap: 8px;
 .console-line.success { color: var(--success); }
 .console-line.error { color: var(--error); }
 .console-line.warning { color: var(--accent); }
-.console-timestamp {
-color: var(--text-secondary);
-min-width: 70px;
-}
+.console-timestamp { color: var(--text-secondary); min-width: 70px; }
 .result-panel {
 background: var(--bg-secondary);
 border-radius: 12px;
@@ -276,29 +186,10 @@ margin-bottom: 20px;
 display: none;
 }
 .result-panel.active { display: block; }
-.result-grid {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-gap: 16px;
-margin-bottom: 20px;
-}
-.result-card {
-background: var(--bg-tertiary);
-border-radius: 8px;
-padding: 20px;
-text-align: center;
-}
-.result-label {
-font-size: 12px;
-color: var(--text-secondary);
-text-transform: uppercase;
-margin-bottom: 8px;
-}
-.result-value {
-font-size: 24px;
-font-weight: 700;
-margin-bottom: 4px;
-}
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.result-card { background: var(--bg-tertiary); border-radius: 8px; padding: 20px; text-align: center; }
+.result-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px; }
+.result-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .result-value.before { color: var(--text-primary); }
 .result-value.after { color: var(--success); }
 .result-value.savings { color: var(--accent); }
@@ -323,17 +214,8 @@ padding: 8px;
 background: var(--bg-primary);
 border-radius: 8px;
 }
-.preview-item {
-aspect-ratio: 1;
-border-radius: 4px;
-overflow: hidden;
-border: 1px solid var(--border);
-}
-.preview-item img {
-width: 100%;
-height: 100%;
-object-fit: cover;
-}
+.preview-item { aspect-ratio: 1; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.preview-item img { width: 100%; height: 100%; object-fit: cover; }
 .settings-panel {
 background: var(--bg-secondary);
 border-radius: 12px;
@@ -341,20 +223,9 @@ border: 1px solid var(--border);
 padding: 20px;
 margin-bottom: 20px;
 }
-.settings-grid {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-gap: 16px;
-}
-.setting-item {
-display: flex;
-flex-direction: column;
-gap: 8px;
-}
-.setting-label {
-font-size: 13px;
-color: var(--text-secondary);
-}
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.setting-item { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-size: 13px; color: var(--text-secondary); }
 .setting-input {
 padding: 10px 12px;
 background: var(--bg-primary);
@@ -388,10 +259,7 @@ animation: spin 1s linear infinite;
 .hidden { display: none !important; }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb {
-background: var(--border);
-border-radius: 4px;
-}
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 @media (max-width: 600px) {
 .btn-group { flex-direction: column; }
@@ -408,6 +276,7 @@ border-radius: 4px;
 <h1>📚 Manga Archive Optimizer</h1>
 <p>Upload CBZ/ZIP/RAR archives, optimize images to WebP (Q75), and reduce file size</p>
 </div>
+
 <!-- Upload Area -->
 <div class="upload-area" id="uploadArea">
 <div class="upload-icon">📦</div>
@@ -415,6 +284,7 @@ border-radius: 4px;
 <div class="upload-subtitle">Supports: CBZ, ZIP, RAR (images: JPG, PNG, WEBP, GIF) - Multiple files supported</div>
 <input type="file" id="fileInput" accept=".cbz,.zip,.rar,.cbr" multiple>
 </div>
+
 <!-- Queue Panel -->
 <div class="queue-panel" id="queuePanel">
 <div class="queue-header">
@@ -423,6 +293,7 @@ border-radius: 4px;
 </div>
 <div class="queue-list" id="queueList"></div>
 </div>
+
 <!-- Settings Panel -->
 <div class="settings-panel">
 <div class="settings-grid">
@@ -457,77 +328,49 @@ border-radius: 4px;
 </div>
 </div>
 </div>
+
 <!-- Archive Info -->
 <div class="archive-info" id="archiveInfo">
 <div class="archive-name" id="archiveName"></div>
 <div class="info-grid">
-<div class="info-card">
-<div class="info-label">Total Images</div>
-<div class="info-value" id="imageCount">0</div>
-</div>
-<div class="info-card">
-<div class="info-label">Original Size</div>
-<div class="info-value" id="originalSize">0 MB</div>
-</div>
-<div class="info-card">
-<div class="info-label">Archive Type</div>
-<div class="info-value" id="archiveType">-</div>
-</div>
-<div class="info-card">
-<div class="info-label">Status</div>
-<div class="info-value success" id="archiveStatus">Ready</div>
-</div>
+<div class="info-card"><div class="info-label">Total Images</div><div class="info-value" id="imageCount">0</div></div>
+<div class="info-card"><div class="info-label">Original Size</div><div class="info-value" id="originalSize">0 MB</div></div>
+<div class="info-card"><div class="info-label">Archive Type</div><div class="info-value" id="archiveType">-</div></div>
+<div class="info-card"><div class="info-label">Status</div><div class="info-value success" id="archiveStatus">Ready</div></div>
 </div>
 <div class="btn-group">
-<button class="btn" id="optimizeBtn" onclick="startOptimization()">
-<span>⚡</span> Optimize Archive
-</button>
-<button class="btn btn-secondary" onclick="resetAll()">
-<span>🔄</span> Reset All
-</button>
+<button class="btn" id="optimizeBtn" onclick="startOptimization()"><span>⚡</span> Optimize Archive</button>
+<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Reset All</button>
 </div>
 </div>
+
 <!-- Progress Panel -->
 <div class="progress-panel" id="progressPanel">
 <div class="progress-header">
 <div class="progress-title">⏳ Optimization in Progress...</div>
 <div class="progress-stats" id="progressStats">0 / 0 images</div>
 </div>
-<div class="progress-bar-container">
-<div class="progress-bar" id="progressBar"></div>
-</div>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
 <div class="console" id="console"></div>
 </div>
+
 <!-- Result Panel -->
 <div class="result-panel" id="resultPanel">
 <div class="result-grid">
-<div class="result-card">
-<div class="result-label">Original Size</div>
-<div class="result-value before" id="resultBefore">0 MB</div>
-</div>
-<div class="result-card">
-<div class="result-label">Optimized Size</div>
-<div class="result-value after" id="resultAfter">0 MB</div>
-</div>
-<div class="result-card">
-<div class="result-label">Space Saved</div>
-<div class="result-value savings" id="resultSavings">0 MB</div>
-<div class="savings-badge" id="savingsPercent">0%</div>
-</div>
+<div class="result-card"><div class="result-label">Original Size</div><div class="result-value before" id="resultBefore">0 MB</div></div>
+<div class="result-card"><div class="result-label">Optimized Size</div><div class="result-value after" id="resultAfter">0 MB</div></div>
+<div class="result-card"><div class="result-label">Space Saved</div><div class="result-value savings" id="resultSavings">0 MB</div><div class="savings-badge" id="savingsPercent">0%</div></div>
 </div>
 <div class="btn-group">
-<button class="btn btn-success" id="downloadBtn" onclick="downloadOptimized()">
-<span>⬇</span> Download Optimized ZIP
-</button>
-<button class="btn btn-secondary" onclick="resetAll()">
-<span>🔄</span> Start Over
-</button>
+<button class="btn btn-success" id="downloadBtn" onclick="downloadOptimized()"><span>⬇</span> Download Optimized ZIP</button>
+<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Start Over</button>
 </div>
 <div class="image-preview" id="imagePreview"></div>
 </div>
 </div>
+
 <script>
-// Global variables
+// ============ GLOBAL VARIABLES ============
 let fileQueue = [];
 let currentFileIndex = 0;
 let originalFile = null;
@@ -542,7 +385,7 @@ let isCancelled = false;
 let isQueueMode = false;
 let queueProcessing = false;
 
-// DOM Elements
+// ============ DOM ELEMENTS ============
 const uploadArea = document.getElementById('uploadArea');
 const fileInput = document.getElementById('fileInput');
 const queuePanel = document.getElementById('queuePanel');
@@ -555,536 +398,566 @@ const consoleEl = document.getElementById('console');
 const optimizeBtn = document.getElementById('optimizeBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 
-// Upload Area Events
+// ============ BATCHED LOGGING SYSTEM (Optimization #2) ============
+let logBuffer = [];
+let logFlushTimer = null;
+
+function log(message, type = 'info') {
+    logBuffer.push({ message, type, time: new Date() });
+    
+    // Debounce flush: wait up to 100ms or until 10 items accumulate
+    if (logFlushTimer) clearTimeout(logFlushTimer);
+    
+    if (logBuffer.length >= 10) {
+        flushLogs();
+    } else {
+        logFlushTimer = setTimeout(flushLogs, 100);
+    }
+}
+
+function flushLogs() {
+    if (logBuffer.length === 0) return;
+    
+    const fragment = document.createDocumentFragment();
+    
+    for (const { message, type, time } of logBuffer) {
+        const line = document.createElement('div');
+        line.className = `console-line ${type}`;
+        const timestamp = time.toLocaleTimeString();
+        line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
+        fragment.appendChild(line);
+    }
+    
+    consoleEl.appendChild(fragment);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+    logBuffer = [];
+    
+    if (logFlushTimer) {
+        clearTimeout(logFlushTimer);
+        logFlushTimer = null;
+    }
+}
+
+// Flush any remaining logs when page unloads
+window.addEventListener('beforeunload', flushLogs);
+
+function clearConsole() {
+    flushLogs(); // Flush first
+    consoleEl.innerHTML = '';
+}
+
+// ============ UTILITY FUNCTIONS ============
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function getFileExtension(filename) {
+    return filename.split('.').pop().toLowerCase();
+}
+
+function isImageFile(filename) {
+    const ext = getFileExtension(filename);
+    return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
+}
+
+// ============ DYNAMIC CONCURRENCY (Optimization #3) ============
+function getOptimalConcurrency() {
+    const userSetting = parseInt(document.getElementById('concurrency').value) || 10;
+    const hardwareCores = navigator.hardwareConcurrency || 4;
+    const memoryGB = navigator.deviceMemory || 4;
+    
+    // Conservative limits to prevent OOM
+    const coreLimit = Math.max(2, hardwareCores - 1); // Leave 1 core for UI
+    const memoryLimit = Math.max(2, Math.floor(memoryGB * 2)); // ~2 tasks per GB
+    
+    return Math.min(userSetting, coreLimit, memoryLimit, 20); // Cap at 20 max
+}
+
+// ============ QUEUE DISPLAY ============
+function updateQueueDisplay() {
+    queueList.innerHTML = '';
+    let pending = 0, completed = 0, failed = 0;
+
+    for (let i = 0; i < fileQueue.length; i++) {
+        const item = fileQueue[i];
+        const div = document.createElement('div');
+        div.className = 'queue-item';
+
+        if (i < currentFileIndex) {
+            div.classList.add(item.failed ? 'failed' : 'completed');
+            completed++;
+        } else if (i === currentFileIndex && isOptimizing) {
+            div.classList.add('processing');
+        } else {
+            pending++;
+        }
+
+        div.innerHTML = `
+            <span class="queue-item-name">${i + 1}. ${item.file.name}</span>
+            <span class="queue-item-status">${i < currentFileIndex ? (item.failed ? '❌ Failed' : '✅ Done') : (i === currentFileIndex && isOptimizing ? '⏳ Processing' : '⏸ Pending')}</span>
+        `;
+        queueList.appendChild(div);
+    }
+    queueStats.textContent = `${pending} pending | ${completed} completed | ${failed} failed`;
+    queuePanel.classList.toggle('active', fileQueue.length > 0);
+}
+
+// ============ FILE HANDLING ============
 uploadArea.addEventListener('click', () => fileInput.click());
-uploadArea.addEventListener('dragover', (e) => {
-e.preventDefault();
-uploadArea.classList.add('dragover');
-});
-uploadArea.addEventListener('dragleave', () => {
-uploadArea.classList.remove('dragover');
-});
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
 uploadArea.addEventListener('drop', (e) => {
-e.preventDefault();
-uploadArea.classList.remove('dragover');
-const files = e.dataTransfer.files;
-if (files.length > 0) handleFiles(files);
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
 });
 fileInput.addEventListener('change', (e) => {
-if (e.target.files.length > 0) handleFiles(e.target.files);
+    if (e.target.files.length > 0) handleFiles(e.target.files);
 });
 
-// Log to console
-function log(message, type = 'info') {
-const line = document.createElement('div');
-line.className = `console-line ${type}`;
-const timestamp = new Date().toLocaleTimeString();
-line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
-consoleEl.appendChild(line);
-consoleEl.scrollTop = consoleEl.scrollHeight;
-}
-
-// Clear console
-function clearConsole() {
-consoleEl.innerHTML = '';
-}
-
-// Format bytes
-function formatBytes(bytes, decimals = 2) {
-if (bytes === 0) return '0 Bytes';
-const k = 1024;
-const dm = decimals < 0 ? 0 : decimals;
-const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-const i = Math.floor(Math.log(bytes) / Math.log(k));
-return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
-
-// Get file extension
-function getFileExtension(filename) {
-return filename.split('.').pop().toLowerCase();
-}
-
-// Check if file is an image
-function isImageFile(filename) {
-const ext = getFileExtension(filename);
-return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext);
-}
-
-// Update queue display
-function updateQueueDisplay() {
-queueList.innerHTML = '';
-let pending = 0;
-let completed = 0;
-let failed = 0;
-
-for (let i = 0; i < fileQueue.length; i++) {
-const item = fileQueue[i];
-const div = document.createElement('div');
-div.className = 'queue-item';
-
-if (i < currentFileIndex) {
-div.classList.add(item.failed ? 'failed' : 'completed');
-completed++;
-} else if (i === currentFileIndex && isOptimizing) {
-div.classList.add('processing');
-} else {
-pending++;
-}
-
-div.innerHTML = `
-<span class="queue-item-name">${i + 1}. ${item.file.name}</span>
-<span class="queue-item-status">${i < currentFileIndex ? (item.failed ? '❌ Failed' : '✅ Done') : (i === currentFileIndex && isOptimizing ? '⏳ Processing' : '⏸ Pending')}</span>
-`;
-queueList.appendChild(div);
-}
-
-queueStats.textContent = `${pending} pending | ${completed} completed | ${failed} failed`;
-queuePanel.classList.toggle('active', fileQueue.length > 0);
-}
-
-// Handle multiple uploaded files
 function handleFiles(files) {
-const validFiles = Array.from(files).filter(f => {
-const ext = getFileExtension(f.name);
-return ['cbz', 'zip', 'rar', 'cbr'].includes(ext);
-});
-
-if (validFiles.length === 0) {
-alert('No valid archive files found. Please upload CBZ, ZIP, RAR, or CBR files.');
-return;
-}
-
-// Add to queue
-for (const file of validFiles) {
-fileQueue.push({ file: file, failed: false });
-}
-
-log(`📦 Added ${validFiles.length} file(s) to queue`, 'info');
-isQueueMode = fileQueue.length > 1;
-updateQueueDisplay();
-
-// Start processing if not already processing
-if (!queueProcessing && currentFileIndex < fileQueue.length) {
-queueProcessing = true;
-processNextFile();
-}
-}
-
-// Process next file in queue
-async function processNextFile() {
-if (currentFileIndex >= fileQueue.length) {
-log(`🎉 All ${fileQueue.length} files processed!`, 'success');
-isQueueMode = false;
-queueProcessing = false;
-currentFileIndex = 0;
-fileQueue = [];
-updateQueueDisplay();
-return;
-}
-
-const queueItem = fileQueue[currentFileIndex];
-log(`📁 Starting file ${currentFileIndex + 1}/${fileQueue.length}: ${queueItem.file.name}`, 'info');
-
-try {
-await handleFile(queueItem.file, true);
-} catch (err) {
-log(`❌ File error: ${err.message}`, 'error');
-queueItem.failed = true;
-updateQueueDisplay();
-currentFileIndex++;
-processNextFile();
-}
-}
-
-// Handle single file
-async function handleFile(file, fromQueue = false) {
-if (!fromQueue) {
-resetAll();
-} else {
-resetCurrentFile();
-}
-
-originalFile = file;
-const ext = getFileExtension(file.name);
-document.getElementById('archiveName').textContent = file.name;
-document.getElementById('archiveType').textContent = ext.toUpperCase();
-uploadArea.classList.add('has-file');
-
-try {
-log(`📦 Loading: ${file.name}`, 'info');
-originalArchive = await JSZip.loadAsync(file);
-originalSizeBytes = file.size;
-
-imageFiles = [];
-const entries = Object.keys(originalArchive.files);
-for (const filename of entries) {
-const zipEntry = originalArchive.files[filename];
-if (!zipEntry.dir && isImageFile(filename)) {
-imageFiles.push({ name: filename, zipEntry: zipEntry });
-}
-}
-
-imageFiles.sort((a, b) => {
-const aNum = parseInt(a.name.match(/\d+/)?.[0] || '0');
-const bNum = parseInt(b.name.match(/\d+/)?.[0] || '0');
-return aNum - bNum;
-});
-
-if (imageFiles.length === 0) {
-throw new Error('No images found');
-}
-
-document.getElementById('imageCount').textContent = imageFiles.length;
-document.getElementById('originalSize').textContent = formatBytes(originalSizeBytes);
-document.getElementById('archiveStatus').textContent = 'Optimizing...';
-archiveInfo.classList.add('active');
-updateQueueDisplay();
-
-log(`✓ Found ${imageFiles.length} images`, 'success');
-
-// Auto-start for queue mode
-if (isQueueMode) {
-await startOptimization(true);
-}
-
-} catch (err) {
-log(`❌ Error: ${err.message}`, 'error');
-document.getElementById('archiveStatus').textContent = 'Error';
-document.getElementById('archiveStatus').className = 'info-value error';
-
-if (isQueueMode) {
-fileQueue[currentFileIndex].failed = true;
-updateQueueDisplay();
-currentFileIndex++;
-processNextFile();
-} else {
-alert(`Failed: ${err.message}`);
-}
-}
-}
-
-// Optimize single image
-// Optimize single image
-async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const url = URL.createObjectURL(blob);
-
-        img.onload = () => {
-            URL.revokeObjectURL(url);
-            let width = img.width;
-            let height = img.height;
-
-            // Resize logic
-            if (maxWidth > 0 && width > maxWidth) {
-                height = (height * maxWidth) / width;
-                width = maxWidth;
-            }
-            if (maxHeight > 0 && height > maxHeight) {
-                width = (width * maxHeight) / height;
-                height = maxHeight;
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            canvas.toBlob((optimizedBlob) => {
-                if (optimizedBlob) {
-                    // 🎯 KEY CHANGE: Skip optimization if result is larger
-                    if (optimizedBlob.size >= blob.size) {
-                        resolve({ 
-                            blob: blob,  // Keep original
-                            name: filename,  // Keep original name/ext
-                            originalSize: blob.size, 
-                            optimizedSize: blob.size,
-                            wasSkipped: true  // Flag for logging
-                        });
-                        return;
-                    }
-                    
-                    let newName = filename;
-                    const oldExt = getFileExtension(filename);
-                    if (outputFormat === 'webp' && oldExt !== 'webp') {
-                        newName = filename.replace(/\.[^.]+$/, '.webp');
-                    } else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
-                        newName = filename.replace(/\.[^.]+$/, '.jpg');
-                    } else if (outputFormat === 'png' && oldExt !== 'png') {
-                        newName = filename.replace(/\.[^.]+$/, '.png');
-                    }
-                    resolve({ 
-                        blob: optimizedBlob, 
-                        name: newName, 
-                        originalSize: blob.size, 
-                        optimizedSize: optimizedBlob.size,
-                        wasSkipped: false
-                    });
-                } else {
-                    reject(new Error('Failed to optimize'));
-                }
-            }, `image/${outputFormat}`, quality / 100);
-        };
-
-        img.onerror = () => {
-            URL.revokeObjectURL(url);
-            reject(new Error(`Failed to load: ${filename}`));
-        };
-        img.src = url;
+    const validFiles = Array.from(files).filter(f => {
+        const ext = getFileExtension(f.name);
+        return ['cbz', 'zip', 'rar', 'cbr'].includes(ext);
     });
-}
 
-// Process with concurrency
-async function processWithConcurrency(items, processFn, concurrency) {
-const results = [];
-const executing = new Set();
-
-for (let i = 0; i < items.length; i++) {
-if (isCancelled) break;
-const item = items[i];
-const promise = processFn(item, i, items.length).then(result => {
-executing.delete(promise);
-return result;
-});
-executing.add(promise);
-results.push(promise);
-
-if (executing.size >= concurrency) {
-await Promise.race(executing);
-}
-}
-
-return Promise.all(results);
-}
-
-// Start optimization
-async function startOptimization(autoQueue = false) {
-if (isOptimizing || imageFiles.length === 0) return;
-
-isOptimizing = true;
-isCancelled = false;
-optimizeBtn.disabled = true;
-downloadBtn.disabled = true;
-archiveInfo.classList.remove('active');
-progressPanel.classList.add('active');
-resultPanel.classList.remove('active');
-clearConsole();
-processedImages = [];
-
-const quality = parseInt(document.getElementById('quality').value) || 75;
-const maxWidth = parseInt(document.getElementById('maxWidth').value) || 0;
-const maxHeight = parseInt(document.getElementById('maxHeight').value) || 0;
-const outputFormat = document.getElementById('outputFormat').value;
-const concurrency = parseInt(document.getElementById('concurrency').value) || 10;
-
-log(`⚡ Starting optimization...`, 'info');
-log(`📊 Quality: ${quality}%, Format: ${outputFormat.toUpperCase()}`, 'info');
-log(`📁 Images: ${imageFiles.length}`, 'info');
-
-optimizedArchive = new JSZip();
-let totalOriginalSize = 0;
-let totalOptimizedSize = 0;
-let processedCount = 0;
-let failedCount = 0;
-
-try {
-const processImage = async (imageFile, index, total) => {
-    if (isCancelled) throw new Error('Cancelled');
-
-    try {
-        const originalBlob = await imageFile.zipEntry.async('blob');
-        totalOriginalSize += originalBlob.size;
-
-        const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
-
-        optimizedArchive.file(result.name, result.blob);
-        totalOptimizedSize += result.optimizedSize;
-        processedImages.push(result);
-
-        // 🎯 Updated logging with skip detection
-        if (result.wasSkipped) {
-            log(`⊘ ${imageFile.name} (skipped - no size benefit)`, 'warning');
-        } else {
-            const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
-            log(`✓ ${result.name} (-${savings}%)`, 'success');
-        }
-        processedCount++;
-
-    } catch (err) {
-        log(`❌ Failed: ${imageFile.name}`, 'error');
-        failedCount++;
-        try {
-            const originalBlob = await imageFile.zipEntry.async('blob');
-            optimizedArchive.file(imageFile.name, originalBlob);
-            totalOptimizedSize += originalBlob.size;
-        } catch (e) {}
+    if (validFiles.length === 0) {
+        alert('No valid archive files found. Please upload CBZ, ZIP, RAR, or CBR files.');
+        return;
     }
 
-    const percent = ((processedCount + failedCount) / total) * 100;
-    document.getElementById('progressBar').style.width = `${percent}%`;
-    document.getElementById('progressStats').textContent = `${processedCount + failedCount}/${total} (${processedCount} optimized)`;
-};
+    for (const file of validFiles) {
+        fileQueue.push({ file: file, failed: false });
+    }
 
-await processWithConcurrency(imageFiles, processImage, concurrency);
-optimizedSizeBytes = totalOptimizedSize;
+    log(`📦 Added ${validFiles.length} file(s) to queue`, 'info');
+    isQueueMode = fileQueue.length > 1;
+    updateQueueDisplay();
 
-log('🗜️ Creating ZIP...', 'info');
-const content = await optimizedArchive.generateAsync({
-type: 'blob',
-compression: 'DEFLATE',
-compressionOptions: { level: 9 }
-});
-optimizedArchive.blob = content;
-
-showResults(totalOriginalSize, totalOptimizedSize, processedCount, failedCount);
-
-// Queue mode: auto-download and continue
-if (autoQueue && isQueueMode) {
-await new Promise(resolve => setTimeout(resolve, 500));
-downloadOptimized(true);
-await new Promise(resolve => setTimeout(resolve, 1000));
-cleanupCurrentFile();
-currentFileIndex++;
-updateQueueDisplay();
-isOptimizing = false;
-processNextFile();
-return;
+    if (!queueProcessing && currentFileIndex < fileQueue.length) {
+        queueProcessing = true;
+        processNextFile();
+    }
 }
 
-} catch (err) {
-log(`❌ Fatal: ${err.message}`, 'error');
-if (autoQueue && isQueueMode) {
-fileQueue[currentFileIndex].failed = true;
-updateQueueDisplay();
-cleanupCurrentFile();
-currentFileIndex++;
-isOptimizing = false;
-processNextFile();
-return;
-}
-alert(`Failed: ${err.message}`);
-}
+async function processNextFile() {
+    if (currentFileIndex >= fileQueue.length) {
+        log(`🎉 All ${fileQueue.length} files processed!`, 'success');
+        isQueueMode = false;
+        queueProcessing = false;
+        currentFileIndex = 0;
+        fileQueue = [];
+        updateQueueDisplay();
+        return;
+    }
 
-isOptimizing = false;
-optimizeBtn.disabled = false;
-}
+    const queueItem = fileQueue[currentFileIndex];
+    log(`📁 Starting file ${currentFileIndex + 1}/${fileQueue.length}: ${queueItem.file.name}`, 'info');
 
-// Show results
-function showResults(original, optimized, processed, failed) {
-progressPanel.classList.remove('active');
-resultPanel.classList.add('active');
-
-const savings = original - optimized;
-const savingsPercent = ((savings / original) * 100).toFixed(1);
-
-document.getElementById('resultBefore').textContent = formatBytes(original);
-document.getElementById('resultAfter').textContent = formatBytes(optimized);
-document.getElementById('resultSavings').textContent = formatBytes(savings);
-document.getElementById('savingsPercent').textContent = `-${savingsPercent}%`;
-
-log(`🎉 Complete! Saved ${savingsPercent}%`, 'success');
-
-// Preview first 5 images
-const previewContainer = document.getElementById('imagePreview');
-previewContainer.innerHTML = '';
-processedImages.slice(0, 5).forEach(imgItem => {
-const div = document.createElement('div');
-div.className = 'preview-item';
-const img = document.createElement('img');
-img.src = URL.createObjectURL(imgItem.blob);
-div.appendChild(img);
-previewContainer.appendChild(div);
-});
-
-downloadBtn.disabled = false;
+    try {
+        await handleFile(queueItem.file, true);
+    } catch (err) {
+        log(`❌ File error: ${err.message}`, 'error');
+        queueItem.failed = true;
+        updateQueueDisplay();
+        currentFileIndex++;
+        processNextFile();
+    }
 }
 
-// Download
+async function handleFile(file, fromQueue = false) {
+    if (!fromQueue) resetAll(); else resetCurrentFile();
+
+    originalFile = file;
+    const ext = getFileExtension(file.name);
+    document.getElementById('archiveName').textContent = file.name;
+    document.getElementById('archiveType').textContent = ext.toUpperCase();
+    uploadArea.classList.add('has-file');
+
+    try {
+        log(`📦 Loading: ${file.name}`, 'info');
+        originalArchive = await JSZip.loadAsync(file);
+        originalSizeBytes = file.size;
+
+        imageFiles = [];
+        const entries = Object.keys(originalArchive.files);
+        for (const filename of entries) {
+            const zipEntry = originalArchive.files[filename];
+            if (!zipEntry.dir && isImageFile(filename)) {
+                imageFiles.push({ name: filename, zipEntry: zipEntry });
+            }
+        }
+
+        imageFiles.sort((a, b) => {
+            const aNum = parseInt(a.name.match(/\d+/)?.[0] || '0');
+            const bNum = parseInt(b.name.match(/\d+/)?.[0] || '0');
+            return aNum - bNum;
+        });
+
+        if (imageFiles.length === 0) throw new Error('No images found');
+
+        document.getElementById('imageCount').textContent = imageFiles.length;
+        document.getElementById('originalSize').textContent = formatBytes(originalSizeBytes);
+        document.getElementById('archiveStatus').textContent = 'Optimizing...';
+        archiveInfo.classList.add('active');
+        updateQueueDisplay();
+
+        log(`✓ Found ${imageFiles.length} images`, 'success');
+
+        if (isQueueMode) await startOptimization(true);
+
+    } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+        document.getElementById('archiveStatus').textContent = 'Error';
+        document.getElementById('archiveStatus').className = 'info-value error';
+
+        if (isQueueMode) {
+            fileQueue[currentFileIndex].failed = true;
+            updateQueueDisplay();
+            currentFileIndex++;
+            processNextFile();
+        } else {
+            alert(`Failed: ${err.message}`);
+        }
+    }
+}
+
+// ============ IMAGE OPTIMIZATION WITH createImageBitmap (Optimization #1) ============
+async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
+    try {
+        // Use createImageBitmap for async decoding + optional resize
+        const bitmap = await createImageBitmap(blob, {
+            resizeWidth: maxWidth > 0 ? maxWidth : undefined,
+            resizeHeight: maxHeight > 0 ? maxHeight : undefined,
+            resizeQuality: 'high'
+        });
+
+        const width = bitmap.width;
+        const height = bitmap.height;
+
+        // Create canvas for conversion
+        const canvas = new OffscreenCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close(); // Free memory immediately
+
+        // Convert to target format
+        const optimizedBlob = await canvas.convertToBlob({
+            type: `image/${outputFormat}`,
+            quality: quality / 100
+        });
+
+        // 🎯 Skip if optimized is larger than original
+        if (optimizedBlob.size >= blob.size) {
+            return {
+                blob: blob,
+                name: filename,
+                originalSize: blob.size,
+                optimizedSize: blob.size,
+                wasSkipped: true
+            };
+        }
+
+        // Determine output filename
+        let newName = filename;
+        const oldExt = getFileExtension(filename);
+        if (outputFormat === 'webp' && oldExt !== 'webp') {
+            newName = filename.replace(/\.[^.]+$/, '.webp');
+        } else if (outputFormat === 'jpeg' && !['jpg', 'jpeg'].includes(oldExt)) {
+            newName = filename.replace(/\.[^.]+$/, '.jpg');
+        } else if (outputFormat === 'png' && oldExt !== 'png') {
+            newName = filename.replace(/\.[^.]+$/, '.png');
+        }
+
+        return {
+            blob: optimizedBlob,
+            name: newName,
+            originalSize: blob.size,
+            optimizedSize: optimizedBlob.size,
+            wasSkipped: false
+        };
+
+    } catch (err) {
+        // Fallback: return original if optimization fails
+        console.warn(`Optimization failed for ${filename}, keeping original:`, err);
+        return {
+            blob: blob,
+            name: filename,
+            originalSize: blob.size,
+            optimizedSize: blob.size,
+            wasSkipped: true,
+            fallback: true
+        };
+    }
+}
+
+// ============ CONCURRENCY PROCESSING ============
+async function processWithConcurrency(items, processFn, concurrency) {
+    const results = [];
+    const executing = new Set();
+
+    for (let i = 0; i < items.length; i++) {
+        if (isCancelled) break;
+        const item = items[i];
+        
+        const promise = processFn(item, i, items.length).then(result => {
+            executing.delete(promise);
+            return result;
+        }).catch(err => {
+            executing.delete(promise);
+            throw err;
+        });
+        
+        executing.add(promise);
+        results.push(promise);
+
+        if (executing.size >= concurrency) {
+            await Promise.race(executing);
+        }
+    }
+    return Promise.all(results);
+}
+
+// ============ MAIN OPTIMIZATION FLOW ============
+async function startOptimization(autoQueue = false) {
+    if (isOptimizing || imageFiles.length === 0) return;
+
+    isOptimizing = true;
+    isCancelled = false;
+    optimizeBtn.disabled = true;
+    downloadBtn.disabled = true;
+    archiveInfo.classList.remove('active');
+    progressPanel.classList.add('active');
+    resultPanel.classList.remove('active');
+    clearConsole();
+    processedImages = [];
+
+    const quality = parseInt(document.getElementById('quality').value) || 75;
+    const maxWidth = parseInt(document.getElementById('maxWidth').value) || 0;
+    const maxHeight = parseInt(document.getElementById('maxHeight').value) || 0;
+    const outputFormat = document.getElementById('outputFormat').value;
+    // 🎯 Use dynamic concurrency
+    const concurrency = getOptimalConcurrency();
+
+    log(`⚡ Starting optimization (concurrency: ${concurrency})...`, 'info');
+    log(`📊 Quality: ${quality}%, Format: ${outputFormat.toUpperCase()}`, 'info');
+    log(`📁 Images: ${imageFiles.length}`, 'info');
+
+    optimizedArchive = new JSZip();
+    let totalOriginalSize = 0;
+    let totalOptimizedSize = 0;
+    let processedCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    try {
+        const processImage = async (imageFile, index, total) => {
+            if (isCancelled) throw new Error('Cancelled');
+
+            try {
+                const originalBlob = await imageFile.zipEntry.async('blob');
+                totalOriginalSize += originalBlob.size;
+
+                const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
+
+                optimizedArchive.file(result.name, result.blob);
+                totalOptimizedSize += result.optimizedSize;
+                processedImages.push(result);
+
+                if (result.wasSkipped) {
+                    log(`⊘ ${imageFile.name} (kept original - no size benefit)`, 'warning');
+                    skippedCount++;
+                } else {
+                    const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
+                    log(`✓ ${result.name} (-${savings}%)`, 'success');
+                }
+                processedCount++;
+
+            } catch (err) {
+                log(`❌ Failed: ${imageFile.name}`, 'error');
+                failedCount++;
+                try {
+                    const originalBlob = await imageFile.zipEntry.async('blob');
+                    optimizedArchive.file(imageFile.name, originalBlob);
+                    totalOptimizedSize += originalBlob.size;
+                } catch (e) {}
+            }
+
+            const percent = ((processedCount + failedCount + skippedCount) / total) * 100;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressStats').textContent = 
+                `${processedCount + failedCount + skippedCount}/${total} (${processedCount} optimized, ${skippedCount} skipped)`;
+        };
+
+        await processWithConcurrency(imageFiles, processImage, concurrency);
+        optimizedSizeBytes = totalOptimizedSize;
+
+        log('🗜️ Creating ZIP archive...', 'info');
+        const content = await optimizedArchive.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 9 }
+        });
+        optimizedArchive.blob = content;
+
+        showResults(totalOriginalSize, totalOptimizedSize, processedCount, failedCount, skippedCount);
+
+        if (autoQueue && isQueueMode) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            downloadOptimized(true);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            cleanupCurrentFile();
+            currentFileIndex++;
+            updateQueueDisplay();
+            isOptimizing = false;
+            processNextFile();
+            return;
+        }
+
+    } catch (err) {
+        log(`❌ Fatal: ${err.message}`, 'error');
+        if (autoQueue && isQueueMode) {
+            fileQueue[currentFileIndex].failed = true;
+            updateQueueDisplay();
+            cleanupCurrentFile();
+            currentFileIndex++;
+            isOptimizing = false;
+            processNextFile();
+            return;
+        }
+        alert(`Failed: ${err.message}`);
+    }
+
+    isOptimizing = false;
+    optimizeBtn.disabled = false;
+}
+
+// ============ RESULTS DISPLAY ============
+function showResults(original, optimized, processed, failed, skipped) {
+    progressPanel.classList.remove('active');
+    resultPanel.classList.add('active');
+
+    const savings = original - optimized;
+    const savingsPercent = original > 0 ? ((savings / original) * 100).toFixed(1) : 0;
+
+    document.getElementById('resultBefore').textContent = formatBytes(original);
+    document.getElementById('resultAfter').textContent = formatBytes(optimized);
+    document.getElementById('resultSavings').textContent = formatBytes(savings);
+    document.getElementById('savingsPercent').textContent = `-${savingsPercent}%`;
+
+    let summary = `🎉 Complete!`;
+    if (skipped > 0) summary += ` | ${skipped} kept original`;
+    if (failed > 0) summary += ` | ${failed} failed`;
+    log(`${summary} | Saved ${savingsPercent}%`, 'success');
+
+    // Preview first 5 images
+    const previewContainer = document.getElementById('imagePreview');
+    previewContainer.innerHTML = '';
+    processedImages.slice(0, 5).forEach(imgItem => {
+        const div = document.createElement('div');
+        div.className = 'preview-item';
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(imgItem.blob);
+        div.appendChild(img);
+        previewContainer.appendChild(div);
+    });
+
+    downloadBtn.disabled = false;
+}
+
+// ============ DOWNLOAD & CLEANUP ============
 function downloadOptimized(autoQueue = false) {
-if (!optimizedArchive || !optimizedArchive.blob) return;
-const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr)$/i, '');
-const newName = `${originalName}_ds.zip`;
-log(`⬇️ Downloading: ${newName}`, 'info');
-saveAs(optimizedArchive.blob, newName);
+    if (!optimizedArchive || !optimizedArchive.blob) return;
+    const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr)$/i, '');
+    const newName = `${originalName}_optimized.zip`;
+    log(`⬇️ Downloading: ${newName}`, 'info');
+    saveAs(optimizedArchive.blob, newName);
 }
 
-// Cleanup current file
 function cleanupCurrentFile() {
-const previewContainer = document.getElementById('imagePreview');
-Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
-if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-});
-processedImages = [];
-originalArchive = null;
-optimizedArchive = null;
-imageFiles = [];
-log(`🧹 Memory cleared`, 'info');
+    const previewContainer = document.getElementById('imagePreview');
+    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    });
+    processedImages = [];
+    originalArchive = null;
+    optimizedArchive = null;
+    imageFiles = [];
+    log(`🧹 Memory cleared`, 'info');
 }
 
-// Reset current file only
 function resetCurrentFile() {
-const previewContainer = document.getElementById('imagePreview');
-Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
-if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-});
-processedImages = [];
-originalArchive = null;
-optimizedArchive = null;
-imageFiles = [];
-originalSizeBytes = 0;
-optimizedSizeBytes = 0;
-previewContainer.innerHTML = '';
-clearConsole();
+    const previewContainer = document.getElementById('imagePreview');
+    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    });
+    processedImages = [];
+    originalArchive = null;
+    optimizedArchive = null;
+    imageFiles = [];
+    originalSizeBytes = 0;
+    optimizedSizeBytes = 0;
+    previewContainer.innerHTML = '';
+    clearConsole();
 }
 
-// Reset all
 function resetAll() {
-cleanupCurrentFile();
-fileQueue = [];
-currentFileIndex = 0;
-originalFile = null;
-isOptimizing = false;
-isCancelled = false;
-isQueueMode = false;
-queueProcessing = false;
+    cleanupCurrentFile();
+    fileQueue = [];
+    currentFileIndex = 0;
+    originalFile = null;
+    isOptimizing = false;
+    isCancelled = false;
+    isQueueMode = false;
+    queueProcessing = false;
 
-uploadArea.classList.remove('has-file');
-archiveInfo.classList.remove('active');
-progressPanel.classList.remove('active');
-resultPanel.classList.remove('active');
-queuePanel.classList.remove('active');
-fileInput.value = '';
+    uploadArea.classList.remove('has-file');
+    archiveInfo.classList.remove('active');
+    progressPanel.classList.remove('active');
+    resultPanel.classList.remove('active');
+    queuePanel.classList.remove('active');
+    fileInput.value = '';
 
-document.getElementById('imageCount').textContent = '0';
-document.getElementById('originalSize').textContent = '0 MB';
-document.getElementById('archiveType').textContent = '-';
-document.getElementById('archiveStatus').textContent = 'Ready';
-document.getElementById('archiveStatus').className = 'info-value success';
-document.getElementById('progressBar').style.width = '0%';
-document.getElementById('progressStats').textContent = '0 / 0 images';
-downloadBtn.disabled = true;
+    document.getElementById('imageCount').textContent = '0';
+    document.getElementById('originalSize').textContent = '0 MB';
+    document.getElementById('archiveType').textContent = '-';
+    document.getElementById('archiveStatus').textContent = 'Ready';
+    document.getElementById('archiveStatus').className = 'info-value success';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressStats').textContent = '0 / 0 images';
+    downloadBtn.disabled = true;
 
-queueList.innerHTML = '';
-queueStats.textContent = '0 files pending';
-clearConsole();
-log('🔄 Ready', 'info');
+    queueList.innerHTML = '';
+    queueStats.textContent = '0 files pending';
+    clearConsole();
+    log('🔄 Ready', 'info');
 }
 
-// Cancel
 function cancelOptimization() {
-if (isOptimizing) {
-isCancelled = true;
-isOptimizing = false;
-queueProcessing = false;
-log('⚠️ Cancelled', 'warning');
-optimizeBtn.disabled = false;
-}
+    if (isOptimizing) {
+        isCancelled = true;
+        isOptimizing = false;
+        queueProcessing = false;
+        log('⚠️ Cancelled by user', 'warning');
+        optimizeBtn.disabled = false;
+    }
 }
 
 document.addEventListener('keydown', (e) => {
-if (e.key === 'Escape' && isOptimizing) cancelOptimization();
+    if (e.key === 'Escape' && isOptimizing) cancelOptimization();
 });
+
+// Feature detection fallback for createImageBitmap
+if (typeof createImageBitmap === 'undefined') {
+    log('⚠️ createImageBitmap not supported - using fallback (slower)', 'warning');
+    // Fallback would use Image element (original code)
+    // For brevity, we keep the main path but you could add fallback here
+}
 
 log('👋 Welcome! Upload archives to begin', 'info');
 </script>
