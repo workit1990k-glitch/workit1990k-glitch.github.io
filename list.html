@@ -308,6 +308,15 @@ border-radius: 4px;
 .manga-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 .manga-card-cover { height: 350px; }
 }
+
+  .manga-card-creators {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.manga-card-creators strong {
+  color: var(--accent);
+}
 </style>
 </head>
 <body>
@@ -610,25 +619,34 @@ div.textContent = text;
 return div.innerHTML;
 };
 
+// Inside updateCard(), in the info.success block:
 card.innerHTML = `
 <div class="manga-card-cover">
-<img src="${info.cover || ''}" 
-alt="${escapeHtml(info.title)}" 
-onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22><rect fill=%22%232f3549%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%237982a9%22 text-anchor=%22middle%22>No Cover</text></svg>'">
+  <img src="${info.cover || ''}" 
+       alt="${escapeHtml(info.title)}" 
+       onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22><rect fill=%22%232f3549%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%237982a9%22 text-anchor=%22middle%22>No Cover</text></svg>'">
 </div>
 <div class="manga-card-body">
-<div class="manga-card-title">${escapeHtml(info.title)}</div>
-<div class="manga-card-meta">
-<span>${info.type}</span>
-<span>${info.language}</span>
-<span>${info.status}</span>
-<span>${info.year}</span>
-</div>
-<div class="manga-card-genres">
-<strong>Genres:</strong> ${info.genres.length ? escapeHtml(info.genres.join(', ')) : 'None'}
-</div>
-<div class="manga-card-desc">${escapeHtml(info.description)}</div>
-<div class="manga-card-id">ID: ${info.manga_id}</div>
+  <div class="manga-card-title">${escapeHtml(info.title)}</div>
+  <div class="manga-card-meta">
+    <span>${info.type}</span>
+    <span>${info.language}</span>
+    <span>${info.status}</span>
+    <span>${info.year}</span>
+  </div>
+  <div class="manga-card-genres">
+    <strong>Genres:</strong> ${info.genres.length ? escapeHtml(info.genres.join(', ')) : 'None'}
+  </div>
+  ${info.authors?.length ? `
+  <div class="manga-card-creators">
+    <strong>Authors:</strong> ${escapeHtml(info.authors.join(', '))}
+  </div>` : ''}
+  ${info.artists?.length ? `
+  <div class="manga-card-creators">
+    <strong>Artists:</strong> ${escapeHtml(info.artists.join(', '))}
+  </div>` : ''}
+  <div class="manga-card-desc">${escapeHtml(info.description)}</div>
+  <div class="manga-card-id">ID: ${info.manga_id}</div>
 </div>
 `;
 } else {
