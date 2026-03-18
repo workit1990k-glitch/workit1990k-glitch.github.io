@@ -1,9 +1,12 @@
+Here is the updated HTML code based on the provided file. I have removed all export and download functionality, focused on bulk fetching from `list.json`, and ensured **Genres** (along with Authors/Artists) are resolved and displayed.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manga Info Fetcher</title>
+<title>Manga Info Bulk Fetcher</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -64,10 +67,10 @@ color: var(--text-primary);
 border: 1px solid var(--border);
 }
 .btn-secondary:hover { background: var(--border); }
-.btn-success {
-background: var(--success);
+.btn-stop {
+background: var(--error);
 }
-.btn-success:hover { background: #a8d880; }
+.btn-stop:hover { background: #ff8da1; }
 .container {
 max-width: 1600px;
 margin: 0 auto;
@@ -130,93 +133,6 @@ font-size: 12px;
 color: var(--text-secondary);
 margin-top: 8px;
 }
-.manga-grid {
-display: grid;
-grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-gap: 16px;
-}
-.manga-card {
-background: var(--bg-secondary);
-border: 1px solid var(--border);
-border-radius: 8px;
-overflow: hidden;
-transition: transform 0.2s, box-shadow 0.2s;
-}
-.manga-card:hover {
-transform: translateY(-2px);
-box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-}
-.manga-card-cover {
-width: 100%;
-height: 350px;
-overflow: hidden;
-background: var(--bg-primary);
-}
-.manga-card-cover img {
-width: 100%;
-height: 100%;
-object-fit: cover;
-}
-.manga-card-body {
-padding: 12px;
-}
-.manga-card-title {
-font-size: 14px;
-font-weight: 600;
-margin-bottom: 8px;
-line-height: 1.4;
-display: -webkit-box;
--webkit-line-clamp: 2;
--webkit-box-orient: vertical;
-overflow: hidden;
-}
-.manga-card-info {
-font-size: 11px;
-color: var(--text-secondary);
-display: flex;
-flex-wrap: wrap;
-gap: 8px;
-}
-.manga-card-info span {
-display: flex;
-align-items: center;
-gap: 4px;
-}
-.manga-card-id {
-font-size: 10px;
-color: var(--text-secondary);
-background: var(--bg-primary);
-padding: 2px 6px;
-border-radius: 4px;
-margin-top: 8px;
-display: inline-block;
-}
-.loading-card {
-background: var(--bg-secondary);
-border: 1px solid var(--border);
-border-radius: 8px;
-height: 420px;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-.spinner {
-width: 30px;
-height: 30px;
-border: 3px solid var(--border);
-border-top-color: var(--accent);
-border-radius: 50%;
-animation: spin 1s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.error-card {
-background: var(--bg-secondary);
-border: 1px solid var(--error);
-border-radius: 8px;
-padding: 20px;
-text-align: center;
-color: var(--error);
-}
 .filter-bar {
 background: var(--bg-secondary);
 border: 1px solid var(--border);
@@ -250,21 +166,136 @@ outline: none;
 cursor: pointer;
 }
 .filter-bar select:focus { border-color: var(--accent); }
-.export-bar {
+.manga-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+gap: 16px;
+}
+.manga-card {
 background: var(--bg-secondary);
 border: 1px solid var(--border);
 border-radius: 8px;
-padding: 12px 16px;
-margin-bottom: 20px;
+overflow: hidden;
+transition: transform 0.2s, box-shadow 0.2s;
 display: flex;
-gap: 12px;
-flex-wrap: wrap;
-align-items: center;
-justify-content: space-between;
+flex-direction: column;
 }
-.export-info {
-font-size: 13px;
+.manga-card:hover {
+transform: translateY(-2px);
+box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.manga-card-cover {
+width: 100%;
+height: 400px;
+overflow: hidden;
+background: var(--bg-primary);
+position: relative;
+}
+.manga-card-cover img {
+width: 100%;
+height: 100%;
+object-fit: cover;
+}
+.manga-card-body {
+padding: 12px;
+flex: 1;
+display: flex;
+flex-direction: column;
+}
+.manga-card-title {
+font-size: 15px;
+font-weight: 700;
+margin-bottom: 8px;
+line-height: 1.4;
+display: -webkit-box;
+-webkit-line-clamp: 2;
+-webkit-box-orient: vertical;
+overflow: hidden;
+color: var(--text-primary);
+}
+.manga-card-meta {
+font-size: 12px;
 color: var(--text-secondary);
+display: flex;
+flex-wrap: wrap;
+gap: 8px;
+margin-bottom: 8px;
+}
+.manga-card-meta span {
+background: var(--bg-primary);
+padding: 2px 6px;
+border-radius: 4px;
+border: 1px solid var(--border);
+}
+.manga-card-genres {
+font-size: 11px;
+color: var(--accent);
+margin-bottom: 8px;
+display: -webkit-box;
+-webkit-line-clamp: 2;
+-webkit-box-orient: vertical;
+overflow: hidden;
+line-height: 1.4;
+}
+.manga-card-desc {
+font-size: 11px;
+color: var(--text-secondary);
+margin-top: auto;
+display: -webkit-box;
+-webkit-line-clamp: 3;
+-webkit-box-orient: vertical;
+overflow: hidden;
+line-height: 1.4;
+}
+.manga-card-id {
+font-size: 10px;
+color: var(--text-secondary);
+background: var(--bg-primary);
+padding: 2px 6px;
+border-radius: 4px;
+margin-top: 10px;
+align-self: flex-start;
+opacity: 0.7;
+}
+.loading-card {
+background: var(--bg-secondary);
+border: 1px solid var(--border);
+border-radius: 8px;
+height: 480px;
+display: flex;
+align-items: center;
+justify-content: center;
+}
+.spinner {
+width: 30px;
+height: 30px;
+border: 3px solid var(--border);
+border-top-color: var(--accent);
+border-radius: 50%;
+animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.error-card {
+background: var(--bg-secondary);
+border: 1px solid var(--error);
+border-radius: 8px;
+padding: 20px;
+text-align: center;
+color: var(--error);
+height: 480px;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+}
+.empty-state {
+grid-column: 1/-1;
+text-align: center;
+padding: 60px 20px;
+color: var(--text-secondary);
+background: var(--bg-secondary);
+border: 1px solid var(--border);
+border-radius: 8px;
 }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
@@ -277,21 +308,17 @@ border-radius: 4px;
 .header { flex-direction: column; align-items: stretch; }
 .header-controls { justify-content: center; }
 .stats-bar { grid-template-columns: repeat(2, 1fr); }
-.manga-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
-.manga-card-cover { height: 280px; }
+.manga-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.manga-card-cover { height: 350px; }
 }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
 <div class="header">
-<div class="header-title">📚 Manga Info Fetcher</div>
+<div class="header-title">📚 Manga Info Bulk Fetcher</div>
 <div class="header-controls">
-<button class="btn" id="fetchBtn" onclick="startFetch()">🔄 Fetch All Manga Info</button>
-<button class="btn btn-secondary" id="stopBtn" onclick="stopFetch()" disabled>⏹ Stop</button>
-<button class="btn btn-success" id="exportBtn" onclick="exportJSON()" disabled>📋 Export JSON</button>
-<button class="btn btn-secondary" onclick="exportCSV()">📄 Export CSV</button>
+<button class="btn" id="fetchBtn" onclick="startFetch()">🔄 Fetch All from List</button>
+<button class="btn btn-stop" id="stopBtn" onclick="stopFetch()" disabled>⏹ Stop</button>
 </div>
 </div>
 
@@ -327,7 +354,7 @@ border-radius: 4px;
 </div>
 
 <div class="filter-bar">
-<input type="text" id="searchInput" placeholder="🔍 Search by title..." oninput="filterManga()">
+<input type="text" id="searchInput" placeholder="🔍 Search by title or ID..." oninput="filterManga()">
 <select id="statusFilter" onchange="filterManga()">
 <option value="">All Status</option>
 <option value="ongoing">Ongoing</option>
@@ -344,37 +371,22 @@ border-radius: 4px;
 </select>
 </div>
 
-<div class="export-bar">
-<div class="export-info">
-<span id="displayCount">0</span> manga displayed | 
-<span id="exportReady">Export ready: No</span>
-</div>
-<div>
-<button class="btn btn-secondary" onclick="clearDisplay()">🗑 Clear Display</button>
-</div>
-</div>
-
 <div class="manga-grid" id="mangaGrid">
-<div class="loading-card" style="grid-column: 1/-1;">
-<div style="text-align: center; color: var(--text-secondary);">
-<p style="margin-bottom: 12px;">Click "Fetch All Manga Info" to start</p>
-<p style="font-size: 12px;">This will fetch info for all manga IDs from list.json</p>
-</div>
+<div class="empty-state">
+<h3>No Data Loaded</h3>
+<p style="margin-top: 8px;">Click "Fetch All from List" to load manga info from list.json</p>
 </div>
 </div>
 </div>
 
 <script>
+// Configuration
 const API_BASE = 'https://comix.to/api/v2';
 const LIST_JSON_URL = 'https://cdn.jsdelivr.net/gh/workit1990k-glitch/workit1990k-glitch.github.io@main/list.json';
 const HEADERS = { 'Referer': 'https://comix.to/', 'User-Agent': 'Mozilla/5.0' };
+const FETCH_CONCURRENCY = 3;
 
-let allMangaIds = [];
-let mangaInfoList = [];
-let isFetching = false;
-let stopRequested = false;
-let fetchConcurrency = 3;
-
+// Genre Mapping (From Source)
 const GENRE_MAP = {
 6: "Action", 87264: "Adult", 7: "Adventure", 9: "Comedy", 11: "Drama",
 87265: "Ecchi", 12: "Fantasy", 14: "Historical", 15: "Horror", 16: "Isekai",
@@ -384,6 +396,13 @@ const GENRE_MAP = {
 };
 const KNOWN_GENRE_IDS = new Set(Object.keys(GENRE_MAP).map(Number));
 
+// State
+let allMangaIds = [];
+let mangaInfoList = [];
+let isFetching = false;
+let stopRequested = false;
+
+// Helpers
 function updateStats() {
 document.getElementById('statTotal').textContent = allMangaIds.length;
 document.getElementById('statFetched').textContent = mangaInfoList.length;
@@ -416,6 +435,21 @@ await new Promise(r => setTimeout(r, delay * i));
 }
 }
 
+async function fetchTermNames(termIds, type) {
+if (!termIds?.length) return [];
+const unknownIds = termIds.filter(id => !KNOWN_GENRE_IDS.has(Number(id)));
+if (!unknownIds.length) return [];
+try {
+const params = unknownIds.map(id => `ids[]=${id}`).join('&');
+const url = `${API_BASE}/terms?type=${type}&${params}`;
+const res = await fetchRetry(url);
+return (res.result?.items || []).map(item => item.title).filter(Boolean);
+} catch (err) {
+console.warn(`Failed to fetch ${type} terms:`, err);
+return [];
+}
+}
+
 async function fetchMangaInfo(mangaId) {
 try {
 const response = await fetchRetry(`${API_BASE}/manga/${mangaId}/`);
@@ -427,16 +461,19 @@ const genreNames = [];
 const authorIds = [];
 const artistIds = [];
 
+// Separate Genres from Authors/Artists
 for (const id of termIds) {
 const numId = Number(id);
 if (KNOWN_GENRE_IDS.has(numId)) {
 genreNames.push(GENRE_MAP[numId]);
 } else {
+// Assume non-genre terms are authors/artists (simplified logic from source)
 authorIds.push(id);
 artistIds.push(id);
 }
 }
 
+// Fetch Names for Authors/Artists
 const [authors, artists] = await Promise.all([
 fetchTermNames(authorIds, 'author'),
 fetchTermNames(artistIds, 'artist')
@@ -469,21 +506,6 @@ fetched_at: new Date().toISOString()
 }
 }
 
-async function fetchTermNames(termIds, type) {
-if (!termIds?.length) return [];
-const unknownIds = termIds.filter(id => !KNOWN_GENRE_IDS.has(Number(id)));
-if (!unknownIds.length) return [];
-try {
-const params = unknownIds.map(id => `ids[]=${id}`).join('&');
-const url = `${API_BASE}/terms?type=${type}&${params}`;
-const res = await fetchRetry(url);
-return (res.result?.items || []).map(item => item.title).filter(Boolean);
-} catch (err) {
-console.warn(`Failed to fetch ${type} terms:`, err);
-return [];
-}
-}
-
 async function startFetch() {
 if (isFetching) return;
 isFetching = true;
@@ -491,7 +513,6 @@ stopRequested = false;
 
 document.getElementById('fetchBtn').disabled = true;
 document.getElementById('stopBtn').disabled = false;
-document.getElementById('exportBtn').disabled = true;
 
 const grid = document.getElementById('mangaGrid');
 grid.innerHTML = '';
@@ -499,6 +520,7 @@ grid.innerHTML = '';
 updateStatus('Fetching list.json...');
 
 try {
+// 1. Fetch List of IDs
 const listResponse = await fetch(LIST_JSON_URL);
 if (!listResponse.ok) throw new Error('Failed to fetch list.json');
 const listData = await listResponse.json();
@@ -507,8 +529,8 @@ allMangaIds = Object.keys(listData);
 document.getElementById('statTotal').textContent = allMangaIds.length;
 updateStatus(`Found ${allMangaIds.length} manga IDs. Starting fetch...`);
 
-// Create placeholder cards
-allMangaIds.forEach((id, index) => {
+// 2. Create Placeholders
+allMangaIds.forEach((id) => {
 const card = document.createElement('div');
 card.className = 'loading-card';
 card.id = `card-${id}`;
@@ -522,12 +544,12 @@ grid.appendChild(card);
 mangaInfoList = [];
 let completed = 0;
 
-// Fetch with concurrency
+// 3. Fetch Info with Concurrency
 const queue = [...allMangaIds];
 const executing = new Set();
 
 while (queue.length > 0 && !stopRequested) {
-while (executing.size < fetchConcurrency && queue.length > 0) {
+while (executing.size < FETCH_CONCURRENCY && queue.length > 0) {
 const mangaId = queue.shift();
 const promise = fetchMangaInfo(mangaId)
 .then(info => {
@@ -559,8 +581,6 @@ if (stopRequested) {
 updateStatus('⏹ Fetch stopped by user');
 } else {
 updateStatus('✅ Fetch complete!');
-document.getElementById('exportBtn').disabled = false;
-document.getElementById('exportReady').textContent = 'Export ready: Yes';
 }
 
 } catch (err) {
@@ -586,24 +606,31 @@ if (!card) return;
 
 if (info.success) {
 card.className = 'manga-card';
+// Escape HTML for safety
+const escapeHtml = (text) => {
+const div = document.createElement('div');
+div.textContent = text;
+return div.innerHTML;
+};
+
 card.innerHTML = `
 <div class="manga-card-cover">
-<img src="${info.cover || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22><rect fill=%22%232f3549%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%237982a9%22 text-anchor=%22middle%22>No Cover</text></svg>'}" 
-alt="${info.title}" 
+<img src="${info.cover || ''}" 
+alt="${escapeHtml(info.title)}" 
 onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22><rect fill=%22%232f3549%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%237982a9%22 text-anchor=%22middle%22>No Cover</text></svg>'">
 </div>
 <div class="manga-card-body">
 <div class="manga-card-title">${escapeHtml(info.title)}</div>
-<div class="manga-card-info">
-<span>📖 ${info.type}</span>
-<span>🌐 ${info.language}</span>
-<span>📊 ${info.status}</span>
-<span>📅 ${info.year}</span>
+<div class="manga-card-meta">
+<span>${info.type}</span>
+<span>${info.language}</span>
+<span>${info.status}</span>
+<span>${info.year}</span>
 </div>
-<div class="manga-card-info" style="margin-top: 6px;">
-<span>📚 Ch.${info.latest_chapter}</span>
-<span>❤️ ${(info.followers || 0).toLocaleString()}</span>
+<div class="manga-card-genres">
+<strong>Genres:</strong> ${info.genres.length ? escapeHtml(info.genres.join(', ')) : 'None'}
 </div>
+<div class="manga-card-desc">${escapeHtml(info.description)}</div>
 <div class="manga-card-id">ID: ${info.manga_id}</div>
 </div>
 `;
@@ -613,15 +640,9 @@ card.innerHTML = `
 <div style="font-size: 24px; margin-bottom: 8px;">❌</div>
 <div style="font-weight: 600;">Failed to fetch</div>
 <div style="font-size: 11px; margin-top: 4px;">ID: ${info.manga_id}</div>
-<div style="font-size: 10px; margin-top: 4px; opacity: 0.7;">${escapeHtml(info.error)}</div>
+<div style="font-size: 10px; margin-top: 4px; opacity: 0.7;">${info.error}</div>
 `;
 }
-}
-
-function escapeHtml(text) {
-const div = document.createElement('div');
-div.textContent = text;
-return div.innerHTML;
 }
 
 function filterManga() {
@@ -634,7 +655,8 @@ let visibleCount = 0;
 
 cards.forEach(card => {
 const title = card.querySelector('.manga-card-title')?.textContent.toLowerCase() || '';
-const infoText = card.querySelector('.manga-card-info')?.textContent.toLowerCase() || '';
+const metaText = card.querySelector('.manga-card-meta')?.textContent.toLowerCase() || '';
+const genreText = card.querySelector('.manga-card-genres')?.textContent.toLowerCase() || '';
 const cardId = card.id.replace('card-', '');
 
 let matches = true;
@@ -644,81 +666,18 @@ matches = false;
 }
 
 if (status) {
-const statusMatch = infoText.includes(status.toLowerCase());
+const statusMatch = metaText.includes(status.toLowerCase());
 if (!statusMatch) matches = false;
 }
 
 if (lang) {
-const langMatch = infoText.includes(lang.toLowerCase());
+const langMatch = metaText.includes(lang.toLowerCase());
 if (!langMatch) matches = false;
 }
 
-card.style.display = matches ? 'block' : 'none';
+card.style.display = matches ? 'flex' : 'none';
 if (matches) visibleCount++;
 });
-
-document.getElementById('displayCount').textContent = visibleCount;
-}
-
-function clearDisplay() {
-const grid = document.getElementById('mangaGrid');
-grid.innerHTML = `
-<div class="loading-card" style="grid-column: 1/-1;">
-<div style="text-align: center; color: var(--text-secondary);">
-<p style="margin-bottom: 12px;">Display cleared</p>
-<p style="font-size: 12px;">Click "Fetch All Manga Info" to start again</p>
-</div>
-</div>
-`;
-document.getElementById('searchInput').value = '';
-document.getElementById('statusFilter').value = '';
-document.getElementById('langFilter').value = '';
-document.getElementById('displayCount').textContent = '0';
-}
-
-function exportJSON() {
-if (mangaInfoList.length === 0) {
-alert('No manga data to export');
-return;
-}
-const jsonData = JSON.stringify(mangaInfoList, null, 2);
-const blob = new Blob([jsonData], { type: 'application/json' });
-saveAs(blob, `manga_info_${new Date().toISOString().split('T')[0]}.json`);
-}
-
-function exportCSV() {
-if (mangaInfoList.length === 0) {
-alert('No manga data to export');
-return;
-}
-const successData = mangaInfoList.filter(m => m.success);
-if (successData.length === 0) {
-alert('No successful manga data to export');
-return;
-}
-const headers = ['manga_id', 'title', 'type', 'language', 'status', 'year', 'latest_chapter', 'followers', 'genres', 'authors', 'artists'];
-const csvRows = [headers.join(',')];
-
-successData.forEach(manga => {
-const row = [
-manga.manga_id,
-`"${(manga.title || '').replace(/"/g, '""')}"`,
-manga.type,
-manga.language,
-manga.status,
-manga.year,
-manga.latest_chapter,
-manga.followers,
-`"${(manga.genres || []).join('; ').replace(/"/g, '""')}"`,
-`"${(manga.authors || []).join('; ').replace(/"/g, '""')}"`,
-`"${(manga.artists || []).join('; ').replace(/"/g, '""')}"`
-];
-csvRows.push(row.join(','));
-});
-
-const csvContent = csvRows.join('\n');
-const blob = new Blob([csvContent], { type: 'text/csv' });
-saveAs(blob, `manga_info_${new Date().toISOString().split('T')[0]}.csv`);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -729,3 +688,4 @@ stopFetch();
 </script>
 </body>
 </html>
+```
