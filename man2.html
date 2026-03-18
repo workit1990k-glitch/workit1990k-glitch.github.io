@@ -1518,8 +1518,7 @@ const response = await fetch(wsrvUrl, {
 });
 if (!response.ok) throw new Error(`Failed: ${response.status}`);
 const blob = await response.blob();
-        if (!response.ok) throw new Error(`Failed: ${response.status}`);
-        const blob = await response.blob();
+
         zipFolder.file(fileName, blob);
         return blob.size;
     };
