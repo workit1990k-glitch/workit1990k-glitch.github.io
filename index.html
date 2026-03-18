@@ -1415,8 +1415,7 @@ chapters.add(Math.floor(num));
 });
 return Array.from(chapters).sort((a, b) => a - b);
 }
-// ============ BATCH DOWNLOAD WITH SIZE SPLITTING (FIXED) ============
-// ============ BATCH DOWNLOAD (PARALLEL CHAPTERS + OPTIMIZED) ============
+// ============ BATCH DOWNLOAD (PARALLEL + THROTTLE FIX) ============
 async function startBatchDownload() {
     if (selectedChapters.size === 0) {
         alert('Please select at least one chapter');
@@ -1437,8 +1436,13 @@ async function startBatchDownload() {
         .replace(/[\\/:\*\?"<>\|]/g, '')
         .trim()
         .slice(0, 50);
+    
+    // 🔥 CONFIGURATION
+    const CHAPTER_CONCURRENCY = 3; // Fast mode
+    const THROTTLE_THRESHOLD_BYTES = 450 * 1024 * 1024; // 450MB (Switch to 1-by-1)
+    
     logConsole(`📦 Starting batch download: ${selected.length} chapters`, 'info');
-    logConsole(`🚀 Mode: Parallel Chapters (3 concurrent)`, 'info');
+    logConsole(`🚀 Mode: Parallel (3) -> Throttle at 450MB`, 'info');
     logConsole(`⚠️ Max ZIP size: ${MAX_ZIP_SIZE_MB}MB per file`, 'warning');
     
     let currentZip = new JSZip();
@@ -1450,33 +1454,42 @@ async function startBatchDownload() {
     let zipsCreated = 0;
     let pendingZipBlob = null;
     let pendingZipName = null;
-    
-    // 🔥 Concurrency Limit for Chapters
-    const CHAPTER_CONCURRENCY = 3; 
     const executingChapters = new Set();
 
     const saveCurrentZip = async (isFinal = false) => {
         if (currentZipSize === 0) return;
+        
+        // 🔥 FIX: Always use Chapter Range for filename
         let rangeStr = `part${zipIndex}`;
         if (currentRangeStart !== null && currentRangeEnd !== null) {
             rangeStr = `Ch${Math.floor(currentRangeStart)}-${Math.floor(currentRangeEnd)}`;
         }
+        
+        // 🔥 FIX: Use .zip extension
         const zipName = `${mangaTitle} ${rangeStr}.zip`;
+        
         logConsole(`🗜️ Generating ZIP (${(currentZipSize / 1024 / 1024).toFixed(1)} MB)...`, 'info');
+        
+        // 🔥 SPEED FIX: Use STORE compression (no compression)
         const content = await currentZip.generateAsync({
             type: 'blob',
             compression: 'STORE',
             compressionOptions: { level: 0 }
         });
+        
         zipsCreated++;
         pendingZipBlob = content;
         pendingZipName = zipName;
+        
         if (!isFinal || zipsCreated > 1) {
             await flushPendingZip();
         }
+        
         zipIndex++;
         currentZip = new JSZip();
         currentZipSize = 0;
+        // 🔥 FIX: Reset range start so next ZIP calculates correctly
+        currentRangeStart = null; 
     };
 
     const flushPendingZip = async () => {
@@ -1489,7 +1502,7 @@ async function startBatchDownload() {
     };
 
     const processChapter = async (chapter) => {
-        if (batchDownloadCancelled) return;
+        if (batchDownloadCancelled) return 0;
         const chapterNum = parseFloat(chapter.number);
         const chapterName = chapter.name || '';
         logConsole(`📥 Chapter ${chapter.number}${chapterName ? ' - ' + chapterName : ''}`, 'info');
@@ -1559,6 +1572,15 @@ async function startBatchDownload() {
             if (batchDownloadCancelled) break;
             const chapter = selected[i];
             
+            // 🔥 THROTTLE LOGIC: Switch to 1-by-1 if near limit
+            const isNearLimit = currentZipSize >= THROTTLE_THRESHOLD_BYTES;
+            const currentConcurrency = isNearLimit ? 1 : CHAPTER_CONCURRENCY;
+            
+            // Wait if we have too many active chapters
+            while (executingChapters.size >= currentConcurrency) {
+                await Promise.race(executingChapters);
+            }
+            
             // 🔥 Start Chapter Processing
             const promise = processChapter(chapter).then(async (size) => {
                 executingChapters.delete(promise);
@@ -1570,17 +1592,12 @@ async function startBatchDownload() {
                     if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < selected.length - 1) {
                         logConsole(`📦 ZIP size limit reached, creating new archive...`, 'warning');
                         await saveCurrentZip(false);
-                        currentRangeStart = null;
+                        // currentRangeStart is reset inside saveCurrentZip
                     }
                 }
             });
             
             executingChapters.add(promise);
-            
-            // 🔥 Limit Concurrent Chapters
-            if (executingChapters.size >= CHAPTER_CONCURRENCY) {
-                await Promise.race(executingChapters);
-            }
         }
         
         // 🔥 Wait for all remaining chapters to finish
