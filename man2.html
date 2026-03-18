@@ -1639,7 +1639,6 @@ headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ url: url })
 });
 if (!response.ok) throw new Error(`Failed: ${response.status}`);
-const blob = await response.blob();
 folder.file(fileName, blob);
 completed++;
 progressEl.textContent = `📥 ${completed}/${imageUrls.length}`;
