@@ -77,7 +77,6 @@
             border-bottom: 1px solid #444;
             cursor: pointer;
             font-size: 0.9rem;
-            white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
         }
@@ -183,7 +182,7 @@
             mediaFiles.forEach((file, index) => {
                 const li = document.createElement('li');
                 li.className = 'file-item';
-                li.innerHTML = `<span class="file-icon">🎵</span> ${file.name}`;
+                li.innerHTML = `${file.name}`;
                 li.onclick = () => loadMedia(index);
                 fileListEl.appendChild(li);
             });
