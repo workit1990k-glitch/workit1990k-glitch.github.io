@@ -1700,14 +1700,16 @@ function togglePause() {
     }
 }
 
-// ============ BATCH ZIP DOWNLOAD ============
+// ============ BATCH ZIP DOWNLOAD (FIXED) ============
 async function startBatchZipDownload() {
     if (isBatchZipping) return;
     
     const chaptersToZip = [];
     selectedChapters.forEach(id => {
         const cache = chapterDataCache.get(id);
-        if (cache && (cache.status === 'green' || cache.status === 'yellow') && cache.blobs.length > 0) {
+        // 🔥 FIX: Check blobs exists and has length
+        if (cache && cache.blobs && Array.isArray(cache.blobs) && cache.blobs.length > 0 && 
+            (cache.status === 'green' || cache.status === 'yellow')) {
             const chapter = allChapters.find(c => c.chapter_id === id);
             if (chapter) chaptersToZip.push({ chapter,  cache });
         }
@@ -1765,8 +1767,17 @@ async function startBatchZipDownload() {
             currentRangeEnd = chapterNum;
 
             const folder = currentZip.folder(`Ch.${chapter.number}${chapterName ? ' - ' + chapterName : ''}`);
-            data.blobs.forEach(b => folder.file(b.fileName, b.blob));
-            currentZipSize += data.size;
+            
+            // 🔥 FIX: Safe blobs iteration
+            if (data.blobs && Array.isArray(data.blobs)) {
+                data.blobs.forEach(b => {
+                    if (b && b.fileName && b.blob) {
+                        folder.file(b.fileName, b.blob);
+                    }
+                });
+            }
+            
+            currentZipSize += (data.size || 0);
 
             if (currentZipSize >= MAX_ZIP_SIZE_BYTES && i < chaptersToZip.length - 1) {
                 await saveCurrentZip(false, currentRangeStart, currentRangeEnd);
@@ -1774,17 +1785,18 @@ async function startBatchZipDownload() {
             }
         }
         await saveCurrentZip(true, currentRangeStart, currentRangeEnd);
-            logConsole(`🎉 ZIP generation complete!`, 'success');
-            logConsole(`💾 Auto-saving manga to list...`, 'success');
+        logConsole(`🎉 ZIP generation complete!`, 'success');
+          logConsole(`💾 Auto-saving manga to list...`, 'success');
             await saveMangaToList();
     } catch (err) {
         logConsole(`❌ ZIP Error: ${err.message}`, 'error');
+        console.error(err);
     } finally {
         isBatchZipping = false;
         updateCount();
     }
 }
-
+    
 // ============ JSON FEATURE ============
 function extractImageUrls(data) {
 if (Array.isArray(data)) {
