@@ -1786,8 +1786,7 @@ async function startBatchZipDownload() {
         }
         await saveCurrentZip(true, currentRangeStart, currentRangeEnd);
         logConsole(`🎉 ZIP generation complete!`, 'success');
-          logConsole(`💾 Auto-saving manga to list...`, 'success');
-            await saveMangaToList();
+
     } catch (err) {
         logConsole(`❌ ZIP Error: ${err.message}`, 'error');
         console.error(err);
