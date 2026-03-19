@@ -502,6 +502,18 @@ color: var(--bg-primary);
 .btn-batch-fetch:hover { background: var(--accent-hover); }
 .btn-batch-fetch:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.btn-batch-refetch-failed {
+background: var(--warning);
+padding: 10px 20px;
+font-size: 13px;
+display: flex;
+align-items: center;
+gap: 8px;
+color: var(--bg-primary);
+}
+.btn-batch-refetch-failed:hover { background: #f0bf78; }
+.btn-batch-refetch-failed:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .btn-batch-zip {
 background: var(--success);
 padding: 10px 20px;
@@ -738,6 +750,10 @@ Enter a manga URL and click FETCH to load chapters
 <button class="btn btn-batch-fetch" onclick="startBatchFetch()" id="batchFetchBtn" disabled>
 <span>⬇</span> FETCH SELECTED CHAPTERS
 </button>
+<!-- NEW: Refetch All Failed Button -->
+<button class="btn btn-batch-refetch-failed" onclick="startBatchRefetchFailed()" id="batchRefetchFailedBtn" disabled>
+<span>🔄</span> REFETCH ALL FAILED
+</button>
 <!-- Pause Button -->
 <button class="btn btn-pause" onclick="togglePause()" id="pauseBtn" style="display:none;">
 <span>⏸</span> PAUSE
@@ -821,7 +837,7 @@ let isBatchFetching = false;
 let isBatchZipping = false;
 let batchFetchCancelled = false;
 let batchFetchPaused = false;
-let batchFetchResolve = null; // For pause/resume logic
+let batchFetchResolve = null;
 
 // Store fetched  Map<chapterId, { blobs: [], size: number, total: number, failed: number, status: 'gray'|'green'|'yellow'|'red' }>
 const chapterDataCache = new Map();
@@ -961,7 +977,7 @@ allChapters = [];
 selectedChapters.clear();
 scanlators.clear();
 mangaDataCache = null;
-chapterDataCache.clear(); // Clear fetch cache
+chapterDataCache.clear();
 closePreview();
 ['genresRow', 'authorsRow', 'artistsRow'].forEach(id => {
 const el = document.getElementById(id);
@@ -1092,7 +1108,6 @@ if (cache && cache.status !== 'gray' && cache.status !== 'fetching') {
     resultHtml = `<div class="chapter-result">Size: <span>${sizeMB}MB</span>, Downloaded: <span>${cache.total - cache.failed}</span>, Failed: <span style="color:${cache.failed > 0 ? 'var(--error)' : 'var(--success)'}">${cache.failed}</span></div>`;
 }
 
-// FIX: Refetch button is ALWAYS visible now
 div.innerHTML = `
 <div class="status-box ${statusClass}" title="Status: ${status}"></div>
 <div class="chapter-info">
@@ -1172,12 +1187,22 @@ renderChapters();
 updateCount();
 }
 
-// FIX: Calculate total size and update Download Button text
+// Calculate total size and update Download Button text
 function updateCount() {
 document.getElementById('selectedCount').textContent = selectedChapters.size;
 document.getElementById('showJsonBtn').disabled = selectedChapters.size === 0;
-// Disable Fetch if already fetching
 document.getElementById('batchFetchBtn').disabled = selectedChapters.size === 0 || isBatchFetching;
+
+// Count failed chapters for Refetch All Failed button
+let failedCount = 0;
+selectedChapters.forEach(id => {
+    const cache = chapterDataCache.get(id);
+    if (cache && (cache.status === 'yellow' || cache.status === 'red')) {
+        failedCount++;
+    }
+});
+document.getElementById('batchRefetchFailedBtn').disabled = failedCount === 0 || isBatchFetching;
+document.getElementById('batchRefetchFailedBtn').innerHTML = `<span>🔄</span> REFETCH ALL FAILED (${failedCount})`;
 
 // Calculate Total Size for Download Button
 let readyCount = 0;
@@ -1421,7 +1446,6 @@ async function handleIndividualFetch(chapterId, number, name) {
         btn.disabled = true;
         btn.innerHTML = '⏳...';
         
-        // Update UI to fetching
         chapterDataCache.set(chapterId, { status: 'fetching' });
         renderChapters();
 
@@ -1430,7 +1454,6 @@ async function handleIndividualFetch(chapterId, number, name) {
 
         if (data.status === 'green') {
             logConsole(`✓ Chapter ${number} fetched successfully`, 'success');
-            // Auto download ZIP
             await createChapterZip(chapterId, number, name, data.blobs);
         } else if (data.status === 'yellow') {
             logConsole(`⚠ Chapter ${number} fetched with errors`, 'warning');
@@ -1463,10 +1486,14 @@ async function createChapterZip(chapterId, number, name, blobs) {
     logConsole(`💾 Saved ${zipName}`, 'success');
 }
 
-// ============ REFETCH ============
+// ============ REFETCH SINGLE CHAPTER (FIXED) ============
 async function refetchChapter(chapterId) {
     const chapter = allChapters.find(c => c.chapter_id === chapterId);
-    if (!chapter) return;
+    if (!chapter) {
+        logConsole(`❌ Chapter ${chapterId} not found`, 'error');
+        return;
+    }
+    
     // Clear cache for this chapter
     chapterDataCache.delete(chapterId);
     renderChapters();
@@ -1474,12 +1501,111 @@ async function refetchChapter(chapterId) {
     try {
         chapterDataCache.set(chapterId, { status: 'fetching' });
         renderChapters();
+        logConsole(`🔄 Refetching Chapter ${chapter.number}...`, 'info');
         const data = await fetchChapterImages(chapterId);
         updateChapterUI(chapterId, data);
-        logConsole(`🔄 Refetched Chapter ${chapter.number}: ${data.status}`, data.status === 'green' ? 'success' : 'warning');
+        
+        if (data.status === 'green') {
+            logConsole(`✓ Chapter ${chapter.number} refetched successfully`, 'success');
+        } else if (data.status === 'yellow') {
+            logConsole(`⚠ Chapter ${chapter.number} refetched with errors`, 'warning');
+        } else {
+            logConsole(`❌ Chapter ${chapter.number} refetch failed`, 'error');
+        }
     } catch (err) {
+        console.error(err);
         chapterDataCache.set(chapterId, { status: 'red', error: err.message });
         renderChapters();
+        logConsole(`❌ Chapter ${chapter.number} refetch error: ${err.message}`, 'error');
+    }
+}
+
+// ============ BATCH REFETCH ALL FAILED (NEW) ============
+async function startBatchRefetchFailed() {
+    if (isBatchFetching) return;
+    
+    // Find all failed chapters (yellow or red)
+    const failedChapters = [];
+    selectedChapters.forEach(id => {
+        const cache = chapterDataCache.get(id);
+        if (cache && (cache.status === 'yellow' || cache.status === 'red')) {
+            const chapter = allChapters.find(c => c.chapter_id === id);
+            if (chapter) failedChapters.push(chapter);
+        }
+    });
+    
+    if (failedChapters.length === 0) {
+        alert('No failed chapters to refetch!');
+        return;
+    }
+    
+    isBatchFetching = true;
+    batchFetchCancelled = false;
+    batchFetchPaused = false;
+    
+    showConsole();
+    logConsole(`🔄 Starting batch refetch: ${failedChapters.length} failed chapters`, 'info');
+    logConsole(`🚀 TRUE PARALLEL: 3 chapters simultaneously`, 'info');
+    
+    document.getElementById('pauseBtn').style.display = 'flex';
+    document.getElementById('pauseBtn').innerHTML = '<span>⏸</span> PAUSE';
+    document.getElementById('batchSummary').classList.remove('active');
+    
+    let completedChapters = 0;
+    const CHAPTER_CONCURRENCY = 3;
+    const executingChapters = new Set();
+
+    try {
+        for (let i = 0; i < failedChapters.length; i++) {
+            if (batchFetchCancelled) break;
+            
+            while (batchFetchPaused && !batchFetchCancelled) {
+                await new Promise(r => batchFetchResolve = r);
+            }
+            if (batchFetchCancelled) break;
+
+            while (executingChapters.size >= CHAPTER_CONCURRENCY) {
+                await Promise.race(executingChapters);
+            }
+
+            const chapter = failedChapters[i];
+            logConsole(`📥 Refetching Chapter ${chapter.number}...`, 'info');
+            
+            const promise = (async () => {
+                const data = await fetchChapterImages(chapter.chapter_id);
+                updateChapterUI(chapter.chapter_id, data);
+                completedChapters++;
+                updateConsoleProgress(completedChapters, failedChapters.length, totalImagesDownloaded, totalDownloadedBytes / 1024 / 1024);
+                
+                if (data.status === 'green') {
+                    logConsole(`✓ Chapter ${chapter.number} refetched successfully`, 'success');
+                } else if (data.status === 'yellow') {
+                    logConsole(`⚠ Chapter ${chapter.number} refetched with errors`, 'warning');
+                } else {
+                    logConsole(`❌ Chapter ${chapter.number} refetch failed`, 'error');
+                }
+            })();
+            
+            executingChapters.add(promise);
+            promise.finally(() => executingChapters.delete(promise));
+        }
+
+        await Promise.all(executingChapters);
+
+        if (!batchFetchCancelled) {
+            logConsole(`🎉 Batch refetch complete!`, 'success');
+            const summary = document.getElementById('summaryText');
+            summary.textContent = `${completedChapters} chapters refetched. Ready to download ZIPs.`;
+            document.getElementById('batchSummary').classList.add('active');
+        }
+
+    } catch (err) {
+        logConsole(`❌ Fatal error: ${err.message}`, 'error');
+    } finally {
+        isBatchFetching = false;
+        batchFetchPaused = false;
+        document.getElementById('pauseBtn').style.display = 'none';
+        updateCount();
     }
 }
 
@@ -1510,13 +1636,11 @@ async function startBatchFetch() {
         for (let i = 0; i < selected.length; i++) {
             if (batchFetchCancelled) break;
             
-            // Pause Logic
             while (batchFetchPaused && !batchFetchCancelled) {
                 await new Promise(r => batchFetchResolve = r);
             }
             if (batchFetchCancelled) break;
 
-            // 🔥 RACE CONDITION: Wait for ANY chapter to finish (not all)
             while (executingChapters.size >= CHAPTER_CONCURRENCY) {
                 await Promise.race(executingChapters);
             }
@@ -1524,7 +1648,6 @@ async function startBatchFetch() {
             const chapter = selected[i];
             logConsole(`📥 Fetching Chapter ${chapter.number}...`, 'info');
             
-            // 🔥 Create promise WITHOUT await - starts immediately
             const promise = (async () => {
                 const data = await fetchChapterImages(chapter.chapter_id);
                 updateChapterUI(chapter.chapter_id, data);
@@ -1540,14 +1663,10 @@ async function startBatchFetch() {
                 }
             })();
             
-            // 🔥 Add to executing set for race condition tracking
             executingChapters.add(promise);
-            
-            // 🔥 Remove from set when done (success or error)
             promise.finally(() => executingChapters.delete(promise));
         }
 
-        // 🔥 Wait for ALL remaining chapters to complete
         await Promise.all(executingChapters);
 
         if (!batchFetchCancelled) {
@@ -1566,7 +1685,7 @@ async function startBatchFetch() {
         updateCount();
     }
 }
-    
+
 function togglePause() {
     if (!isBatchFetching) return;
     batchFetchPaused = !batchFetchPaused;
@@ -1581,27 +1700,16 @@ function togglePause() {
     }
 }
 
-function cancelBatchFetch() {
-    batchFetchCancelled = true;
-    batchFetchPaused = false;
-    if (batchFetchResolve) batchFetchResolve();
-    logConsole(`❌ Fetching cancelled`, 'error');
-    isBatchFetching = false;
-    document.getElementById('pauseBtn').style.display = 'none';
-    updateCount();
-}
-
 // ============ BATCH ZIP DOWNLOAD ============
 async function startBatchZipDownload() {
     if (isBatchZipping) return;
     
-    // Gather successfully fetched chapters from selection
     const chaptersToZip = [];
     selectedChapters.forEach(id => {
         const cache = chapterDataCache.get(id);
         if (cache && (cache.status === 'green' || cache.status === 'yellow') && cache.blobs.length > 0) {
             const chapter = allChapters.find(c => c.chapter_id === id);
-            if (chapter) chaptersToZip.push({ chapter, data: cache });
+            if (chapter) chaptersToZip.push({ chapter,  cache });
         }
     });
 
@@ -1623,7 +1731,6 @@ async function startBatchZipDownload() {
     let zipIndex = 1;
     let currentZip = new JSZip();
     let currentZipSize = 0;
-    const THROTTLE_THRESHOLD_BYTES = 450 * 1024 * 1024;
 
     const saveCurrentZip = async (isFinal = false, rangeStart, rangeEnd) => {
         if (currentZipSize === 0) return;
@@ -1667,8 +1774,8 @@ async function startBatchZipDownload() {
             }
         }
         await saveCurrentZip(true, currentRangeStart, currentRangeEnd);
-        logConsole(`🎉 ZIP generation complete!`, 'success');
-            logConsole(`💾 Auto-saving manga to list...`, 'info');
+            logConsole(`🎉 ZIP generation complete!`, 'success');
+            logConsole(`💾 Auto-saving manga to list...`, 'success');
             await saveMangaToList();
     } catch (err) {
         logConsole(`❌ ZIP Error: ${err.message}`, 'error');
@@ -1935,7 +2042,7 @@ if (onProgress) onProgress(i + 1, items.length);
 }
 return Promise.all(results);
 }
-// ============ AUTO-FETCH FROM URL PARAM ============
+
 document.addEventListener('DOMContentLoaded', () => {
 const params = new URLSearchParams(window.location.search);
 const hrefParam = params.get('href');
@@ -1958,7 +2065,7 @@ console.warn('Failed to parse href parameter:', e);
 }
 }
 });
-// Only this constant needed in frontend:
+
 const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 async function saveMangaToList() {
 const saveBtn = document.getElementById('saveToListBtn');
@@ -1974,7 +2081,6 @@ saveBtn.disabled = true;
 saveBtn.innerHTML = '⏳ Saving...';
 saveStatus.textContent = '';
 try {
-// 🔥 Frontend ONLY talks to worker - no GitHub URLs here
 const response = await fetch(WORKER_SAVE_URL, {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
