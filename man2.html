@@ -1483,7 +1483,7 @@ async function refetchChapter(chapterId) {
     }
 }
 
-// ============ BATCH FETCH (PAUSABLE + PARALLEL) ============
+// ============ BATCH FETCH (TRUE PARALLEL + RACE CONDITION) ============
 async function startBatchFetch() {
     if (selectedChapters.size === 0) return;
     if (isBatchFetching) return;
@@ -1500,10 +1500,10 @@ async function startBatchFetch() {
     
     const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
     logConsole(`📦 Starting batch fetch: ${selected.length} chapters`, 'info');
-    logConsole(`🚀 Parallel Mode: 3 chapters at once`, 'info');
+    logConsole(`🚀 TRUE PARALLEL: 3 chapters simultaneously`, 'info');
 
     let completedChapters = 0;
-    const CHAPTER_CONCURRENCY = 3; // 🔥 3 PARALLEL LIKE ORIGINAL
+    const CHAPTER_CONCURRENCY = 3;
     const executingChapters = new Set();
 
     try {
@@ -1516,7 +1516,7 @@ async function startBatchFetch() {
             }
             if (batchFetchCancelled) break;
 
-            // 🔥 Wait if we have too many active chapters (parallel control)
+            // 🔥 RACE CONDITION: Wait for ANY chapter to finish (not all)
             while (executingChapters.size >= CHAPTER_CONCURRENCY) {
                 await Promise.race(executingChapters);
             }
@@ -1524,34 +1524,30 @@ async function startBatchFetch() {
             const chapter = selected[i];
             logConsole(`📥 Fetching Chapter ${chapter.number}...`, 'info');
             
-            // 🔥 Start chapter processing in parallel
-            const promise = fetchChapterImages(chapter.chapter_id)
-                .then(async (data) => {
-                    executingChapters.delete(promise);
-                    updateChapterUI(chapter.chapter_id, data);
-                    completedChapters++;
-                    updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, totalDownloadedBytes / 1024 / 1024);
-                    
-                    if (data.status === 'green') {
-                        logConsole(`✓ Chapter ${chapter.number} fetched successfully`, 'success');
-                    } else if (data.status === 'yellow') {
-                        logConsole(`⚠ Chapter ${chapter.number} fetched with errors`, 'warning');
-                    } else {
-                        logConsole(`❌ Chapter ${chapter.number} failed`, 'error');
-                    }
-                    return data;
-                })
-                .catch(err => {
-                    executingChapters.delete(promise);
-                    logConsole(`❌ Chapter ${chapter.number} error: ${err.message}`, 'error');
-                    chapterDataCache.set(chapter.chapter_id, { status: 'red', error: err.message });
-                    renderChapters();
-                });
+            // 🔥 Create promise WITHOUT await - starts immediately
+            const promise = (async () => {
+                const data = await fetchChapterImages(chapter.chapter_id);
+                updateChapterUI(chapter.chapter_id, data);
+                completedChapters++;
+                updateConsoleProgress(completedChapters, selected.length, totalImagesDownloaded, totalDownloadedBytes / 1024 / 1024);
+                
+                if (data.status === 'green') {
+                    logConsole(`✓ Chapter ${chapter.number} fetched successfully`, 'success');
+                } else if (data.status === 'yellow') {
+                    logConsole(`⚠ Chapter ${chapter.number} fetched with errors`, 'warning');
+                } else {
+                    logConsole(`❌ Chapter ${chapter.number} failed`, 'error');
+                }
+            })();
             
+            // 🔥 Add to executing set for race condition tracking
             executingChapters.add(promise);
+            
+            // 🔥 Remove from set when done (success or error)
+            promise.finally(() => executingChapters.delete(promise));
         }
 
-        // 🔥 Wait for all remaining chapters to finish
+        // 🔥 Wait for ALL remaining chapters to complete
         await Promise.all(executingChapters);
 
         if (!batchFetchCancelled) {
@@ -1570,6 +1566,7 @@ async function startBatchFetch() {
         updateCount();
     }
 }
+    
 function togglePause() {
     if (!isBatchFetching) return;
     batchFetchPaused = !batchFetchPaused;
