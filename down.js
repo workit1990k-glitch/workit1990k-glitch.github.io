@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID)
+// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter)
 
 (function() {
   'use strict';
@@ -21,7 +21,7 @@
   };
   const WSRV_BASE = 'https://wsrv.nl/?url=';
   const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
-  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB per ZIP
+  const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB per ZIP
   const PARALLEL_IMAGES = 3; // Images per chapter
   const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
@@ -38,11 +38,24 @@
   let pauseResolve = null;
   let fetchCancelled = false;
   let chapterDataCache = new Map();
+  
+  // Scanlator filter state
+  let selectedScanlators = new Set();
+  let availableScanlators = [];
 
   // ============ UTILS ============
   const extractCode = (url) => {
     const match = url.match(/comix\.to\/title\/([^/]+)/i);
     return match ? match[1].split('-')[0] : null;
+  };
+
+  const extractScanlators = (chapters) => {
+    const scanlators = new Set();
+    chapters.forEach(ch => {
+      const name = ch.scanlation_group?.name || 'Unknown';
+      scanlators.add(name);
+    });
+    return Array.from(scanlators).sort((a, b) => a.localeCompare(b));
   };
 
   const fetchRetry = async (url, retries = 3) => {
@@ -90,17 +103,24 @@
   };
 
   // ============ PARALLEL DOWNLOADER (Images) ============
-  const downloadWithConcurrency = async (tasks, concurrencyLimit) => {
+  const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
     const results = [];
     const executing = new Set();
+    let completed = 0;
     
     for (let i = 0; i < tasks.length; i++) {
+      if (fetchCancelled) break;
+      
       const task = tasks[i];
       const promise = Promise.resolve().then(() => task()).then(result => {
         executing.delete(promise);
+        completed++;
+        if (onImageProgress) onImageProgress(completed, tasks.length);
         return { index: i, success: true, result };
       }).catch(error => {
         executing.delete(promise);
+        completed++;
+        if (onImageProgress) onImageProgress(completed, tasks.length);
         return { index: i, success: false, error };
       });
       
@@ -124,13 +144,11 @@
     for (let i = 0; i < chapters.length; i++) {
       if (fetchCancelled) break;
       
-      // Handle pause
       while (isPaused && !fetchCancelled) {
         await new Promise(resolve => { pauseResolve = resolve; });
       }
       if (fetchCancelled) break;
 
-      // Wait for slot in parallel queue
       while (executing.size >= PARALLEL_CHAPTERS) {
         await Promise.race(executing);
       }
@@ -142,7 +160,7 @@
 
       const promise = (async () => {
         try {
-          const data = await fetchChapterImages(chapter.chapter_id, false);
+          const data = await fetchChapterImages(chapter.chapter_id, chapterNum, false);
           chapterDataCache.set(chapter.chapter_id, data);
           results.set(chapter.chapter_id, data);
           
@@ -154,7 +172,6 @@
           log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
               data.status === 'success' ? 'success' : 'error');
           
-          // Log failed images
           if (data.failedDetails && data.failedDetails.length > 0) {
             data.failedDetails.slice(0, 3).forEach(fail => {
               log(`  ❌ Image ${fail.index + 1}: ${fail.error}`, 'image-fail');
@@ -187,7 +204,7 @@
     return results;
   };
 
-  const fetchChapterImages = async (chapterId, showLog = true) => {
+  const fetchChapterImages = async (chapterId, chapterNum, showLog = true) => {
     try {
       const res = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
       const data = res.result || res;
@@ -207,6 +224,8 @@
         return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [] };
       }
 
+      let downloadedCount = 0;
+      
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
         let url = WSRV_BASE + encodeURIComponent(originalUrl) + WSRV_PARAMS;
         const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
@@ -220,6 +239,14 @@
           });
           if (!res.ok) throw new Error('HTTP ' + res.status);
           const blob = await res.blob();
+          
+          downloadedCount++;
+          // Log image progress: every 5 images or on completion
+          if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
+            const imgWord = downloadedCount === 1 ? 'image' : 'images';
+            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord} downloaded`, 'image-success');
+          }
+          
           return { fileName, blob, size: blob.size, index, success: true };
         } catch (e) {
           return { 
@@ -232,7 +259,17 @@
         }
       });
 
-      const results = await downloadWithConcurrency(downloadTasks, PARALLEL_IMAGES);
+      const results = await downloadWithConcurrency(
+        downloadTasks, 
+        PARALLEL_IMAGES,
+        (completed, total) => {
+          // Optional: Update visual progress bar per chapter
+          if (showLog && completed % 10 === 0 && completed < total) {
+            const imgWord = completed === 1 ? 'image' : 'images';
+            log(`⏳ Chapter ${chapterNum}: ${completed}/${total} ${imgWord}...`, 'info');
+          }
+        }
+      );
       
       const blobs = [];
       let totalSize = 0;
@@ -334,7 +371,7 @@
     
     overlay.innerHTML = `
       <div id="mdx-modal" style="background:#1a1b26;color:#c0caf5;border-radius:12px;border:1px solid #414868;max-width:1000px;width:100%;max-height:95vh;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5);display:flex;flex-direction:column;">
-        <div id="mdx-header" style="padding:16px 20px;border-bottom:1px solid #414868;display:flex;justify-content:space-between;align-items:center;background:#24283b;flex-shrink:0;">
+        <div id="mdx-header" style="padding:16px 20px;border-bottom:1px solid #414868;display:flex;justify-content:space-between;align-items:center;background:#24283b;flex-shrink:0;flex-wrap:wrap;gap:8px;">
           <strong style="font-size:16px;">📚 Manga Downloader</strong>
           <button id="mdx-close" style="background:none;border:none;color:#7982a9;font-size:24px;cursor:pointer;padding:4px 8px;">&times;</button>
         </div>
@@ -350,7 +387,7 @@
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         #mdx-content { display:none; flex:1; overflow:hidden; }
         #mdx-chapters { flex:1; overflow-y:auto; padding:16px; background:#1f202e; }
-        #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; }
+        #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; flex-wrap:wrap; gap:8px; }
         #mdx-chap-list { display:flex; flex-direction:column; gap:8px; }
         .mdx-chap-item { display:flex; flex-direction:column; padding:12px 14px; background:#24283b; border-radius:8px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; }
         .mdx-chap-item:hover { background:#2f3549; }
@@ -362,6 +399,7 @@
         #mdx-chap-info { flex:1; pointer-events: none; }
         #mdx-chap-num { font-weight:600; color:#c0caf5; margin-bottom:4px; }
         #mdx-chap-group { font-size:10px; color:#7982a9; }
+        .mdx-chap-scanlator { font-size:10px; color:#9ece6a; margin-top:2px; }
         #mdx-chap-status { margin-top:10px; padding:10px; background:#1a1b26; border-radius:6px; font-size:11px; }
         .mdx-status-success { color:#9ece6a; }
         .mdx-status-partial { color:#e0af68; }
@@ -407,6 +445,14 @@
         .mdx-batch-summary { background:#2f3549; padding:10px; border-radius:6px; margin-top:10px; font-size:12px; color:#7982a9; display:none; }
         .mdx-batch-summary.active { display:block; }
         .mdx-batch-summary strong { color:#c0caf5; }
+        .mdx-scanlator-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; background:#2f3549; border:1px solid #414868; border-radius:16px; font-size:10px; color:#c0caf5; cursor:pointer; transition:all 0.15s; user-select:none; }
+        .mdx-scanlator-chip:hover { background:#414868; }
+        .mdx-scanlator-chip.active { background:#e0af68; color:#1a1b26; border-color:#f0bf78; font-weight:600; }
+        .mdx-scanlator-chip input { display:none; }
+        .mdx-scanlator-count { font-size:9px; color:#7982a9; background:#1a1b26; padding:2px 6px; border-radius:10px; }
+        .mdx-image-progress { font-size:10px; color:#7982a9; margin-top:6px; display:flex; align-items:center; gap:6px; }
+        .mdx-image-bar { flex:1; height:4px; background:#1a1b26; border-radius:2px; overflow:hidden; }
+        .mdx-image-fill { height:100%; background:#7aa2f7; transition:width 0.2s; }
       </style>
     `;
     
@@ -419,6 +465,82 @@
     return { overlay, close };
   };
 
+  const renderScanlatorFilters = () => {
+    const container = document.getElementById('mdx-scanlator-filters');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    availableScanlators.forEach(scanlator => {
+      const chip = document.createElement('label');
+      chip.className = 'mdx-scanlator-chip' + (selectedScanlators.has(scanlator) ? ' active' : '');
+      
+      const count = allChapters.filter(ch => 
+        (ch.scanlation_group?.name || 'Unknown') === scanlator
+      ).length;
+      
+      chip.innerHTML = `
+        <input type="checkbox" value="${scanlator}" ${selectedScanlators.has(scanlator) ? 'checked' : ''}>
+        <span>${scanlator}</span>
+        <span class="mdx-scanlator-count">${count}</span>
+      `;
+      
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleScanlator(scanlator);
+      });
+      
+      container.appendChild(chip);
+    });
+    
+    if (availableScanlators.length > 1) {
+      const allChip = document.createElement('label');
+      allChip.className = 'mdx-scanlator-chip' + (selectedScanlators.size === 0 ? ' active' : '');
+      allChip.innerHTML = `<input type="checkbox"> <span>🌐 All</span>`;
+      allChip.addEventListener('click', (e) => {
+        e.preventDefault();
+        clearScanlatorFilter();
+      });
+      container.insertBefore(allChip, container.firstChild);
+    }
+  };
+
+  const toggleScanlator = (name) => {
+    if (selectedScanlators.has(name)) {
+      selectedScanlators.delete(name);
+    } else {
+      selectedScanlators.add(name);
+    }
+    renderScanlatorFilters();
+    renderChapters();
+  };
+
+  const clearScanlatorFilter = () => {
+    selectedScanlators.clear();
+    renderScanlatorFilters();
+    renderChapters();
+  };
+
+  const isChapterFiltered = (chapter) => {
+    if (selectedScanlators.size === 0) return true;
+    const chapScanlator = chapter.scanlation_group?.name || 'Unknown';
+    return selectedScanlators.has(chapScanlator);
+  };
+
+  const selectByScanlator = () => {
+    if (isFetching) return;
+    selectedChapters.clear();
+    
+    allChapters.forEach(ch => {
+      if (isChapterFiltered(ch)) {
+        selectedChapters.add(ch.chapter_id);
+      }
+    });
+    
+    renderChapters();
+    updateCount();
+  };
+
   const renderChapters = () => {
     const list = document.getElementById('mdx-chap-list');
     if (!list) return;
@@ -428,16 +550,22 @@
       const item = document.createElement('div');
       const isSelected = selectedChapters.has(ch.chapter_id);
       const cacheData = chapterDataCache.get(ch.chapter_id);
+      const isFiltered = isChapterFiltered(ch);
       
       item.className = 'mdx-chap-item' + 
         (isSelected ? ' selected' : '') + 
         (cacheData ? ' fetched' : '') +
         (isFetching && isSelected ? ' fetching' : '');
       
+      if (!isFiltered) {
+        item.style.opacity = '0.5';
+        item.style.pointerEvents = 'none';
+      }
+      
       item.dataset.chapterId = ch.chapter_id;
       
       item.addEventListener('click', (e) => {
-        if (e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
+        if (isFiltered && e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
           toggleChapter(ch.chapter_id);
         }
       });
@@ -449,7 +577,7 @@
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
       checkbox.checked = isSelected;
-      checkbox.disabled = isFetching;
+      checkbox.disabled = isFetching || !isFiltered;
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
       
@@ -458,6 +586,7 @@
       info.innerHTML = `
         <div id="mdx-chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div>
         <div id="mdx-chap-group">${ch.scanlation_group?.name || 'Unknown'}</div>
+        <div class="mdx-chap-scanlator">🏷️ ${ch.scanlation_group?.name || 'Unknown'}</div>
       `;
       
       row.appendChild(checkbox);
@@ -479,6 +608,7 @@
         statusDiv.innerHTML = `
           <div class="${statusClass}">
             <strong>✓ ${cacheData.status.toUpperCase()}</strong> 
+            | 🏷️ ${ch.scanlation_group?.name || 'Unknown'}
             | ${sizeText} | ${successText}${failText}
           </div>
         `;
@@ -519,8 +649,28 @@
         item.appendChild(statusDiv);
       }
       
+      // Show image progress bar for actively fetching chapters
+      if (isFetching && isSelected && !cacheData && isFiltered) {
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'mdx-image-progress';
+        progressDiv.id = `mdx-img-progress-${ch.chapter_id}`;
+        progressDiv.innerHTML = `
+          <span>🖼️ Loading...</span>
+          <div class="mdx-image-bar"><div class="mdx-image-fill" style="width:0%"></div></div>
+          <span id="mdx-img-count-${ch.chapter_id}">0/0</span>
+        `;
+        item.appendChild(progressDiv);
+      }
+      
       list.appendChild(item);
     });
+  };
+
+  const updateImageProgress = (chapterId, downloaded, total) => {
+    const fill = document.querySelector(`#mdx-img-progress-${chapterId} .mdx-image-fill`);
+    const count = document.getElementById(`mdx-img-count-${chapterId}`);
+    if (fill) fill.style.width = `${(downloaded / total) * 100}%`;
+    if (count) count.textContent = `${downloaded}/${total}`;
   };
 
   const toggleChapter = (id) => {
@@ -537,7 +687,11 @@
 
   const selectAll = () => {
     if (isFetching) return;
-    allChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
+    allChapters.forEach(ch => {
+      if (isChapterFiltered(ch)) {
+        selectedChapters.add(ch.chapter_id);
+      }
+    });
     renderChapters();
     updateCount();
   };
@@ -555,6 +709,7 @@
     const seen = new Map();
     
     allChapters.forEach(ch => {
+      if (!isChapterFiltered(ch)) return;
       const num = parseFloat(ch.number);
       if (!isNaN(num)) {
         const intNum = Math.floor(num);
@@ -614,7 +769,6 @@
       btnDownload.textContent = isDownloading ? '⏳ DOWNLOADING...' : `📦 DOWNLOAD (${fetchedCount} Ch)`;
     }
     
-    // Update refetch all button
     const btnRefetchAll = document.getElementById('mdx-refetch-all-btn');
     if (btnRefetchAll) {
       btnRefetchAll.disabled = failedCount === 0 || isFetching;
@@ -649,7 +803,7 @@
     updateCount();
     document.getElementById('mdx-console').classList.add('active');
     
-    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id) && isChapterFiltered(ch));
     selected.sort((a, b) => {
       const na = parseFloat(a.number), nb = parseFloat(b.number);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -681,7 +835,6 @@
       
       log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed`, 'success');
       
-      // Show batch summary
       const summary = document.getElementById('mdx-batch-summary');
       if (summary) {
         summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.`;
@@ -706,7 +859,7 @@
       const cacheData = chapterDataCache.get(id);
       if (cacheData && (cacheData.status === 'partial' || cacheData.status === 'failed')) {
         const ch = allChapters.find(c => c.chapter_id === id);
-        if (ch) failedChapters.push(ch);
+        if (ch && isChapterFiltered(ch)) failedChapters.push(ch);
       }
     });
     
@@ -749,7 +902,7 @@
     log(`🔄 Re-fetching Chapter ${ch.number}...`, 'info');
     
     try {
-      const data = await fetchChapterImages(chapterId, true);
+      const data = await fetchChapterImages(chapterId, ch.number, true);
       chapterDataCache.set(chapterId, data);
       
       const mb = (data.size / 1024 / 1024).toFixed(2);
@@ -928,6 +1081,11 @@
     const btnSave = document.getElementById('mdx-save-btn');
     if (btnSave) btnSave.addEventListener('click', () => saveMangaToList());
 
+    const btnScanlatorSelect = document.getElementById('mdx-btn-scanlator-select');
+    if (btnScanlatorSelect) {
+      btnScanlatorSelect.addEventListener('click', selectByScanlator);
+    }
+
     const overlay = document.getElementById('mdx-overlay');
     if (overlay) {
       overlay.addEventListener('click', (e) => {
@@ -984,6 +1142,7 @@
         .slice(0, 50) || 'manga';
       
       allChapters = await fetchAllChapters(code);
+      availableScanlators = extractScanlators(allChapters);
 
       document.getElementById('mdx-loading').style.display = 'none';
       
@@ -995,6 +1154,13 @@
           <div id="mdx-chap-header">
             <span>📖 Select Chapters (${allChapters.length} total)</span>
             <span style="font-size:11px;color:#7982a9;">Click to toggle</span>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:11px;color:#7982a9;">Filter by:</span>
+              <div id="mdx-scanlator-filters" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
+              <button id="mdx-btn-scanlator-select" class="mdx-btn mdx-btn-secondary" style="padding:4px 10px;font-size:11px;" title="Select chapters matching chosen scanlators">
+                ✅ Select Filtered
+              </button>
+            </div>
           </div>
           <div id="mdx-chap-list"></div>
         </div>
@@ -1004,7 +1170,7 @@
             <button id="mdx-btn-none" class="mdx-btn mdx-btn-secondary">None</button>
             <button id="mdx-btn-unique" class="mdx-btn mdx-btn-secondary">Unique Only</button>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;    flex-wrap: wrap;">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
             <div id="mdx-total-size"></div>
             <button id="mdx-save-btn" class="mdx-btn mdx-btn-save" title="Save manga ID to list">
@@ -1039,12 +1205,14 @@
       document.body.appendChild(consoleEl);
       
       setupEventListeners();
+      renderScanlatorFilters();
       renderChapters();
       updateCount();
       
       log(`📚 Loaded: ${mangaTitle}`, 'info');
       log(`🆔 Manga ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
+      log(`🏷️ Scanlators found: ${availableScanlators.join(', ') || 'Unknown'}`, 'info');
       
     } catch (err) {
       console.error('Init error:', err);
