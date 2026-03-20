@@ -389,7 +389,7 @@
         #mdx-count strong { color:#e0af68; }
         #mdx-total-size { font-size:13px; color:#7982a9; margin-left:12px; }
         #mdx-total-size strong { color:#9ece6a; }
-        #mdx-console { position:fixed; bottom:20px; right:20px; width:450px; background:#24283b; border:1px solid #414868; border-radius:8px; padding:12px; display:none; flex-direction:column; max-height:300px; z-index:100000; }
+        #mdx-console { position:fixed; bottom:500px; right:20px; width:450px; background:#24283b; border:1px solid #414868; border-radius:8px; padding:12px; display:none; flex-direction:column; max-height:300px; z-index:100000; }
         #mdx-console.active { display:flex; }
         #mdx-console-log { flex:1; overflow-y:auto; font-family:monospace; font-size:10px; margin-bottom:8px; }
         .mdx-console-line { padding:3px 6px; margin:2px 0; border-radius:4px; }
@@ -1004,7 +1004,7 @@
             <button id="mdx-btn-none" class="mdx-btn mdx-btn-secondary">None</button>
             <button id="mdx-btn-unique" class="mdx-btn mdx-btn-secondary">Unique Only</button>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;    flex-wrap: wrap;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
             <div id="mdx-total-size"></div>
             <button id="mdx-save-btn" class="mdx-btn mdx-btn-save" title="Save manga ID to list">
