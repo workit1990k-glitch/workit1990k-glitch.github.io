@@ -262,8 +262,15 @@ let isDownloading = false;
 
 // Extract manga code from URL
 const extractCode = (url) => {
-const match = url.match(/comix\.to\/title\/([^/]+)/i);
-return match ? match[1] : null;
+    const match = url.match(/comix\.to\/title\/([^/]+)/i);
+    if (match && match[1]) {
+        // Return only the part before the first hyphen (the actual ID)
+        return match[1].split('-')[0];
+    }
+    // Fallback for edge cases
+    const cleanUrl = url.replace(/\/$/, '');
+    const lastSegment = cleanUrl.split('/').pop() || '';
+    return lastSegment.split('-')[0] || '';
 };
 
 // Fetch with retry logic
