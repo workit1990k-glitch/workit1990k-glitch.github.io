@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (Parallel Fetch + Detailed Logging)
+// Version: 2024-03-20 (Parallel Fetch + Save ID Feature)
 
 (function() {
   'use strict';
@@ -23,14 +23,17 @@
   const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
   const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB per ZIP
   const PARALLEL_LIMIT = 3; // Number of parallel image downloads
+  const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
   // ============ STATE ============
   let allChapters = [];
   let selectedChapters = new Set();
   let mangaTitle = 'manga';
+  let mangaId = '';
+  let latestChapter = '?';
   let isDownloading = false;
   let isFetching = false;
-  let chapterDataCache = new Map(); // chapter_id -> { blobs, size, total, failed, status, failedDetails }
+  let chapterDataCache = new Map();
 
   // ============ UTILS ============
   const extractCode = (url) => {
@@ -108,7 +111,7 @@
     return Promise.all(results);
   };
 
-  const fetchChapterImages = async (chapterId, showLog = true, onProgress = null) => {
+  const fetchChapterImages = async (chapterId, showLog = true) => {
     try {
       const res = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
       const data = res.result || res;
@@ -121,14 +124,13 @@
       } else if (data?.images?.length) {
         imageUrls = data.images.map(i => i.image_url || i.url || i).filter(Boolean);
       } else if (data?.result) {
-        return fetchChapterImages(data.result, showLog, onProgress);
+        return fetchChapterImages(data.result, showLog);
       }
 
       if (!imageUrls.length) {
         return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [] };
       }
 
-      // Create download tasks for each image
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
         let url = WSRV_BASE + encodeURIComponent(originalUrl) + WSRV_PARAMS;
         const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
@@ -149,15 +151,13 @@
             index, 
             success: false, 
             error: e.message,
-            originalUrl: originalUrl.substring(0, 100) // Truncate for logging
+            originalUrl: originalUrl.substring(0, 100)
           };
         }
       });
 
-      // Download with parallel concurrency
       const results = await downloadWithConcurrency(downloadTasks, PARALLEL_LIMIT);
       
-      // Process results
       const blobs = [];
       let totalSize = 0;
       const failedDetails = [];
@@ -208,6 +208,53 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // ============ SAVE ID TO LIST ============
+  const saveMangaToList = async () => {
+    if (!mangaId || !latestChapter) {
+      log('❌ No manga ID or chapter info available', 'error');
+      return false;
+    }
+
+    try {
+      log('💾 Saving manga ID to list...', 'info');
+      
+      const response = await fetch(WORKER_SAVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          manga_id: mangaId,
+          latest_chapter: latestChapter
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        log(`✓ Saved ${mangaId}:${latestChapter} to list!`, 'success');
+        showToast(`✓ ${mangaId}:${latestChapter} saved!`);
+        return true;
+      } else {
+        throw new Error(result.error || 'Save failed');
+      }
+    } catch (err) {
+      log(`❌ Save failed: ${err.message}`, 'error');
+      showToast(`✗ Save failed: ${err.message}`);
+      return false;
+    }
+  };
+
+  const showToast = (msg) => {
+    const toast = document.createElement('div');
+    toast.style.cssText = `position:fixed;top:20px;right:20px;background:#24283b;border:1px solid #9ece6a;border-radius:8px;padding:12px 20px;color:#c0caf5;font-size:13px;z-index:3000;box-shadow:0 4px 20px rgba(0,0,0,0.4);animation:slideIn 0.3s ease;`;
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => { 
+      toast.style.opacity = '0'; 
+      toast.style.transition = 'opacity 0.3s'; 
+      setTimeout(() => toast.remove(), 300); 
+    }, 3000);
+  };
+
   // ============ UI ============
   const createOverlay = () => {
     const overlay = document.createElement('div');
@@ -229,6 +276,7 @@
       </div>
       <style>
         @keyframes mdx-spin { to { transform: rotate(360deg) } }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         #mdx-content { display:none; flex:1; overflow:hidden; }
         #mdx-chapters { flex:1; overflow-y:auto; padding:16px; background:#1f202e; }
         #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; }
@@ -262,6 +310,8 @@
         .mdx-btn-secondary:hover { background:#414868; }
         .mdx-btn-success { background:#9ece6a; color:#1a1b26; }
         .mdx-btn-success:hover { background:#b5e38a; }
+        .mdx-btn-save { background:#007bff; color:#fff; }
+        .mdx-btn-save:hover { background:#0056b3; }
         #mdx-count { font-size:13px; color:#7982a9; }
         #mdx-count strong { color:#e0af68; }
         #mdx-total-size { font-size:13px; color:#7982a9; margin-left:12px; }
@@ -278,6 +328,9 @@
         #mdx-progress { height:4px; background:#1a1b26; border-radius:2px; overflow:hidden; }
         #mdx-progress-fill { height:100%; background:#9ece6a; transition:width .3s; }
         .mdx-parallel-info { font-size:10px; color:#7982a9; margin-top:4px; }
+        #mdx-save-status { font-size:11px; margin-left:8px; }
+        #mdx-save-status.success { color:#9ece6a; }
+        #mdx-save-status.error { color:#f7768e; }
       </style>
     `;
     
@@ -307,18 +360,15 @@
       
       item.dataset.chapterId = ch.chapter_id;
       
-      // Item click handler
       item.addEventListener('click', (e) => {
         if (e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
           toggleChapter(ch.chapter_id);
         }
       });
       
-      // Checkbox row
       const row = document.createElement('div');
       row.className = 'mdx-chap-row';
       
-      // Checkbox
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
@@ -327,7 +377,6 @@
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
       
-      // Chapter info
       const info = document.createElement('div');
       info.id = 'mdx-chap-info';
       info.innerHTML = `
@@ -339,7 +388,6 @@
       row.appendChild(info);
       item.appendChild(row);
       
-      // Add fetch status if available
       if (cacheData) {
         const statusDiv = document.createElement('div');
         statusDiv.id = 'mdx-chap-status';
@@ -359,7 +407,6 @@
           </div>
         `;
         
-        // Show failed images list if any
         if (cacheData.failedDetails && cacheData.failedDetails.length > 0) {
           const failedList = document.createElement('div');
           failedList.className = 'mdx-failed-list';
@@ -382,7 +429,6 @@
           statusDiv.appendChild(failedList);
         }
         
-        // Add re-fetch button if there are failures
         if (cacheData.failed > 0) {
           const refetchBtn = document.createElement('button');
           refetchBtn.className = 'mdx-refetch-btn';
@@ -455,7 +501,6 @@
     
     if (count) count.textContent = selectedChapters.size;
     
-    // Calculate total size of fetched chapters
     let fetchedSize = 0;
     let fetchedCount = 0;
     selectedChapters.forEach(id => {
@@ -528,7 +573,6 @@
         const mb = (data.size / 1024 / 1024).toFixed(2);
         const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
         
-        // Log individual image results
         if (data.failedDetails && data.failedDetails.length > 0) {
           data.failedDetails.forEach(fail => {
             log(`  ❌ Image ${fail.index + 1} (${fail.fileName}): ${fail.error}`, 'image-fail');
@@ -589,7 +633,6 @@
       const mb = (data.size / 1024 / 1024).toFixed(2);
       const statusEmoji = data.status === 'success' ? '✓' : '⚠';
       
-      // Log failed images
       if (data.failedDetails && data.failedDetails.length > 0) {
         data.failedDetails.forEach(fail => {
           log(`  ❌ Image ${fail.index + 1} (${fail.fileName}): ${fail.error}`, 'image-fail');
@@ -705,6 +748,8 @@
       
       await saveZip(true);
       log('🎉 Download complete!', 'success');
+      log('💾 Auto-saving manga ID to list...', 'info');
+      await saveMangaToList();
       
     } catch (err) {
       log(`❌ Download error: ${err.message}`, 'error');
@@ -736,6 +781,9 @@
 
     const btnDownload = document.getElementById('mdx-download-btn');
     if (btnDownload) btnDownload.addEventListener('click', downloadSelected);
+
+    const btnSave = document.getElementById('mdx-save-btn');
+    if (btnSave) btnSave.addEventListener('click', () => saveMangaToList());
 
     const overlay = document.getElementById('mdx-overlay');
     if (overlay) {
@@ -784,6 +832,10 @@
         throw new Error('Manga not found');
       }
       
+      // Store manga ID and latest chapter for Save ID feature
+      mangaId = manga.hash_id || manga.id || '';
+      latestChapter = manga.latest_chapter || '?';
+      
       mangaTitle = (manga.title || 'manga')
         .replace(/[^a-z0-9\s]/gi, '')
         .trim()
@@ -813,6 +865,10 @@
           <div style="display:flex;align-items:center;gap:12px;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
             <div id="mdx-total-size"></div>
+            <button id="mdx-save-btn" class="mdx-btn mdx-btn-save" title="Save manga ID to list">
+              💾 SAVE ID
+            </button>
+            <span id="mdx-save-status"></span>
             <button id="mdx-fetch-btn" class="mdx-btn mdx-btn-success" disabled>
               📥 FETCH
             </button>
@@ -837,6 +893,11 @@
       setupEventListeners();
       renderChapters();
       updateCount();
+      
+      // Show manga info in console
+      log(`📚 Loaded: ${mangaTitle}`, 'info');
+      log(`🆔 Manga ID: ${mangaId}`, 'info');
+      log(`📖 Latest Chapter: ${latestChapter}`, 'info');
       
     } catch (err) {
       console.error('Init error:', err);
