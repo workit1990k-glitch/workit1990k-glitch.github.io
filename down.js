@@ -72,7 +72,6 @@
       }
     }
     
-    // Natural sort by chapter number
     return chapters.sort((a, b) => {
       const na = parseFloat(a.number), nb = parseFloat(b.number);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -86,7 +85,6 @@
       const data = res.result || res;
       let imageUrls = [];
 
-      // Handle multiple possible response structures
       if (Array.isArray(data)) {
         imageUrls = data.map(i => i.image_url || i.url || i).filter(Boolean);
       } else if (data?.pages?.length) {
@@ -106,7 +104,6 @@
 
       for (let i = 0; i < imageUrls.length; i++) {
         let url = imageUrls[i];
-        // Use wsrv.nl for resized WebP conversion
         url = WSRV_BASE + encodeURIComponent(url) + WSRV_PARAMS;
         const fileName = `page_${String(i + 1).padStart(3, '0')}.webp`;
 
@@ -159,11 +156,11 @@
         #mdx-chapters { flex:1; overflow-y:auto; padding:16px; background:#1f202e; }
         #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; }
         #mdx-chap-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:8px; }
-        .mdx-chap-item { display:flex; align-items:center; padding:10px 12px; background:#24283b; border-radius:6px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; }
+        .mdx-chap-item { display:flex; align-items:center; padding:10px 12px; background:#24283b; border-radius:6px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; user-select: none; }
         .mdx-chap-item:hover { background:#2f3549; }
         .mdx-chap-item.selected { background:rgba(224,175,104,.15); border-color:#e0af68; }
-        #mdx-chap-check { width:18px; height:18px; margin-right:10px; cursor:pointer; }
-        #mdx-chap-info { flex:1; }
+        .mdx-chap-check { width:18px; height:18px; margin-right:10px; cursor:pointer; }
+        #mdx-chap-info { flex:1; pointer-events: none; }
         #mdx-chap-num { font-weight:600; color:#c0caf5; margin-bottom:2px; }
         #mdx-chap-group { font-size:10px; color:#7982a9; }
         #mdx-footer { padding:14px 20px; border-top:1px solid #414868; background:#24283b; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:10px; flex-wrap:wrap; }
@@ -191,8 +188,8 @@
     document.body.appendChild(overlay);
 
     const close = () => overlay.remove();
-    document.getElementById('mdx-close').onclick = close;
-    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    document.getElementById('mdx-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     
     return { overlay, close };
   };
@@ -206,17 +203,33 @@
       const item = document.createElement('div');
       const isSelected = selectedChapters.has(ch.chapter_id);
       item.className = 'mdx-chap-item' + (isSelected ? ' selected' : '');
-      item.onclick = (e) => {
-        if (e.target.type !== 'checkbox') toggleChapter(ch.chapter_id);
-      };
-      item.innerHTML = `
-        <input type="checkbox" id="mdx-chap-check" ${isSelected ? 'checked' : ''} 
-          onclick="event.stopPropagation(); toggleChapter('${ch.chapter_id}')">
-        <div id="mdx-chap-info">
-          <div id="mdx-chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div>
-          <div id="mdx-chap-group">${ch.scanlation_group?.name || 'Unknown'}</div>
-        </div>
+      item.dataset.chapterId = ch.chapter_id;
+      
+      // Item click handler (toggle chapter)
+      item.addEventListener('click', (e) => {
+        if (e.target.type !== 'checkbox') {
+          toggleChapter(ch.chapter_id);
+        }
+      });
+      
+      // Checkbox
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'mdx-chap-check';
+      checkbox.checked = isSelected;
+      checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
+      checkbox.addEventListener('click', (e) => e.stopPropagation());
+      
+      // Chapter info
+      const info = document.createElement('div');
+      info.id = 'mdx-chap-info';
+      info.innerHTML = `
+        <div id="mdx-chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div>
+        <div id="mdx-chap-group">${ch.scanlation_group?.name || 'Unknown'}</div>
       `;
+      
+      item.appendChild(checkbox);
+      item.appendChild(info);
       list.appendChild(item);
     });
   };
@@ -373,16 +386,13 @@
         
         updateProgress(i + 1, selected.length);
         
-        // Split ZIP if approaching size limit (and not last chapter)
         if (currentZipSize >= MAX_ZIP_SIZE && i < selected.length - 1) {
           await saveZip(false);
         }
         
-        // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 300));
       }
       
-      // Save final ZIP
       await saveZip(true);
       log('🎉 Download complete!', 'success');
       
@@ -395,26 +405,59 @@
     }
   };
 
+  // ============ EVENT LISTENERS SETUP ============
+  const setupEventListeners = () => {
+    // Close button
+    const closeBtn = document.getElementById('mdx-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => document.getElementById('mdx-overlay')?.remove());
+    }
+
+    // Select All button
+    const btnAll = document.getElementById('mdx-btn-all');
+    if (btnAll) btnAll.addEventListener('click', selectAll);
+
+    // Deselect All button
+    const btnNone = document.getElementById('mdx-btn-none');
+    if (btnNone) btnNone.addEventListener('click', deselectAll);
+
+    // Select Unique button
+    const btnUnique = document.getElementById('mdx-btn-unique');
+    if (btnUnique) btnUnique.addEventListener('click', selectUnique);
+
+    // Download button
+    const btnDownload = document.getElementById('mdx-download-btn');
+    if (btnDownload) btnDownload.addEventListener('click', downloadSelected);
+
+    // Overlay click to close
+    const overlay = document.getElementById('mdx-overlay');
+    if (overlay) {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+      });
+    }
+  };
+
   // ============ MAIN ============
   const init = async () => {
     // Load JSZip if not present
     if (typeof JSZip === 'undefined') {
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
         s.onload = resolve;
-        s.onerror = () => console.error('Failed to load JSZip');
+        s.onerror = () => reject(new Error('Failed to load JSZip'));
         document.head.appendChild(s);
       });
     }
     
     // Load FileSaver.js if not present
     if (typeof saveAs === 'undefined') {
-      await new Promise((resolve) => {
+      await new Promise((resolve, reject) => {
         const s = document.createElement('script');
         s.src = 'https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js';
         s.onload = resolve;
-        s.onerror = () => console.error('Failed to load FileSaver.js');
+        s.onerror = () => reject(new Error('Failed to load FileSaver.js'));
         document.head.appendChild(s);
       });
     }
@@ -436,7 +479,6 @@
         throw new Error('Manga not found');
       }
       
-      // Sanitize title for filenames (keep spaces!)
       mangaTitle = (manga.title || 'manga')
         .replace(/[^a-z0-9\s]/gi, '')
         .trim()
@@ -444,7 +486,6 @@
       
       allChapters = await fetchAllChapters(code);
 
-      // Hide loading, show content
       document.getElementById('mdx-loading').style.display = 'none';
       
       const content = document.createElement('div');
@@ -460,13 +501,13 @@
         </div>
         <div id="mdx-footer">
           <div id="mdx-actions">
-            <button class="mdx-btn mdx-btn-secondary" onclick="selectAll()">All</button>
-            <button class="mdx-btn mdx-btn-secondary" onclick="deselectAll()">None</button>
-            <button class="mdx-btn mdx-btn-secondary" onclick="selectUnique()">Unique Only</button>
+            <button id="mdx-btn-all" class="mdx-btn mdx-btn-secondary">All</button>
+            <button id="mdx-btn-none" class="mdx-btn mdx-btn-secondary">None</button>
+            <button id="mdx-btn-unique" class="mdx-btn mdx-btn-secondary">Unique Only</button>
           </div>
           <div style="display:flex;align-items:center;gap:16px;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
-            <button id="mdx-download-btn" class="mdx-btn mdx-btn-primary" onclick="downloadSelected()" disabled>
+            <button id="mdx-download-btn" class="mdx-btn mdx-btn-primary" disabled>
               📦 DOWNLOAD
             </button>
           </div>
@@ -475,7 +516,6 @@
       
       document.getElementById('mdx-body').appendChild(content);
       
-      // Add console panel
       const consoleEl = document.createElement('div');
       consoleEl.id = 'mdx-console';
       consoleEl.innerHTML = `
@@ -483,6 +523,9 @@
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
       `;
       document.body.appendChild(consoleEl);
+      
+      // Setup all event listeners
+      setupEventListeners();
       
       // Initial render
       renderChapters();
@@ -498,16 +541,17 @@
             ❌ Error: ${err.message || 'Unknown error'}
           </div>
           <div style="text-align:center;margin-top:16px;">
-            <button onclick="document.getElementById('mdx-overlay')?.remove()" 
-              style="padding:10px 24px;background:#e0af68;border:none;border-radius:6px;color:#1a1b26;font-weight:600;cursor:pointer">
+            <button id="mdx-error-close" style="padding:10px 24px;background:#e0af68;border:none;border-radius:6px;color:#1a1b26;font-weight:600;cursor:pointer">
               Close
             </button>
           </div>
         `;
+        document.getElementById('mdx-error-close')?.addEventListener('click', () => overlay?.remove());
       }
     }
   };
 
   // Start the app
   init();
-})();
+
+})(); // End of IIFE
