@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (Parallel Fetch + Save ID Feature)
+// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID)
 
 (function() {
   'use strict';
@@ -22,7 +22,8 @@
   const WSRV_BASE = 'https://wsrv.nl/?url=';
   const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
   const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB per ZIP
-  const PARALLEL_LIMIT = 3; // Number of parallel image downloads
+  const PARALLEL_IMAGES = 3; // Images per chapter
+  const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
   // ============ STATE ============
@@ -33,6 +34,9 @@
   let latestChapter = '?';
   let isDownloading = false;
   let isFetching = false;
+  let isPaused = false;
+  let pauseResolve = null;
+  let fetchCancelled = false;
   let chapterDataCache = new Map();
 
   // ============ UTILS ============
@@ -85,7 +89,7 @@
     });
   };
 
-  // ============ PARALLEL IMAGE DOWNLOADER ============
+  // ============ PARALLEL DOWNLOADER (Images) ============
   const downloadWithConcurrency = async (tasks, concurrencyLimit) => {
     const results = [];
     const executing = new Set();
@@ -109,6 +113,78 @@
     }
     
     return Promise.all(results);
+  };
+
+  // ============ PARALLEL CHAPTER FETCHER ============
+  const fetchChaptersParallel = async (chapters, onProgress, isRefetch = false) => {
+    const results = new Map();
+    const executing = new Set();
+    let completed = 0;
+
+    for (let i = 0; i < chapters.length; i++) {
+      if (fetchCancelled) break;
+      
+      // Handle pause
+      while (isPaused && !fetchCancelled) {
+        await new Promise(resolve => { pauseResolve = resolve; });
+      }
+      if (fetchCancelled) break;
+
+      // Wait for slot in parallel queue
+      while (executing.size >= PARALLEL_CHAPTERS) {
+        await Promise.race(executing);
+      }
+
+      const chapter = chapters[i];
+      const chapterNum = chapter.number;
+      
+      log(`📥 ${isRefetch ? 'Re-' : ''}Fetching Chapter ${chapterNum}...`, 'info');
+
+      const promise = (async () => {
+        try {
+          const data = await fetchChapterImages(chapter.chapter_id, false);
+          chapterDataCache.set(chapter.chapter_id, data);
+          results.set(chapter.chapter_id, data);
+          
+          completed++;
+          onProgress(completed, chapters.length);
+          
+          const mb = (data.size / 1024 / 1024).toFixed(2);
+          const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
+          log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
+              data.status === 'success' ? 'success' : 'error');
+          
+          // Log failed images
+          if (data.failedDetails && data.failedDetails.length > 0) {
+            data.failedDetails.slice(0, 3).forEach(fail => {
+              log(`  ❌ Image ${fail.index + 1}: ${fail.error}`, 'image-fail');
+            });
+            if (data.failedDetails.length > 3) {
+              log(`  ... and ${data.failedDetails.length - 3} more failed`, 'image-fail');
+            }
+          }
+          
+          renderChapters();
+          updateCount();
+        } catch (err) {
+          log(`❌ Chapter ${chapterNum} error: ${err.message}`, 'error');
+          chapterDataCache.set(chapter.chapter_id, { 
+            blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [] 
+          });
+          results.set(chapter.chapter_id, null);
+          completed++;
+          onProgress(completed, chapters.length);
+          renderChapters();
+          updateCount();
+        }
+      })();
+
+      executing.add(promise);
+      promise.finally(() => executing.delete(promise));
+    }
+
+    await Promise.all(executing);
+    return results;
   };
 
   const fetchChapterImages = async (chapterId, showLog = true) => {
@@ -156,7 +232,7 @@
         }
       });
 
-      const results = await downloadWithConcurrency(downloadTasks, PARALLEL_LIMIT);
+      const results = await downloadWithConcurrency(downloadTasks, PARALLEL_IMAGES);
       
       const blobs = [];
       let totalSize = 0;
@@ -181,11 +257,6 @@
       const failedCount = failedDetails.length;
       const status = failedCount === 0 ? 'success' : (blobs.length > 0 ? 'partial' : 'failed');
       
-      if (showLog) {
-        const mb = (totalSize / 1024 / 1024).toFixed(2);
-        console.log(`Chapter ${chapterId}: ${blobs.length}/${imageUrls.length} images, ${mb}MB, ${failedCount} failed`);
-      }
-
       return { 
         blobs, 
         size: totalSize, 
@@ -312,6 +383,8 @@
         .mdx-btn-success:hover { background:#b5e38a; }
         .mdx-btn-save { background:#007bff; color:#fff; }
         .mdx-btn-save:hover { background:#0056b3; }
+        .mdx-btn-pause { background:#e0af68; color:#1a1b26; display:none; }
+        .mdx-btn-pause:hover { background:#f0bf78; }
         #mdx-count { font-size:13px; color:#7982a9; }
         #mdx-count strong { color:#e0af68; }
         #mdx-total-size { font-size:13px; color:#7982a9; margin-left:12px; }
@@ -331,6 +404,9 @@
         #mdx-save-status { font-size:11px; margin-left:8px; }
         #mdx-save-status.success { color:#9ece6a; }
         #mdx-save-status.error { color:#f7768e; }
+        .mdx-batch-summary { background:#2f3549; padding:10px; border-radius:6px; margin-top:10px; font-size:12px; color:#7982a9; display:none; }
+        .mdx-batch-summary.active { display:block; }
+        .mdx-batch-summary strong { color:#c0caf5; }
       </style>
     `;
     
@@ -497,17 +573,23 @@
     const count = document.getElementById('mdx-selected-count');
     const btnFetch = document.getElementById('mdx-fetch-btn');
     const btnDownload = document.getElementById('mdx-download-btn');
+    const btnPause = document.getElementById('mdx-pause-btn');
     const totalSize = document.getElementById('mdx-total-size');
     
     if (count) count.textContent = selectedChapters.size;
     
     let fetchedSize = 0;
     let fetchedCount = 0;
+    let failedCount = 0;
+    
     selectedChapters.forEach(id => {
       const cacheData = chapterDataCache.get(id);
       if (cacheData && cacheData.blobs.length > 0) {
         fetchedSize += cacheData.size;
         fetchedCount++;
+      }
+      if (cacheData && (cacheData.status === 'partial' || cacheData.status === 'failed')) {
+        failedCount++;
       }
     });
     
@@ -522,9 +604,21 @@
       btnFetch.textContent = isFetching ? '⏳ FETCHING...' : `📥 FETCH (${selectedChapters.size} Ch)`;
     }
     
+    if (btnPause) {
+      btnPause.style.display = isFetching ? 'inline-block' : 'none';
+      btnPause.textContent = isPaused ? '▶ RESUME' : '⏸ PAUSE';
+    }
+    
     if (btnDownload) {
       btnDownload.disabled = fetchedCount === 0 || isDownloading;
       btnDownload.textContent = isDownloading ? '⏳ DOWNLOADING...' : `📦 DOWNLOAD (${fetchedCount} Ch)`;
+    }
+    
+    // Update refetch all button
+    const btnRefetchAll = document.getElementById('mdx-refetch-all-btn');
+    if (btnRefetchAll) {
+      btnRefetchAll.disabled = failedCount === 0 || isFetching;
+      btnRefetchAll.textContent = failedCount > 0 ? `🔄 REFETCH ALL FAILED (${failedCount})` : '🔄 REFETCH ALL FAILED';
     }
   };
 
@@ -544,11 +638,13 @@
     if (fill) fill.style.width = `${(current / total) * 100}%`;
   };
 
-  // ============ FETCH SELECTED ============
+  // ============ FETCH SELECTED (3 PARALLEL CHAPTERS) ============
   const fetchSelected = async () => {
     if (selectedChapters.size === 0 || isFetching) return;
     
     isFetching = true;
+    isPaused = false;
+    fetchCancelled = false;
     renderChapters();
     updateCount();
     document.getElementById('mdx-console').classList.add('active');
@@ -560,34 +656,13 @@
       return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
     });
 
-    log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_LIMIT} parallel images)`, 'info');
+    log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
+    log(`⚡ ${PARALLEL_IMAGES} parallel images per chapter`, 'info');
 
     try {
-      for (let i = 0; i < selected.length; i++) {
-        const ch = selected[i];
-        log(`📥 Chapter ${ch.number} (${ch.chapter_id})...`, 'info');
-        
-        const data = await fetchChapterImages(ch.chapter_id, true);
-        chapterDataCache.set(ch.chapter_id, data);
-        
-        const mb = (data.size / 1024 / 1024).toFixed(2);
-        const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
-        
-        if (data.failedDetails && data.failedDetails.length > 0) {
-          data.failedDetails.forEach(fail => {
-            log(`  ❌ Image ${fail.index + 1} (${fail.fileName}): ${fail.error}`, 'image-fail');
-          });
-        }
-        
-        log(`${statusEmoji} Chapter ${ch.number}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
-            data.status === 'success' ? 'success' : 'error');
-        
-        updateProgress(i + 1, selected.length);
-        renderChapters();
-        updateCount();
-        
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+      await fetchChaptersParallel(selected, (completed, total) => {
+        updateProgress(completed, total);
+      }, false);
       
       const successCount = [...selectedChapters].filter(id => {
         const cacheData = chapterDataCache.get(id);
@@ -606,25 +681,72 @@
       
       log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed`, 'success');
       
+      // Show batch summary
+      const summary = document.getElementById('mdx-batch-summary');
+      if (summary) {
+        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.`;
+        summary.classList.add('active');
+      }
+      
     } catch (err) {
       log(`❌ Fetch error: ${err.message}`, 'error');
       console.error('Fetch error:', err);
     } finally {
       isFetching = false;
+      isPaused = false;
       renderChapters();
       updateCount();
     }
   };
 
-  // ============ RE-FETCH FAILED ============
+  // ============ REFETCH ALL FAILED ============
+  const refetchAllFailed = async () => {
+    const failedChapters = [];
+    selectedChapters.forEach(id => {
+      const cacheData = chapterDataCache.get(id);
+      if (cacheData && (cacheData.status === 'partial' || cacheData.status === 'failed')) {
+        const ch = allChapters.find(c => c.chapter_id === id);
+        if (ch) failedChapters.push(ch);
+      }
+    });
+    
+    if (failedChapters.length === 0) {
+      log('❌ No failed chapters to refetch', 'error');
+      return;
+    }
+    
+    isFetching = true;
+    isPaused = false;
+    fetchCancelled = false;
+    renderChapters();
+    updateCount();
+    document.getElementById('mdx-console').classList.add('active');
+    
+    log(`🔄 Starting refetch: ${failedChapters.length} failed chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
+
+    try {
+      await fetchChaptersParallel(failedChapters, (completed, total) => {
+        updateProgress(completed, total);
+      }, true);
+      
+      log(`🎉 Refetch complete!`, 'success');
+      
+    } catch (err) {
+      log(`❌ Refetch error: ${err.message}`, 'error');
+    } finally {
+      isFetching = false;
+      isPaused = false;
+      renderChapters();
+      updateCount();
+    }
+  };
+
+  // ============ REFETCH SINGLE CHAPTER ============
   const refetchChapter = async (chapterId) => {
     const ch = allChapters.find(c => c.chapter_id === chapterId);
     if (!ch) return;
     
-    const cacheData = chapterDataCache.get(chapterId);
-    if (!cacheData || cacheData.failed === 0) return;
-    
-    log(`🔄 Re-fetching Chapter ${ch.number} (${cacheData.failed} failed images)...`, 'info');
+    log(`🔄 Re-fetching Chapter ${ch.number}...`, 'info');
     
     try {
       const data = await fetchChapterImages(chapterId, true);
@@ -648,6 +770,21 @@
     } catch (err) {
       log(`❌ Re-fetch error: ${err.message}`, 'error');
     }
+  };
+
+  // ============ TOGGLE PAUSE ============
+  const togglePause = () => {
+    if (!isFetching) return;
+    isPaused = !isPaused;
+    
+    if (isPaused) {
+      log('⏸ Fetching paused', 'warning');
+      if (pauseResolve) pauseResolve();
+    } else {
+      log('▶ Fetching resumed', 'info');
+    }
+    
+    updateCount();
   };
 
   // ============ DOWNLOAD ============
@@ -779,6 +916,12 @@
     const btnFetch = document.getElementById('mdx-fetch-btn');
     if (btnFetch) btnFetch.addEventListener('click', fetchSelected);
 
+    const btnPause = document.getElementById('mdx-pause-btn');
+    if (btnPause) btnPause.addEventListener('click', togglePause);
+
+    const btnRefetchAll = document.getElementById('mdx-refetch-all-btn');
+    if (btnRefetchAll) btnRefetchAll.addEventListener('click', refetchAllFailed);
+
     const btnDownload = document.getElementById('mdx-download-btn');
     if (btnDownload) btnDownload.addEventListener('click', downloadSelected);
 
@@ -832,7 +975,6 @@
         throw new Error('Manga not found');
       }
       
-      // Store manga ID and latest chapter for Save ID feature
       mangaId = manga.hash_id || manga.id || '';
       latestChapter = manga.latest_chapter || '?';
       
@@ -868,7 +1010,12 @@
             <button id="mdx-save-btn" class="mdx-btn mdx-btn-save" title="Save manga ID to list">
               💾 SAVE ID
             </button>
-            <span id="mdx-save-status"></span>
+            <button id="mdx-pause-btn" class="mdx-btn mdx-btn-pause" title="Pause/Resume fetching">
+              ⏸ PAUSE
+            </button>
+            <button id="mdx-refetch-all-btn" class="mdx-btn mdx-btn-secondary" disabled>
+              🔄 REFETCH ALL FAILED
+            </button>
             <button id="mdx-fetch-btn" class="mdx-btn mdx-btn-success" disabled>
               📥 FETCH
             </button>
@@ -877,6 +1024,7 @@
             </button>
           </div>
         </div>
+        <div id="mdx-batch-summary" class="mdx-batch-summary"></div>
       `;
       
       document.getElementById('mdx-body').appendChild(content);
@@ -886,7 +1034,7 @@
       consoleEl.innerHTML = `
         <div id="mdx-console-log"></div>
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
-        <div class="mdx-parallel-info">⚡ ${PARALLEL_LIMIT} parallel image downloads</div>
+        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images</div>
       `;
       document.body.appendChild(consoleEl);
       
@@ -894,7 +1042,6 @@
       renderChapters();
       updateCount();
       
-      // Show manga info in console
       log(`📚 Loaded: ${mangaTitle}`, 'info');
       log(`🆔 Manga ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
