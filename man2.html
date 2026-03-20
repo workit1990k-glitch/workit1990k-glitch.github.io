@@ -883,11 +883,6 @@ let currentJsonData = null;
 let mangaDataCache = null;
 
 const extractCode = (url) => url.replace(/\/$/, '').split('/').pop()?.split('-')[0] || '';
-// Update HEADERS to include credentials handling
-const HEADERS = { 
-    'Referer': 'https://comix.to/', 
-    'User-Agent': 'Mozilla/5.0' 
-};
 
 // Updated fetchRetry with Challenge Detection
 const fetchRetry = async (url, retries = 3, delay = 1000) => {
