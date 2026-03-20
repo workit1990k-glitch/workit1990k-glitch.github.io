@@ -21,7 +21,7 @@
   };
   const WSRV_BASE = 'https://wsrv.nl/?url=';
   const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
-  const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB per ZIP
+  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB per ZIP
   const PARALLEL_IMAGES = 3; // Images per chapter
   const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
