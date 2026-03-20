@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20
+// Version: 2024-03-20 (Fetch-Then-Download Workflow)
 
 (function() {
   'use strict';
@@ -28,6 +28,8 @@
   let selectedChapters = new Set();
   let mangaTitle = 'manga';
   let isDownloading = false;
+  let isFetching = false;
+  let chapterDataCache = new Map(); // chapter_id -> { blobs, size, total, failed, status }
 
   // ============ UTILS ============
   const extractCode = (url) => {
@@ -79,7 +81,7 @@
     });
   };
 
-  const fetchChapterImages = async (chapterId) => {
+  const fetchChapterImages = async (chapterId, showLog = true) => {
     try {
       const res = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
       const data = res.result || res;
@@ -92,15 +94,16 @@
       } else if (data?.images?.length) {
         imageUrls = data.images.map(i => i.image_url || i.url || i).filter(Boolean);
       } else if (data?.result) {
-        return fetchChapterImages(data.result);
+        return fetchChapterImages(data.result, showLog);
       }
 
       if (!imageUrls.length) {
-        return { blobs: [], size: 0, total: 0, failed: 0 };
+        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty' };
       }
 
       const blobs = [];
       let totalSize = 0, failedCount = 0;
+      const failedUrls = [];
 
       for (let i = 0; i < imageUrls.length; i++) {
         let url = imageUrls[i];
@@ -120,15 +123,38 @@
           totalSize += blob.size;
         } catch (e) {
           failedCount++;
+          failedUrls.push({ index: i, url: imageUrls[i], error: e.message });
           console.warn(`Failed to fetch image ${i + 1}:`, e.message);
         }
       }
 
-      return { blobs, size: totalSize, total: imageUrls.length, failed: failedCount };
+      const status = failedCount === 0 ? 'success' : (blobs.length > 0 ? 'partial' : 'failed');
+      
+      if (showLog) {
+        const mb = (totalSize / 1024 / 1024).toFixed(2);
+        console.log(`Chapter ${chapterId}: ${blobs.length}/${imageUrls.length} images, ${mb}MB, ${failedCount} failed`);
+      }
+
+      return { 
+        blobs, 
+        size: totalSize, 
+        total: imageUrls.length, 
+        failed: failedCount,
+        failedUrls,
+        status 
+      };
     } catch (err) {
       console.error('fetchChapterImages error:', err);
-      return { blobs: [], size: 0, total: 0, failed: 0, error: err.message };
+      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message };
     }
+  };
+
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   // ============ UI ============
@@ -146,7 +172,7 @@
         <div id="mdx-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
           <div id="mdx-loading" style="text-align:center;padding:60px;color:#7982a9;">
             <div style="width:40px;height:40px;border:3px solid #414868;border-top-color:#e0af68;border-radius:50%;animation:mdx-spin 1s linear infinite;margin:0 auto 16px"></div>
-            <div>Fetching chapters...</div>
+            <div>Fetching chapter list...</div>
           </div>
         </div>
       </div>
@@ -155,24 +181,36 @@
         #mdx-content { display:none; flex:1; overflow:hidden; }
         #mdx-chapters { flex:1; overflow-y:auto; padding:16px; background:#1f202e; }
         #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; }
-        #mdx-chap-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:8px; }
-        .mdx-chap-item { display:flex; align-items:center; padding:10px 12px; background:#24283b; border-radius:6px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; user-select: none; }
+        #mdx-chap-list { display:flex; flex-direction:column; gap:8px; }
+        .mdx-chap-item { display:flex; align-items:center; padding:12px 14px; background:#24283b; border-radius:8px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; }
         .mdx-chap-item:hover { background:#2f3549; }
-        .mdx-chap-item.selected { background:rgba(224,175,104,.15); border-color:#e0af68; }
-        .mdx-chap-check { width:18px; height:18px; margin-right:10px; cursor:pointer; }
+        .mdx-chap-item.selected { border-color:#e0af68; }
+        .mdx-chap-item.fetched { background:#2a303c; }
+        .mdx-chap-item.fetching { opacity:0.6; pointer-events:none; }
+        .mdx-chap-check { width:18px; height:18px; margin-right:12px; cursor:pointer; }
         #mdx-chap-info { flex:1; pointer-events: none; }
-        #mdx-chap-num { font-weight:600; color:#c0caf5; margin-bottom:2px; }
+        #mdx-chap-num { font-weight:600; color:#c0caf5; margin-bottom:4px; }
         #mdx-chap-group { font-size:10px; color:#7982a9; }
+        #mdx-chap-status { margin-top:8px; padding:8px; background:#1a1b26; border-radius:6px; font-size:11px; }
+        .mdx-status-success { color:#9ece6a; }
+        .mdx-status-partial { color:#e0af68; }
+        .mdx-status-failed { color:#f7768e; }
+        .mdx-refetch-btn { margin-top:8px; padding:6px 12px; background:#f7768e; color:#1a1b26; border:none; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer; }
+        .mdx-refetch-btn:hover { background:#ff8fa3; }
         #mdx-footer { padding:14px 20px; border-top:1px solid #414868; background:#24283b; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:10px; flex-wrap:wrap; }
         #mdx-actions { display:flex; gap:8px; flex-wrap:wrap; }
-        .mdx-btn { padding:8px 16px; border:none; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:background .2s; }
+        .mdx-btn { padding:10px 18px; border:none; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:background .2s; }
         .mdx-btn-primary { background:#e0af68; color:#1a1b26; }
         .mdx-btn-primary:hover { background:#f0bf78; }
         .mdx-btn-primary:disabled { opacity:.5; cursor:not-allowed; }
         .mdx-btn-secondary { background:#2f3549; color:#c0caf5; border:1px solid #414868; }
         .mdx-btn-secondary:hover { background:#414868; }
+        .mdx-btn-success { background:#9ece6a; color:#1a1b26; }
+        .mdx-btn-success:hover { background:#b5e38a; }
         #mdx-count { font-size:13px; color:#7982a9; }
         #mdx-count strong { color:#e0af68; }
+        #mdx-total-size { font-size:13px; color:#7982a9; margin-left:12px; }
+        #mdx-total-size strong { color:#9ece6a; }
         #mdx-console { position:fixed; bottom:20px; right:20px; width:400px; background:#24283b; border:1px solid #414868; border-radius:8px; padding:12px; display:none; flex-direction:column; max-height:280px; z-index:100000; }
         #mdx-console.active { display:flex; }
         #mdx-console-log { flex:1; overflow-y:auto; font-family:monospace; font-size:11px; margin-bottom:8px; }
@@ -202,12 +240,18 @@
     allChapters.forEach(ch => {
       const item = document.createElement('div');
       const isSelected = selectedChapters.has(ch.chapter_id);
-      item.className = 'mdx-chap-item' + (isSelected ? ' selected' : '');
+      const cacheData = chapterDataCache.get(ch.chapter_id);
+      
+      item.className = 'mdx-chap-item' + 
+        (isSelected ? ' selected' : '') + 
+        (cacheData ? ' fetched' : '') +
+        (isFetching && isSelected ? ' fetching' : '');
+      
       item.dataset.chapterId = ch.chapter_id;
       
-      // Item click handler (toggle chapter)
+      // Item click handler
       item.addEventListener('click', (e) => {
-        if (e.target.type !== 'checkbox') {
+        if (e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
           toggleChapter(ch.chapter_id);
         }
       });
@@ -217,6 +261,7 @@
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
       checkbox.checked = isSelected;
+      checkbox.disabled = isFetching;
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
       
@@ -230,11 +275,48 @@
       
       item.appendChild(checkbox);
       item.appendChild(info);
+      
+      // Add fetch status if available
+      if (cacheData) {
+        const statusDiv = document.createElement('div');
+        statusDiv.id = 'mdx-chap-status';
+        
+        const statusClass = cacheData.status === 'success' ? 'mdx-status-success' :
+                           cacheData.status === 'partial' ? 'mdx-status-partial' : 'mdx-status-failed';
+        
+        const sizeText = formatBytes(cacheData.size);
+        const successText = `${cacheData.total - cacheData.failed}/${cacheData.total} images`;
+        const failText = cacheData.failed > 0 ? ` (${cacheData.failed} failed)` : '';
+        
+        statusDiv.innerHTML = `
+          <div class="${statusClass}">
+            <strong>✓ ${cacheData.status.toUpperCase()}</strong> 
+            | ${sizeText} | ${successText}${failText}
+          </div>
+        `;
+        
+        // Add re-fetch button if there are failures
+        if (cacheData.failed > 0) {
+          const refetchBtn = document.createElement('button');
+          refetchBtn.className = 'mdx-refetch-btn';
+          refetchBtn.textContent = '🔄 Re-fetch Failed Images';
+          refetchBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            refetchChapter(ch.chapter_id);
+          });
+          statusDiv.appendChild(refetchBtn);
+        }
+        
+        item.appendChild(statusDiv);
+      }
+      
       list.appendChild(item);
     });
   };
 
   const toggleChapter = (id) => {
+    if (isFetching) return; // Prevent changes during fetch
+    
     if (selectedChapters.has(id)) {
       selectedChapters.delete(id);
     } else {
@@ -245,18 +327,21 @@
   };
 
   const selectAll = () => {
+    if (isFetching) return;
     allChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
     renderChapters();
     updateCount();
   };
 
   const deselectAll = () => {
+    if (isFetching) return;
     selectedChapters.clear();
     renderChapters();
     updateCount();
   };
   
   const selectUnique = () => {
+    if (isFetching) return;
     selectedChapters.clear();
     const seen = new Map();
     
@@ -277,11 +362,37 @@
 
   const updateCount = () => {
     const count = document.getElementById('mdx-selected-count');
-    const btn = document.getElementById('mdx-download-btn');
+    const btnFetch = document.getElementById('mdx-fetch-btn');
+    const btnDownload = document.getElementById('mdx-download-btn');
+    const totalSize = document.getElementById('mdx-total-size');
+    
     if (count) count.textContent = selectedChapters.size;
-    if (btn) {
-      btn.disabled = selectedChapters.size === 0;
-      btn.innerHTML = `📦 DOWNLOAD (${selectedChapters.size} Ch)`;
+    
+    // Calculate total size of fetched chapters
+    let fetchedSize = 0;
+    let fetchedCount = 0;
+    selectedChapters.forEach(id => {
+      const cacheData = chapterDataCache.get(id);
+      if (cacheData && cacheData.blobs.length > 0) {
+        fetchedSize += cacheData.size;
+        fetchedCount++;
+      }
+    });
+    
+    if (totalSize) {
+      totalSize.innerHTML = fetchedCount > 0 
+        ? `Total: <strong>${formatBytes(fetchedSize)}</strong> (${fetchedCount}/${selectedChapters.size} fetched)`
+        : '';
+    }
+    
+    if (btnFetch) {
+      btnFetch.disabled = selectedChapters.size === 0 || isFetching;
+      btnFetch.textContent = isFetching ? '⏳ FETCHING...' : `📥 FETCH (${selectedChapters.size} Ch)`;
+    }
+    
+    if (btnDownload) {
+      btnDownload.disabled = fetchedCount === 0 || isDownloading;
+      btnDownload.textContent = isDownloading ? '⏳ DOWNLOADING...' : `📦 DOWNLOAD (${fetchedCount} Ch)`;
     }
   };
 
@@ -301,18 +412,105 @@
     if (fill) fill.style.width = `${(current / total) * 100}%`;
   };
 
+  // ============ FETCH SELECTED ============
+  const fetchSelected = async () => {
+    if (selectedChapters.size === 0 || isFetching) return;
+    
+    isFetching = true;
+    renderChapters();
+    updateCount();
+    document.getElementById('mdx-console').classList.add('active');
+    
+    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+    selected.sort((a, b) => {
+      const na = parseFloat(a.number), nb = parseFloat(b.number);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+    });
+
+    log(`📥 Starting fetch: ${selected.length} chapters`, 'info');
+
+    try {
+      for (let i = 0; i < selected.length; i++) {
+        const ch = selected[i];
+        log(`📥 Chapter ${ch.number}...`, 'info');
+        
+        const data = await fetchChapterImages(ch.chapter_id, true);
+        chapterDataCache.set(ch.chapter_id, data);
+        
+        const mb = (data.size / 1024 / 1024).toFixed(2);
+        const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
+        log(`${statusEmoji} Chapter ${ch.number}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
+            data.status === 'success' ? 'success' : 'error');
+        
+        updateProgress(i + 1, selected.length);
+        renderChapters();
+        updateCount();
+        
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      const successCount = [...selectedChapters].filter(id => {
+        const cacheData = chapterDataCache.get(id);
+        return cacheData && cacheData.status === 'success';
+      }).length;
+      
+      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters ready`, 'success');
+      
+    } catch (err) {
+      log(`❌ Fetch error: ${err.message}`, 'error');
+      console.error('Fetch error:', err);
+    } finally {
+      isFetching = false;
+      renderChapters();
+      updateCount();
+    }
+  };
+
+  // ============ RE-FETCH FAILED ============
+  const refetchChapter = async (chapterId) => {
+    const ch = allChapters.find(c => c.chapter_id === chapterId);
+    if (!ch) return;
+    
+    log(`🔄 Re-fetching Chapter ${ch.number}...`, 'info');
+    
+    try {
+      const data = await fetchChapterImages(chapterId, true);
+      chapterDataCache.set(chapterId, data);
+      
+      const mb = (data.size / 1024 / 1024).toFixed(2);
+      const statusEmoji = data.status === 'success' ? '✓' : '⚠';
+      log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
+          data.status === 'success' ? 'success' : 'error');
+      
+      renderChapters();
+      updateCount();
+      
+    } catch (err) {
+      log(`❌ Re-fetch error: ${err.message}`, 'error');
+    }
+  };
+
   // ============ DOWNLOAD ============
   const downloadSelected = async () => {
-    if (selectedChapters.size === 0 || isDownloading) return;
+    // Only download chapters that have been fetched successfully
+    const fetchedChapters = [...selectedChapters].filter(id => {
+      const cacheData = chapterDataCache.get(id);
+      return cacheData && cacheData.blobs.length > 0;
+    });
+    
+    if (fetchedChapters.length === 0 || isDownloading) {
+      log('❌ No fetched chapters to download. Please fetch first!', 'error');
+      return;
+    }
     
     isDownloading = true;
     const downloadBtn = document.getElementById('mdx-download-btn');
     if (downloadBtn) downloadBtn.disabled = true;
     
-    document.getElementById('mdx-console').classList.add('active');
-    log(`📦 Starting download: ${selectedChapters.size} chapters`, 'info');
+    log(`📦 Starting download: ${fetchedChapters.length} chapters`, 'info');
 
-    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+    const selected = allChapters.filter(ch => fetchedChapters.includes(ch.chapter_id));
     selected.sort((a, b) => {
       const na = parseFloat(a.number), nb = parseFloat(b.number);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -355,34 +553,31 @@
     try {
       for (let i = 0; i < selected.length; i++) {
         const ch = selected[i];
-        log(`📥 Chapter ${ch.number}...`, 'info');
+        const cacheData = chapterDataCache.get(ch.chapter_id);
         
-        try {
-          const data = await fetchChapterImages(ch.chapter_id);
-          
-          if (data.blobs.length > 0) {
-            const chapterNum = parseFloat(ch.number);
-            if (rangeStart === null) rangeStart = chapterNum;
-            rangeEnd = chapterNum;
-            
-            const folderName = 'Ch.' + ch.number + (ch.name ? ' - ' + ch.name : '');
-            const folder = currentZip.folder(folderName);
-            
-            data.blobs.forEach(b => {
-              if (b && b.fileName && b.blob) {
-                folder.file(b.fileName, b.blob);
-              }
-            });
-            
-            currentZipSize += data.size;
-            const mb = (data.size / 1024 / 1024).toFixed(1);
-            log(`✓ Fetched ${data.total} images (${mb}MB)`, 'success');
-          } else {
-            log(`❌ Chapter ${ch.number} failed: No images`, 'error');
-          }
-        } catch (err) {
-          log(`❌ Chapter ${ch.number} error: ${err.message}`, 'error');
+        if (!cacheData || cacheData.blobs.length === 0) {
+          log(`⚠️ Skipping Chapter ${ch.number} (not fetched)`, 'info');
+          continue;
         }
+        
+        log(`📦 Adding Chapter ${ch.number} to ZIP...`, 'info');
+        
+        const chapterNum = parseFloat(ch.number);
+        if (rangeStart === null) rangeStart = chapterNum;
+        rangeEnd = chapterNum;
+        
+        const folderName = 'Ch.' + ch.number + (ch.name ? ' - ' + ch.name : '');
+        const folder = currentZip.folder(folderName);
+        
+        cacheData.blobs.forEach(b => {
+          if (b && b.fileName && b.blob) {
+            folder.file(b.fileName, b.blob);
+          }
+        });
+        
+        currentZipSize += cacheData.size;
+        const mb = (cacheData.size / 1024 / 1024).toFixed(1);
+        log(`✓ Added ${cacheData.blobs.length} images (${mb}MB)`, 'success');
         
         updateProgress(i + 1, selected.length);
         
@@ -390,14 +585,14 @@
           await saveZip(false);
         }
         
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       await saveZip(true);
       log('🎉 Download complete!', 'success');
       
     } catch (err) {
-      log(`❌ Fatal error: ${err.message}`, 'error');
+      log(`❌ Download error: ${err.message}`, 'error');
       console.error('Download error:', err);
     } finally {
       isDownloading = false;
@@ -424,6 +619,10 @@
     // Select Unique button
     const btnUnique = document.getElementById('mdx-btn-unique');
     if (btnUnique) btnUnique.addEventListener('click', selectUnique);
+
+    // Fetch button
+    const btnFetch = document.getElementById('mdx-fetch-btn');
+    if (btnFetch) btnFetch.addEventListener('click', fetchSelected);
 
     // Download button
     const btnDownload = document.getElementById('mdx-download-btn');
@@ -505,8 +704,12 @@
             <button id="mdx-btn-none" class="mdx-btn mdx-btn-secondary">None</button>
             <button id="mdx-btn-unique" class="mdx-btn mdx-btn-secondary">Unique Only</button>
           </div>
-          <div style="display:flex;align-items:center;gap:16px;">
+          <div style="display:flex;align-items:center;gap:12px;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
+            <div id="mdx-total-size"></div>
+            <button id="mdx-fetch-btn" class="mdx-btn mdx-btn-success" disabled>
+              📥 FETCH
+            </button>
             <button id="mdx-download-btn" class="mdx-btn mdx-btn-primary" disabled>
               📦 DOWNLOAD
             </button>
