@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (Fetch-Then-Download Workflow)
+// Version: 2024-03-20 (Parallel Fetch + Detailed Logging)
 
 (function() {
   'use strict';
@@ -22,6 +22,7 @@
   const WSRV_BASE = 'https://wsrv.nl/?url=';
   const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
   const MAX_ZIP_SIZE = 200 * 1024 * 1024; // 200MB per ZIP
+  const PARALLEL_LIMIT = 3; // Number of parallel image downloads
 
   // ============ STATE ============
   let allChapters = [];
@@ -29,7 +30,7 @@
   let mangaTitle = 'manga';
   let isDownloading = false;
   let isFetching = false;
-  let chapterDataCache = new Map(); // chapter_id -> { blobs, size, total, failed, status }
+  let chapterDataCache = new Map(); // chapter_id -> { blobs, size, total, failed, status, failedDetails }
 
   // ============ UTILS ============
   const extractCode = (url) => {
@@ -81,7 +82,33 @@
     });
   };
 
-  const fetchChapterImages = async (chapterId, showLog = true) => {
+  // ============ PARALLEL IMAGE DOWNLOADER ============
+  const downloadWithConcurrency = async (tasks, concurrencyLimit) => {
+    const results = [];
+    const executing = new Set();
+    
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const promise = Promise.resolve().then(() => task()).then(result => {
+        executing.delete(promise);
+        return { index: i, success: true, result };
+      }).catch(error => {
+        executing.delete(promise);
+        return { index: i, success: false, error };
+      });
+      
+      results.push(promise);
+      executing.add(promise);
+      
+      if (executing.size >= concurrencyLimit) {
+        await Promise.race(executing);
+      }
+    }
+    
+    return Promise.all(results);
+  };
+
+  const fetchChapterImages = async (chapterId, showLog = true, onProgress = null) => {
     try {
       const res = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
       const data = res.result || res;
@@ -94,21 +121,17 @@
       } else if (data?.images?.length) {
         imageUrls = data.images.map(i => i.image_url || i.url || i).filter(Boolean);
       } else if (data?.result) {
-        return fetchChapterImages(data.result, showLog);
+        return fetchChapterImages(data.result, showLog, onProgress);
       }
 
       if (!imageUrls.length) {
-        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty' };
+        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [] };
       }
 
-      const blobs = [];
-      let totalSize = 0, failedCount = 0;
-      const failedUrls = [];
-
-      for (let i = 0; i < imageUrls.length; i++) {
-        let url = imageUrls[i];
-        url = WSRV_BASE + encodeURIComponent(url) + WSRV_PARAMS;
-        const fileName = `page_${String(i + 1).padStart(3, '0')}.webp`;
+      // Create download tasks for each image
+      const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
+        let url = WSRV_BASE + encodeURIComponent(originalUrl) + WSRV_PARAMS;
+        const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
 
         try {
           const res = await fetch(url, {
@@ -119,15 +142,43 @@
           });
           if (!res.ok) throw new Error('HTTP ' + res.status);
           const blob = await res.blob();
-          blobs.push({ fileName, blob, size: blob.size });
-          totalSize += blob.size;
+          return { fileName, blob, size: blob.size, index, success: true };
         } catch (e) {
-          failedCount++;
-          failedUrls.push({ index: i, url: imageUrls[i], error: e.message });
-          console.warn(`Failed to fetch image ${i + 1}:`, e.message);
+          return { 
+            fileName, 
+            index, 
+            success: false, 
+            error: e.message,
+            originalUrl: originalUrl.substring(0, 100) // Truncate for logging
+          };
         }
-      }
+      });
 
+      // Download with parallel concurrency
+      const results = await downloadWithConcurrency(downloadTasks, PARALLEL_LIMIT);
+      
+      // Process results
+      const blobs = [];
+      let totalSize = 0;
+      const failedDetails = [];
+
+      results.forEach(result => {
+        if (result.success && result.result.success) {
+          const r = result.result;
+          blobs.push({ fileName: r.fileName, blob: r.blob, size: r.size });
+          totalSize += r.size;
+        } else {
+          const errorResult = result.success ? result.result : result.error;
+          failedDetails.push({
+            index: result.index,
+            fileName: errorResult.fileName,
+            error: errorResult.error || 'Unknown error',
+            url: errorResult.originalUrl || 'N/A'
+          });
+        }
+      });
+
+      const failedCount = failedDetails.length;
       const status = failedCount === 0 ? 'success' : (blobs.length > 0 ? 'partial' : 'failed');
       
       if (showLog) {
@@ -140,12 +191,12 @@
         size: totalSize, 
         total: imageUrls.length, 
         failed: failedCount,
-        failedUrls,
+        failedDetails,
         status 
       };
     } catch (err) {
       console.error('fetchChapterImages error:', err);
-      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message };
+      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [] };
     }
   };
 
@@ -182,21 +233,25 @@
         #mdx-chapters { flex:1; overflow-y:auto; padding:16px; background:#1f202e; }
         #mdx-chap-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #414868; }
         #mdx-chap-list { display:flex; flex-direction:column; gap:8px; }
-        .mdx-chap-item { display:flex; align-items:center; padding:12px 14px; background:#24283b; border-radius:8px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; }
+        .mdx-chap-item { display:flex; flex-direction:column; padding:12px 14px; background:#24283b; border-radius:8px; font-size:12px; cursor:pointer; transition:background .15s; border:1px solid transparent; }
         .mdx-chap-item:hover { background:#2f3549; }
         .mdx-chap-item.selected { border-color:#e0af68; }
         .mdx-chap-item.fetched { background:#2a303c; }
         .mdx-chap-item.fetching { opacity:0.6; pointer-events:none; }
+        .mdx-chap-row { display:flex; align-items:center; width:100%; }
         .mdx-chap-check { width:18px; height:18px; margin-right:12px; cursor:pointer; }
         #mdx-chap-info { flex:1; pointer-events: none; }
         #mdx-chap-num { font-weight:600; color:#c0caf5; margin-bottom:4px; }
         #mdx-chap-group { font-size:10px; color:#7982a9; }
-        #mdx-chap-status { margin-top:8px; padding:8px; background:#1a1b26; border-radius:6px; font-size:11px; }
+        #mdx-chap-status { margin-top:10px; padding:10px; background:#1a1b26; border-radius:6px; font-size:11px; }
         .mdx-status-success { color:#9ece6a; }
         .mdx-status-partial { color:#e0af68; }
         .mdx-status-failed { color:#f7768e; }
+        .mdx-failed-list { margin-top:8px; padding:8px; background:#1f202e; border-radius:4px; max-height:100px; overflow-y:auto; }
+        .mdx-failed-item { padding:4px 6px; margin:2px 0; background:#2a303c; border-radius:3px; font-size:10px; color:#f7768e; }
         .mdx-refetch-btn { margin-top:8px; padding:6px 12px; background:#f7768e; color:#1a1b26; border:none; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer; }
         .mdx-refetch-btn:hover { background:#ff8fa3; }
+        .mdx-refetch-btn:disabled { opacity:0.5; cursor:not-allowed; }
         #mdx-footer { padding:14px 20px; border-top:1px solid #414868; background:#24283b; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:10px; flex-wrap:wrap; }
         #mdx-actions { display:flex; gap:8px; flex-wrap:wrap; }
         .mdx-btn { padding:10px 18px; border:none; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:background .2s; }
@@ -211,15 +266,18 @@
         #mdx-count strong { color:#e0af68; }
         #mdx-total-size { font-size:13px; color:#7982a9; margin-left:12px; }
         #mdx-total-size strong { color:#9ece6a; }
-        #mdx-console { position:fixed; bottom:20px; right:20px; width:400px; background:#24283b; border:1px solid #414868; border-radius:8px; padding:12px; display:none; flex-direction:column; max-height:280px; z-index:100000; }
+        #mdx-console { position:fixed; bottom:20px; right:20px; width:450px; background:#24283b; border:1px solid #414868; border-radius:8px; padding:12px; display:none; flex-direction:column; max-height:300px; z-index:100000; }
         #mdx-console.active { display:flex; }
-        #mdx-console-log { flex:1; overflow-y:auto; font-family:monospace; font-size:11px; margin-bottom:8px; }
+        #mdx-console-log { flex:1; overflow-y:auto; font-family:monospace; font-size:10px; margin-bottom:8px; }
         .mdx-console-line { padding:3px 6px; margin:2px 0; border-radius:4px; }
         .mdx-console-line.info { color:#7982a9; }
         .mdx-console-line.success { color:#9ece6a; background:rgba(158,206,106,.1); }
         .mdx-console-line.error { color:#f7768e; background:rgba(247,118,142,.1); }
+        .mdx-console-line.image-success { color:#9ece6a; font-size:9px; }
+        .mdx-console-line.image-fail { color:#f7768e; font-size:9px; }
         #mdx-progress { height:4px; background:#1a1b26; border-radius:2px; overflow:hidden; }
         #mdx-progress-fill { height:100%; background:#9ece6a; transition:width .3s; }
+        .mdx-parallel-info { font-size:10px; color:#7982a9; margin-top:4px; }
       </style>
     `;
     
@@ -256,6 +314,10 @@
         }
       });
       
+      // Checkbox row
+      const row = document.createElement('div');
+      row.className = 'mdx-chap-row';
+      
       // Checkbox
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
@@ -273,8 +335,9 @@
         <div id="mdx-chap-group">${ch.scanlation_group?.name || 'Unknown'}</div>
       `;
       
-      item.appendChild(checkbox);
-      item.appendChild(info);
+      row.appendChild(checkbox);
+      row.appendChild(info);
+      item.appendChild(row);
       
       // Add fetch status if available
       if (cacheData) {
@@ -285,7 +348,8 @@
                            cacheData.status === 'partial' ? 'mdx-status-partial' : 'mdx-status-failed';
         
         const sizeText = formatBytes(cacheData.size);
-        const successText = `${cacheData.total - cacheData.failed}/${cacheData.total} images`;
+        const successCount = cacheData.total - cacheData.failed;
+        const successText = `${successCount}/${cacheData.total} images`;
         const failText = cacheData.failed > 0 ? ` (${cacheData.failed} failed)` : '';
         
         statusDiv.innerHTML = `
@@ -295,11 +359,34 @@
           </div>
         `;
         
+        // Show failed images list if any
+        if (cacheData.failedDetails && cacheData.failedDetails.length > 0) {
+          const failedList = document.createElement('div');
+          failedList.className = 'mdx-failed-list';
+          failedList.innerHTML = '<strong style="color:#f7768e">Failed Images:</strong>';
+          
+          cacheData.failedDetails.slice(0, 5).forEach(fail => {
+            const failItem = document.createElement('div');
+            failItem.className = 'mdx-failed-item';
+            failItem.textContent = `Page ${fail.index + 1}: ${fail.error}`;
+            failedList.appendChild(failItem);
+          });
+          
+          if (cacheData.failedDetails.length > 5) {
+            const moreItem = document.createElement('div');
+            moreItem.className = 'mdx-failed-item';
+            moreItem.textContent = `... and ${cacheData.failedDetails.length - 5} more`;
+            failedList.appendChild(moreItem);
+          }
+          
+          statusDiv.appendChild(failedList);
+        }
+        
         // Add re-fetch button if there are failures
         if (cacheData.failed > 0) {
           const refetchBtn = document.createElement('button');
           refetchBtn.className = 'mdx-refetch-btn';
-          refetchBtn.textContent = '🔄 Re-fetch Failed Images';
+          refetchBtn.textContent = `🔄 Re-fetch ${cacheData.failed} Failed Images`;
           refetchBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             refetchChapter(ch.chapter_id);
@@ -315,7 +402,7 @@
   };
 
   const toggleChapter = (id) => {
-    if (isFetching) return; // Prevent changes during fetch
+    if (isFetching) return;
     
     if (selectedChapters.has(id)) {
       selectedChapters.delete(id);
@@ -428,18 +515,26 @@
       return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
     });
 
-    log(`📥 Starting fetch: ${selected.length} chapters`, 'info');
+    log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_LIMIT} parallel images)`, 'info');
 
     try {
       for (let i = 0; i < selected.length; i++) {
         const ch = selected[i];
-        log(`📥 Chapter ${ch.number}...`, 'info');
+        log(`📥 Chapter ${ch.number} (${ch.chapter_id})...`, 'info');
         
         const data = await fetchChapterImages(ch.chapter_id, true);
         chapterDataCache.set(ch.chapter_id, data);
         
         const mb = (data.size / 1024 / 1024).toFixed(2);
         const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
+        
+        // Log individual image results
+        if (data.failedDetails && data.failedDetails.length > 0) {
+          data.failedDetails.forEach(fail => {
+            log(`  ❌ Image ${fail.index + 1} (${fail.fileName}): ${fail.error}`, 'image-fail');
+          });
+        }
+        
         log(`${statusEmoji} Chapter ${ch.number}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
             data.status === 'success' ? 'success' : 'error');
         
@@ -455,7 +550,17 @@
         return cacheData && cacheData.status === 'success';
       }).length;
       
-      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters ready`, 'success');
+      const totalImages = [...selectedChapters].reduce((sum, id) => {
+        const cacheData = chapterDataCache.get(id);
+        return sum + (cacheData ? cacheData.total - cacheData.failed : 0);
+      }, 0);
+      
+      const totalFailed = [...selectedChapters].reduce((sum, id) => {
+        const cacheData = chapterDataCache.get(id);
+        return sum + (cacheData ? cacheData.failed : 0);
+      }, 0);
+      
+      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed`, 'success');
       
     } catch (err) {
       log(`❌ Fetch error: ${err.message}`, 'error');
@@ -472,7 +577,10 @@
     const ch = allChapters.find(c => c.chapter_id === chapterId);
     if (!ch) return;
     
-    log(`🔄 Re-fetching Chapter ${ch.number}...`, 'info');
+    const cacheData = chapterDataCache.get(chapterId);
+    if (!cacheData || cacheData.failed === 0) return;
+    
+    log(`🔄 Re-fetching Chapter ${ch.number} (${cacheData.failed} failed images)...`, 'info');
     
     try {
       const data = await fetchChapterImages(chapterId, true);
@@ -480,6 +588,14 @@
       
       const mb = (data.size / 1024 / 1024).toFixed(2);
       const statusEmoji = data.status === 'success' ? '✓' : '⚠';
+      
+      // Log failed images
+      if (data.failedDetails && data.failedDetails.length > 0) {
+        data.failedDetails.forEach(fail => {
+          log(`  ❌ Image ${fail.index + 1} (${fail.fileName}): ${fail.error}`, 'image-fail');
+        });
+      }
+      
       log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
           data.status === 'success' ? 'success' : 'error');
       
@@ -493,7 +609,6 @@
 
   // ============ DOWNLOAD ============
   const downloadSelected = async () => {
-    // Only download chapters that have been fetched successfully
     const fetchedChapters = [...selectedChapters].filter(id => {
       const cacheData = chapterDataCache.get(id);
       return cacheData && cacheData.blobs.length > 0;
@@ -602,33 +717,26 @@
 
   // ============ EVENT LISTENERS SETUP ============
   const setupEventListeners = () => {
-    // Close button
     const closeBtn = document.getElementById('mdx-close');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => document.getElementById('mdx-overlay')?.remove());
     }
 
-    // Select All button
     const btnAll = document.getElementById('mdx-btn-all');
     if (btnAll) btnAll.addEventListener('click', selectAll);
 
-    // Deselect All button
     const btnNone = document.getElementById('mdx-btn-none');
     if (btnNone) btnNone.addEventListener('click', deselectAll);
 
-    // Select Unique button
     const btnUnique = document.getElementById('mdx-btn-unique');
     if (btnUnique) btnUnique.addEventListener('click', selectUnique);
 
-    // Fetch button
     const btnFetch = document.getElementById('mdx-fetch-btn');
     if (btnFetch) btnFetch.addEventListener('click', fetchSelected);
 
-    // Download button
     const btnDownload = document.getElementById('mdx-download-btn');
     if (btnDownload) btnDownload.addEventListener('click', downloadSelected);
 
-    // Overlay click to close
     const overlay = document.getElementById('mdx-overlay');
     if (overlay) {
       overlay.addEventListener('click', (e) => {
@@ -639,7 +747,6 @@
 
   // ============ MAIN ============
   const init = async () => {
-    // Load JSZip if not present
     if (typeof JSZip === 'undefined') {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
@@ -650,7 +757,6 @@
       });
     }
     
-    // Load FileSaver.js if not present
     if (typeof saveAs === 'undefined') {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
@@ -724,13 +830,11 @@
       consoleEl.innerHTML = `
         <div id="mdx-console-log"></div>
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
+        <div class="mdx-parallel-info">⚡ ${PARALLEL_LIMIT} parallel image downloads</div>
       `;
       document.body.appendChild(consoleEl);
       
-      // Setup all event listeners
       setupEventListeners();
-      
-      // Initial render
       renderChapters();
       updateCount();
       
@@ -754,7 +858,6 @@
     }
   };
 
-  // Start the app
   init();
 
-})(); // End of IIFE
+})();
