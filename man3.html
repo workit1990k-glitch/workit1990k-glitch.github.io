@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manga Downloader - Direct Fetch</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+--bg-primary: #1a1b26;
+--bg-secondary: #24283b;
+--bg-tertiary: #2f3549;
+--text-primary: #c0caf5;
+--text-secondary: #7982a9;
+--accent: #e0af68;
+--accent-hover: #f0bf78;
+--success: #9ece6a;
+--border: #414868;
+--error: #f7768e;
+}
+body {
+font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+background: var(--bg-primary);
+color: var(--text-primary);
+min-height: 100vh;
+}
+.header {
+background: var(--bg-secondary);
+padding: 12px 24px;
+border-bottom: 1px solid var(--border);
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 20px;
+}
+.url-input-container {
+display: flex;
+gap: 10px;
+width: 100%;
+max-width: 900px;
+}
+#urlInput {
+flex: 1;
+padding: 10px 16px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 14px;
+outline: none;
+}
+#urlInput:focus { border-color: var(--accent); }
+.btn {
+padding: 10px 24px;
+background: var(--accent);
+color: var(--bg-primary);
+border: none;
+border-radius: 6px;
+font-weight: 600;
+cursor: pointer;
+font-size: 13px;
+}
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.container {
+display: flex;
+padding: 20px;
+gap: 20px;
+max-width: 1600px;
+margin: 0 auto;
+}
+.sidebar { width: 280px; flex-shrink: 0; }
+.manga-cover {
+width: 100%;
+border-radius: 8px;
+overflow: hidden;
+margin-bottom: 16px;
+}
+.manga-cover img { width: 100%; height: auto; display: block; }
+.manga-title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.manga-info { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.manga-info span { color: var(--text-primary); font-weight: 500; }
+.chapters-panel {
+flex: 1;
+background: var(--bg-secondary);
+border-radius: 8px;
+border: 1px solid var(--border);
+display: flex;
+flex-direction: column;
+min-height: 600px;
+}
+.chapters-header {
+padding: 16px 20px;
+border-bottom: 1px solid var(--border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.chapters-list {
+flex: 1;
+overflow-y: auto;
+padding: 12px;
+}
+.chapter-item {
+display: flex;
+align-items: center;
+padding: 12px;
+margin-bottom: 4px;
+border-radius: 6px;
+cursor: pointer;
+transition: background 0.15s;
+}
+.chapter-item:hover { background: var(--bg-tertiary); }
+.chapter-item.selected {
+background: rgba(224, 175, 104, 0.15);
+border: 1px solid var(--accent);
+}
+.chapter-number { font-weight: 600; margin-right: 12px; }
+.chapter-group { font-size: 12px; color: var(--text-secondary); }
+.loading {
+display: none;
+text-align: center;
+padding: 40px;
+color: var(--text-secondary);
+}
+.loading.active { display: block; }
+.spinner {
+width: 40px;
+height: 40px;
+border: 3px solid var(--border);
+border-top-color: var(--accent);
+border-radius: 50%;
+animation: spin 1s linear infinite;
+margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.footer {
+background: var(--bg-secondary);
+border-top: 1px solid var(--border);
+padding: 16px 20px;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+.select-count { font-size: 13px; color: var(--text-secondary); }
+.select-count strong { color: var(--accent); }
+.btn-download {
+background: var(--success);
+padding: 10px 20px;
+font-size: 13px;
+}
+.btn-download:hover { background: #a8d880; }
+.console {
+position: fixed;
+bottom: 20px;
+right: 20px;
+width: 400px;
+background: var(--bg-secondary);
+border: 1px solid var(--border);
+border-radius: 8px;
+padding: 12px;
+display: none;
+max-height: 300px;
+overflow-y: auto;
+}
+.console.active { display: block; }
+.console-line {
+font-size: 11px;
+padding: 4px;
+margin: 2px 0;
+border-radius: 4px;
+font-family: monospace;
+}
+.console-line.info { color: var(--text-secondary); }
+.console-line.success { color: var(--success); background: rgba(158, 206, 106, 0.1); }
+.console-line.error { color: var(--error); background: rgba(247, 118, 142, 0.1); }
+.progress-bar {
+height: 4px;
+background: var(--bg-primary);
+border-radius: 2px;
+margin-top: 8px;
+overflow: hidden;
+}
+.progress-fill {
+height: 100%;
+background: var(--success);
+transition: width 0.3s;
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+<div class="header">
+<div class="url-input-container">
+<input type="text" id="urlInput" placeholder="Paste comix.to/title/... URL here">
+<button class="btn" id="fetchBtn" onclick="fetchManga()">FETCH MANGA</button>
+</div>
+</div>
+
+<div class="container">
+<div class="sidebar">
+<div id="mangaInfo" style="display: none;">
+<div class="manga-cover">
+<img id="coverImg" src="" alt="Cover">
+</div>
+<div class="manga-title" id="mangaTitle"></div>
+<div class="manga-info">Type: <span id="mangaType"></span></div>
+<div class="manga-info">Language: <span id="mangaLang"></span></div>
+<div class="manga-info">Status: <span id="mangaStatus"></span></div>
+<div class="manga-info">Latest: <span id="mangaLatest"></span></div>
+</div>
+</div>
+
+<div class="chapters-panel">
+<div class="chapters-header">
+<div>Chapters</div>
+<div class="chapters-count" id="chaptersCount">0 chapters</div>
+</div>
+<div class="loading" id="loading">
+<div class="spinner"></div>
+<div>Fetching chapters...</div>
+</div>
+<div class="chapters-list" id="chaptersList">
+<div style="text-align: center; padding: 60px 20px; color: var(--text-secondary);">
+Enter a manga URL and click FETCH to load chapters
+</div>
+</div>
+<div class="footer">
+<div class="footer-left">
+<button class="btn" onclick="selectAll()">Select All</button>
+<button class="btn" onclick="deselectAll()" style="background: var(--bg-tertiary);">None</button>
+</div>
+<div class="footer-right">
+<div class="select-count"><strong id="selectedCount">0</strong> selected</div>
+<button class="btn btn-download" onclick="downloadSelected()" id="downloadBtn" disabled>
+DOWNLOAD SELECTED
+</button>
+</div>
+</div>
+</div>
+</div>
+
+<div class="console" id="console">
+<div class="console-log" id="consoleLog"></div>
+<div class="progress-bar">
+<div class="progress-fill" id="progressFill" style="width: 0%"></div>
+</div>
+</div>
+
+<script>
+const API_BASE = 'https://comix.to/api/v2';
+const HEADERS = { 
+'Referer': 'https://comix.to/',
+'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+};
+
+let allChapters = [];
+let selectedChapters = new Set();
+let mangaDataCache = null;
+let isDownloading = false;
+
+// Extract manga code from URL
+const extractCode = (url) => {
+const match = url.match(/comix\.to\/title\/([^/]+)/i);
+return match ? match[1] : null;
+};
+
+// Fetch with retry logic
+const fetchRetry = async (url, retries = 3) => {
+for (let i = 0; i < retries; i++) {
+try {
+const res = await fetch(url, { headers: HEADERS });
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+return await res.json();
+} catch (e) {
+if (i === retries - 1) throw e;
+await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+}
+}
+};
+
+// Fetch manga data
+async function fetchManga() {
+const url = document.getElementById('urlInput').value.trim();
+const btn = document.getElementById('fetchBtn');
+const loading = document.getElementById('loading');
+const list = document.getElementById('chaptersList');
+
+if (!url.includes('comix.to/title/')) {
+alert('Please enter a valid comix.to URL');
+return;
+}
+
+btn.disabled = true;
+loading.classList.add('active');
+list.innerHTML = '';
+allChapters = [];
+selectedChapters.clear();
+
+try {
+const code = extractCode(url);
+if (!code) throw new Error('Invalid URL format');
+
+// Fetch manga info
+const mangaRes = await fetchRetry(`${API_BASE}/manga/${code}/`);
+const manga = mangaRes.result;
+mangaDataCache = manga;
+
+// Display manga info
+document.getElementById('mangaInfo').style.display = 'block';
+document.getElementById('coverImg').src = manga.poster?.large || manga.poster?.medium || '';
+document.getElementById('mangaTitle').textContent = manga.title;
+document.getElementById('mangaType').textContent = manga.type || 'Unknown';
+document.getElementById('mangaLang').textContent = manga.original_language || 'Unknown';
+document.getElementById('mangaStatus').textContent = manga.status || 'Unknown';
+document.getElementById('mangaLatest').textContent = manga.latest_chapter || '?';
+
+// Fetch all chapters
+let page = 1;
+let hasMore = true;
+
+while (hasMore) {
+const chapRes = await fetchRetry(
+`${API_BASE}/manga/${code}/chapters?limit=100&page=${page}&order[number]=asc`
+);
+const items = chapRes.result?.items || [];
+
+if (!items.length) {
+hasMore = false;
+} else {
+allChapters.push(...items);
+hasMore = items.length === 100;
+page++;
+await new Promise(r => setTimeout(r, 100)); // Rate limiting
+}
+}
+
+// Sort chapters
+allChapters.sort((a, b) => {
+const na = parseFloat(a.number);
+const nb = parseFloat(b.number);
+if (!isNaN(na) && !isNaN(nb)) return na - nb;
+return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+});
+
+renderChapters();
+logConsole(`✓ Found ${allChapters.length} chapters`, 'success');
+
+} catch (err) {
+logConsole(`❌ Error: ${err.message}`, 'error');
+alert('Error: ' + err.message);
+} finally {
+btn.disabled = false;
+loading.classList.remove('active');
+}
+}
+
+// Render chapters list
+function renderChapters() {
+const list = document.getElementById('chaptersList');
+list.innerHTML = '';
+
+allChapters.forEach(chapter => {
+const div = document.createElement('div');
+const isSelected = selectedChapters.has(chapter.chapter_id);
+div.className = `chapter-item${isSelected ? ' selected' : ''}`;
+
+div.innerHTML = `
+<input type="checkbox" ${isSelected ? 'checked' : ''} 
+onclick="toggleChapter('${chapter.chapter_id}', event)" 
+style="margin-right: 12px; cursor: pointer;">
+<div style="flex: 1;">
+<div class="chapter-number">Ch. ${chapter.number}${chapter.name ? ' - ' + chapter.name : ''}</div>
+<div class="chapter-group">${chapter.scanlation_group?.name || 'Unknown'}</div>
+</div>
+`;
+
+div.onclick = (e) => {
+if (e.target.type !== 'checkbox') {
+toggleChapter(chapter.chapter_id);
+}
+};
+
+list.appendChild(div);
+});
+
+document.getElementById('chaptersCount').textContent = `${allChapters.length} chapters`;
+updateCount();
+}
+
+function toggleChapter(id, event) {
+if (event) event.stopPropagation();
+
+if (selectedChapters.has(id)) {
+selectedChapters.delete(id);
+} else {
+selectedChapters.add(id);
+}
+renderChapters();
+}
+
+function selectAll() {
+allChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
+renderChapters();
+}
+
+function deselectAll() {
+selectedChapters.clear();
+renderChapters();
+}
+
+function updateCount() {
+document.getElementById('selectedCount').textContent = selectedChapters.size;
+document.getElementById('downloadBtn').disabled = selectedChapters.size === 0;
+}
+
+// Fetch chapter images directly
+async function fetchChapterImages(chapterId) {
+try {
+const chapterRes = await fetchRetry(`${API_BASE}/chapters/${chapterId}/`);
+const data = chapterRes.result || chapterRes;
+
+// Extract image URLs from response
+const imageUrls = extractImageUrls(data);
+
+if (imageUrls.length === 0) {
+throw new Error('No images found');
+}
+
+logConsole(`📥 Fetching ${imageUrls.length} images...`, 'info');
+
+// Fetch all images with concurrency control
+const blobs = [];
+const totalSize = 0;
+const failed = 0;
+const concurrency = 3; // Parallel downloads
+
+for (let i = 0; i < imageUrls.length; i += concurrency) {
+const batch = imageUrls.slice(i, i + concurrency);
+const promises = batch.map(async (url, idx) => {
+const pageNum = i + idx + 1;
+const ext = url.split('?')[0].split('.').pop()?.toLowerCase() || 'jpg';
+const fileName = `page_${String(pageNum).padStart(3, '0')}.${ext}`;
+
+try {
+// Direct fetch - no proxy
+const res = await fetch(url, {
+headers: {
+'Referer': 'https://comix.to/',
+'Origin': 'https://comix.to'
+}
+});
+
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+const blob = await res.blob();
+return { fileName, blob, size: blob.size };
+} catch (err) {
+logConsole(`⚠ Failed: ${fileName}`, 'error');
+return null;
+}
+});
+
+const results = await Promise.all(promises);
+results.forEach(r => {
+if (r) blobs.push(r);
+});
+
+// Update progress
+const progress = ((i + batch.length) / imageUrls.length) * 100;
+document.getElementById('progressFill').style.width = `${progress}%`;
+}
+
+return {
+blobs,
+size: blobs.reduce((sum, b) => sum + b.size, 0),
+total: imageUrls.length,
+failed: imageUrls.length - blobs.length
+};
+
+} catch (err) {
+logConsole(`❌ ${err.message}`, 'error');
+return { blobs: [], size: 0, total: 0, failed: 0, error: err.message };
+}
+}
+
+function extractImageUrls(data) {
+if (Array.isArray(data)) {
+return data.map(item => item.image_url || item.url || item).filter(Boolean);
+}
+if (data?.pages?.length) {
+return data.pages.map(p => p.image_url || p.url || p).filter(Boolean);
+}
+if (data?.images?.length) {
+return data.images.map(img => img.image_url || img.url || img).filter(Boolean);
+}
+if (data?.result) {
+return extractImageUrls(data.result);
+}
+return [];
+}
+
+// Download selected chapters
+async function downloadSelected() {
+if (selectedChapters.size === 0 || isDownloading) return;
+
+isDownloading = true;
+document.getElementById('console').classList.add('active');
+document.getElementById('downloadBtn').disabled = true;
+
+const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
+const mangaTitle = (mangaDataCache?.title || 'manga').replace(/[^a-z0-9]/gi, '_').slice(0, 50);
+
+logConsole(`📦 Starting download: ${selected.length} chapters`, 'info');
+
+for (let i = 0; i < selected.length; i++) {
+const chapter = selected[i];
+logConsole(`\n📖 Chapter ${chapter.number}...`, 'info');
+
+const data = await fetchChapterImages(chapter.chapter_id);
+
+if (data.blobs.length > 0) {
+// Create ZIP
+const zip = new JSZip();
+const folder = zip.folder(`Ch.${chapter.number}${chapter.name ? ' - ' + chapter.name : ''}`);
+
+data.blobs.forEach(b => {
+folder.file(b.fileName, b.blob);
+});
+
+const zipName = `${mangaTitle}_Ch.${chapter.number}.zip`;
+const content = await zip.generateAsync({ type: 'blob' });
+saveAs(content, zipName);
+
+logConsole(`✓ Saved: ${zipName} (${(data.size / 1024 / 1024).toFixed(1)} MB)`, 'success');
+} else {
+logConsole(`❌ Failed: Chapter ${chapter.number}`, 'error');
+}
+
+// Progress update
+const progress = ((i + 1) / selected.length) * 100;
+document.getElementById('progressFill').style.width = `${progress}%`;
+
+// Small delay between chapters
+await new Promise(r => setTimeout(r, 500));
+}
+
+logConsole(`\n🎉 Download complete!`, 'success');
+isDownloading = false;
+document.getElementById('downloadBtn').disabled = false;
+}
+
+// Console logging
+function logConsole(message, type = 'info') {
+const log = document.getElementById('consoleLog');
+const line = document.createElement('div');
+line.className = `console-line ${type}`;
+line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+log.appendChild(line);
+log.scrollTop = log.scrollHeight;
+}
+
+// Enter key support
+document.getElementById('urlInput').addEventListener('keypress', (e) => {
+if (e.key === 'Enter') fetchManga();
+});
+</script>
+</body>
+</html>
