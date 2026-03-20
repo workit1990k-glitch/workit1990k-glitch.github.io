@@ -683,6 +683,28 @@ Save ID
 </div>
 <div class="container">
 <div class="sidebar">
+    <!-- Cloudflare Challenge Modal -->
+<div class="modal-overlay" id="cfModal">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">⚠ Cloudflare Protection Detected</div>
+            <button class="modal-close" onclick="closeCfModal()">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 20px; text-align: center;">
+            <p style="margin-bottom: 15px;">Cloudflare is blocking automated requests.</p>
+            <p style="margin-bottom: 15px; font-size: 13px; color: var(--text-secondary);">
+                1. Click <strong>Open Challenge</strong> below.<br>
+                2. Complete the verification in the popup.<br>
+                3. Return here and click <strong>Retry</strong>.
+            </p>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button class="btn" onclick="openChallengePopup()">🔓 Open Challenge</button>
+                <button class="btn btn-secondary" onclick="retryAfterChallenge()">🔄 Retry Request</button>
+            </div>
+            <p id="cfStatus" style="margin-top: 15px; font-size: 12px; color: var(--accent);"></p>
+        </div>
+    </div>
+</div>
 <div id="mangaInfo" style="display: none;">
 <div class="manga-cover">
 <img id="coverImg" src="" alt="Cover">
@@ -861,17 +883,46 @@ let currentJsonData = null;
 let mangaDataCache = null;
 
 const extractCode = (url) => url.replace(/\/$/, '').split('/').pop()?.split('-')[0] || '';
+// Update HEADERS to include credentials handling
+const HEADERS = { 
+    'Referer': 'https://comix.to/', 
+    'User-Agent': 'Mozilla/5.0' 
+};
+
+// Updated fetchRetry with Challenge Detection
 const fetchRetry = async (url, retries = 3, delay = 1000) => {
-for (let i = 1; i <= retries; i++) {
-try {
-const res = await fetch(url, { headers: HEADERS });
-if (!res.ok) throw new Error('HTTP ' + res.status);
-return await res.json();
-} catch (e) {
-if (i === retries) throw e;
-await new Promise(r => setTimeout(r, delay * i));
-}
-}
+    for (let i = 1; i <= retries; i++) {
+        try {
+            // Add credentials: 'include' to send cookies if available
+            const res = await fetch(url, { 
+                headers: HEADERS,
+                credentials: 'include' 
+            });
+            
+            // Check for Cloudflare Protection Status
+            if (res.status === 403 || res.status === 503) {
+                // Note: Reading 'cf-mitigated' header likely fails due to CORS
+                // We rely on status code instead
+                throw new Error('CLOUDFLARE_CHALLENGE');
+            }
+            
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return await res.json();
+        } catch (e) {
+            if (e.message === 'CLOUDFLARE_CHALLENGE') {
+                // Trigger User Assisted Flow
+                const solved = await triggerChallengeFlow(url);
+                if (solved) {
+                    i = 0; // Reset retry count
+                    continue; 
+                } else {
+                    throw new Error('Challenge not completed');
+                }
+            }
+            if (i === retries) throw e;
+            await new Promise(r => setTimeout(r, delay * i));
+        }
+    }
 };
 const fetchChapterWithRetry = async (chapterId, maxRetries = 3) => {
 for (let attempt = 1; attempt <= maxRetries; attempt++) {
