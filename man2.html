@@ -889,7 +889,9 @@ const safeUrl = (url) => url?.trim().replace(/\s+/g, '');
 
 // ============ PROXY FETCH WITH CORS BYPASS ============
 const fetchRetry = async (url, retries = 3, delay = 1000) => {
-  const cleanUrl = safeUrl(url);
+  // CRITICAL: Always trim URLs to prevent 404 from whitespace
+  const cleanUrl = (url || '').trim();
+  
   // Route API requests through Worker to bypass CORS
   const proxyUrl = `${WORKER_URL}?action=api&url=${encodeURIComponent(cleanUrl)}`;
   
@@ -897,35 +899,39 @@ const fetchRetry = async (url, retries = 3, delay = 1000) => {
     try {
       const res = await fetch(proxyUrl, { headers: HEADERS });
       
-      // Handle Cloudflare challenge response from Worker
+      // Handle Cloudflare challenge response (JSON from Worker)
       if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        if (data.error === 'CLOUDFLARE_CHALLENGE') {
-          throw new Error('CLOUDFLARE_CHALLENGE');
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data?.error === 'CLOUDFLARE_CHALLENGE') {
+            // Trigger user-assisted challenge flow
+            const solved = await triggerChallengeFlow(cleanUrl);
+            if (solved) {
+              i = 0; // Reset retry count after user completes challenge
+              continue;
+            } else {
+              throw new Error('Challenge not completed by user');
+            }
+          }
         }
       }
       
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return await res.json();
     } catch (e) {
-      if (e.message === 'CLOUDFLARE_CHALLENGE') {
-        // Trigger user-assisted flow
-        const solved = await triggerChallengeFlow(cleanUrl);
-        if (solved) {
-          i = 0; // Reset retry count
-          continue;
-        } else {
-          throw new Error('Challenge not completed');
-        }
+      if (e.message === 'CLOUDFLARE_CHALLENGE' || e.message?.includes('Challenge')) {
+        // Already handled above, re-throw
+        throw e;
       }
       if (i === retries) throw e;
       await new Promise(r => setTimeout(r, delay * i));
     }
   }
 };
-
 const fetchChapterWithRetry = async (chapterId, maxRetries = 3) => {
-  const apiUrl = safeUrl(`${API_BASE}/chapters/${chapterId}/`);
+  // Trim and encode the URL properly
+  const apiUrl = `${API_BASE}/chapters/${chapterId}/`.trim();
   const proxyUrl = `${WORKER_URL}?action=api&url=${encodeURIComponent(apiUrl)}`;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -933,24 +939,25 @@ const fetchChapterWithRetry = async (chapterId, maxRetries = 3) => {
       const res = await fetch(proxyUrl, { headers: HEADERS });
       
       if (res.status === 403) {
-        const data = await res.json().catch(() => ({}));
-        if (data.error === 'CLOUDFLARE_CHALLENGE') {
-          throw new Error('CLOUDFLARE_CHALLENGE');
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data?.error === 'CLOUDFLARE_CHALLENGE') {
+            const solved = await triggerChallengeFlow(apiUrl);
+            if (solved) {
+              attempt = 0; // Reset after challenge completion
+              continue;
+            } else {
+              throw new Error('Challenge not completed');
+            }
+          }
         }
       }
       
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return await res.json();
     } catch (err) {
-      if (err.message === 'CLOUDFLARE_CHALLENGE') {
-        const solved = await triggerChallengeFlow(apiUrl);
-        if (solved) {
-          attempt = 0;
-          continue;
-        } else {
-          throw err;
-        }
-      }
+      if (err.message?.includes('Challenge')) throw err;
       if (attempt === maxRetries) throw err;
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
@@ -2325,6 +2332,8 @@ window.addEventListener('unhandledrejection', (event) => {
     triggerChallengeFlow(cfChallengeUrl || 'https://comix.to');
   }
 });
+
+  
 </script>
 </body>
 </html>
