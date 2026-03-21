@@ -1033,7 +1033,6 @@
           await saveZip(false);
         }
         
-        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       await saveZip(true);
