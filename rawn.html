@@ -1,84 +1,242 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Novel Scraper</title>
+  <title>📚 Novel Scraper - ixdzs.tw</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
-    .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin: 20px 0; }
-    input { width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 1rem; margin: 8px 0; }
-    button { background: #4361ee; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; }
-    button:hover { background: #3a56d4; }
-    button:disabled { background: #6c757d; cursor: not-allowed; }
-    .download-btn { background: #28a745; margin-top: 15px; }
+    :root {
+      --primary: #4361ee; --primary-hover: #3a56d4;
+      --bg: #f8f9fa; --card: #fff; --text: #212529;
+      --text-muted: #6c757d; --border: #dee2e6;
+      --success: #28a745; --error: #dc3545; --warn: #ffc107;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.6;
+      padding: 20px; max-width: 900px; margin: 0 auto;
+    }
+    header {
+      text-align: center; padding: 25px 0 20px;
+      border-bottom: 1px solid var(--border); margin-bottom: 20px;
+    }
+    h1 { font-size: 1.8rem; color: var(--primary); margin-bottom: 5px; }
+    .subtitle { color: var(--text-muted); font-size: 0.95rem; }
+    
+    .card {
+      background: var(--card); border-radius: 12px; padding: 24px;
+      margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      border: 1px solid var(--border);
+    }
+    
+    .input-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+    input[type="url"], input[type="number"] {
+      flex: 1; min-width: 200px; padding: 12px 16px;
+      border: 2px solid var(--border); border-radius: 8px; font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+    input:focus { outline: none; border-color: var(--primary); }
+    
+    button {
+      background: var(--primary); color: white; border: none;
+      padding: 12px 24px; border-radius: 8px; font-size: 1rem;
+      font-weight: 500; cursor: pointer; transition: background 0.2s;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { background: var(--text-muted); cursor: not-allowed; opacity: 0.7; }
+    
+    .download-btn {
+      background: var(--success); width: 100%; margin-top: 15px;
+      padding: 14px; font-size: 1.1rem; display: none;
+    }
     .download-btn:hover { background: #218838; }
+    .download-btn:disabled { background: var(--text-muted); }
+    
     .progress { margin: 20px 0; display: none; }
-    .progress-bar { height: 8px; background: #dee2e6; border-radius: 4px; overflow: hidden; }
-    .progress-fill { height: 100%; background: #4361ee; width: 0%; transition: width 0.3s; }
-    .log { background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 0.85rem; padding: 12px; border-radius: 8px; max-height: 150px; overflow-y: auto; margin: 15px 0; white-space: pre-wrap; display: none; }
+    .progress-bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s ease; }
+    .progress-text { font-size: 0.9rem; color: var(--text-muted); text-align: center; margin-top: 8px; }
+    
+    .log {
+      background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;
+      font-size: 0.85rem; padding: 12px; border-radius: 8px;
+      max-height: 180px; overflow-y: auto; margin: 15px 0;
+      white-space: pre-wrap; display: none;
+    }
     .log.visible { display: block; }
-    .preview { background: #f1f5f9; padding: 15px; border-radius: 8px; margin-top: 15px; display: none; }
+    
+    .preview {
+      background: #f1f5f9; padding: 16px; border-radius: 8px;
+      margin-top: 15px; display: none;
+    }
     .preview.visible { display: block; }
-    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
-    .meta-item strong { display: block; color: #6c757d; font-size: 0.85rem; }
+    .meta-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px; margin-top: 10px;
+    }
+    .meta-item strong { display: block; color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3px; }
+    .meta-item a { color: var(--primary); text-decoration: none; }
+    .meta-item a:hover { text-decoration: underline; }
+    
     details { margin: 15px 0; }
-    summary { cursor: pointer; color: #4361ee; font-weight: 500; }
+    summary {
+      cursor: pointer; color: var(--primary); font-weight: 500;
+      user-select: none; display: flex; align-items: center; gap: 5px;
+    }
+    .advanced {
+      margin-top: 15px; padding-top: 15px; border-top: 1px dashed var(--border);
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;
+    }
+    .advanced label { font-size: 0.9rem; font-weight: 500; }
+    .advanced small { color: var(--text-muted); display: block; margin-top: 3px; font-size: 0.85rem; }
+    
+    .note {
+      background: #e7f3ff; border-left: 4px solid var(--primary);
+      padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 15px 0;
+      font-size: 0.9rem; color: #004085;
+    }
+    
+    footer {
+      text-align: center; padding: 25px 0 10px; color: var(--text-muted);
+      font-size: 0.9rem; border-top: 1px solid var(--border); margin-top: 20px;
+    }
+    
+    @media (max-width: 600px) {
+      .input-row { flex-direction: column; }
+      button { width: 100%; }
+      .advanced { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>📚 Novel Scraper</h1>
-  <p>Worker-powered • No CORS • Download JSON</p>
-  
-  <div class="card">
-    <input type="url" id="novelUrl" placeholder="https://ixdzs.tw/read/463747/" value="https://ixdzs.tw/read/463747/" />
-    
-    <details>
-      <summary>⚙️ Advanced Options</summary>
-      <input type="url" id="workerUrl" placeholder="Worker URL" value="https://novel-scraper.YOUR_SUBDOMAIN.workers.dev" style="margin-top:10px;" />
-      <input type="number" id="maxChapters" placeholder="Max chapters (optional)" min="1" style="margin-top:10px;" />
-      <label style="margin-top:10px; display:block;">
-        <input type="checkbox" id="includeChapters" checked /> Include chapter content
-      </label>
-    </details>
-    
-    <button id="scrapeBtn" onclick="startScrape()">🚀 Scrape Novel</button>
-    
-    <div class="progress" id="progress">
-      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-      <div style="font-size:0.9rem; color:#6c757d; text-align:center; margin-top:8px;" id="progressText">Starting...</div>
-    </div>
-    
-    <div class="log" id="log"></div>
-    
-    <button id="downloadBtn" class="download-btn" style="display:none;" onclick="downloadJson()">⬇️ Download JSON</button>
-    
-    <div class="preview" id="preview">
-      <strong>📋 Preview</strong>
-      <div class="meta-grid" id="metaPreview"></div>
-      <div style="margin-top:12px; font-size:0.85rem; color:#6c757d;">
-        Chapters: <span id="chapterCount">0</span> • Size: <span id="jsonSize">0 KB</span>
+  <header>
+    <h1>📚 Novel Scraper</h1>
+    <p class="subtitle">ixdzs.tw • Worker-powered • Download JSON</p>
+  </header>
+
+  <main>
+    <div class="card">
+      <!-- Novel URL Input -->
+      <div class="input-row">
+        <input 
+          type="url" 
+          id="novelUrl" 
+          placeholder="https://ixdzs.tw/read/463747/" 
+          value="https://ixdzs.tw/read/463747/"
+          required
+        />
+        <button id="scrapeBtn" onclick="startScrape()">🚀 Scrape Novel</button>
+      </div>
+
+      <!-- Worker URL (hidden by default, expandable) -->
+      <details>
+        <summary>⚙️ Settings</summary>
+        <div class="advanced">
+          <div>
+            <label for="workerUrl">Worker Endpoint</label>
+            <small>Cloudflare Worker URL</small>
+            <input 
+              type="url" 
+              id="workerUrl" 
+              value="https://plain-night-1447-opt1.yuush.workers.dev"
+              style="width:100%; margin-top:5px; padding:10px;"
+            />
+          </div>
+          <div>
+            <label for="maxChapters">Max Chapters</label>
+            <small>Fetch first N chapters (leave empty for all)</small>
+            <input 
+              type="number" 
+              id="maxChapters" 
+              placeholder="e.g., 10" 
+              min="1"
+              style="width:100%; margin-top:5px; padding:10px;"
+            />
+          </div>
+          <div>
+            <label for="startChapter">Start Chapter</label>
+            <small>Start from chapter number</small>
+            <input 
+              type="number" 
+              id="startChapter" 
+              value="1" 
+              min="1"
+              style="width:100%; margin-top:5px; padding:10px;"
+            />
+          </div>
+          <div>
+            <label for="endChapter">End Chapter</label>
+            <small>End at chapter number (overrides max)</small>
+            <input 
+              type="number" 
+              id="endChapter" 
+              placeholder="e.g., 50" 
+              min="1"
+              style="width:100%; margin-top:5px; padding:10px;"
+            />
+          </div>
+        </div>
+      </details>
+
+      <div class="note">
+        💡 <strong>Tip:</strong> Chapter content is always included. Use <em>Max Chapters</em> for quick previews, or <em>Start/End</em> for specific ranges.
+      </div>
+
+      <!-- Progress -->
+      <div class="progress" id="progress">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-text" id="progressText">Waiting...</div>
+      </div>
+
+      <!-- Log -->
+      <div class="log" id="log"></div>
+
+      <!-- Download Button -->
+      <button id="downloadBtn" class="download-btn" onclick="downloadJson()">
+        ⬇️ Download JSON File
+      </button>
+
+      <!-- Preview -->
+      <div class="preview" id="preview">
+        <strong>📋 Result Preview</strong>
+        <div class="meta-grid" id="metaPreview"></div>
+        <div style="margin-top:12px; font-size:0.85rem; color:var(--text-muted);">
+          Chapters fetched: <span id="chapterCount">0</span> • 
+          File size: <span id="jsonSize">0 KB</span> • 
+          Range: <span id="rangeInfo">-</span>
+        </div>
       </div>
     </div>
-  </div>
+  </main>
+
+  <footer>
+    <p>Backend: Cloudflare Worker • Frontend: Pure HTML/JS • No tracking</p>
+    <p style="margin-top:5px;">For personal use only. Respect content creators' rights.</p>
+  </footer>
 
   <script>
+    // ===== STATE =====
     let scrapedData = null;
     let isScraping = false;
 
+    // ===== UI HELPERS =====
     function log(msg, type = 'info') {
       const logEl = document.getElementById('log');
       const time = new Date().toLocaleTimeString();
       const colors = { info: '#61afef', success: '#98c379', warn: '#e5c07b', error: '#e06c75' };
-      logEl.innerHTML += `[${time}] ${msg}\n`;
+      logEl.innerHTML += `<span style="color:${colors[type]}">[${time}]</span> ${msg}\n`;
       logEl.scrollTop = logEl.scrollHeight;
       logEl.classList.add('visible');
     }
 
     function updateProgress(percent, text) {
-      document.getElementById('progress').style.display = 'block';
-      document.getElementById('progressFill').style.width = `${percent}%`;
-      document.getElementById('progressText').textContent = text;
+      const container = document.getElementById('progress');
+      const fill = document.getElementById('progressFill');
+      const txt = document.getElementById('progressText');
+      container.style.display = 'block';
+      fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+      txt.textContent = text;
     }
 
     function showPreview(data) {
@@ -87,83 +245,137 @@
       
       const meta = data.meta;
       document.getElementById('metaPreview').innerHTML = `
-        <div class="meta-item"><strong>Title</strong>${meta.title}</div>
-        <div class="meta-item"><strong>Author</strong>${meta.author || 'Unknown'}</div>
-        <div class="meta-item"><strong>Status</strong>${meta.status || 'Unknown'}</div>
-        <div class="meta-item"><strong>Chapters</strong>${meta.totalChapters}</div>
-        <div class="meta-item"><strong>Genres</strong>${(meta.genres || []).join(', ') || 'None'}</div>
+        <div class="meta-item"><strong>Title</strong>${escapeHtml(meta.title)}</div>
+        <div class="meta-item"><strong>Author</strong>${escapeHtml(meta.author || 'Unknown')}</div>
+        <div class="meta-item"><strong>Status</strong>${escapeHtml(meta.status || 'Unknown')}</div>
+        <div class="meta-item"><strong>Chapters</strong>${meta.totalChapters} / ${meta.totalAvailable || '?'}</div>
+        <div class="meta-item"><strong>Genres</strong>${(meta.genres || []).map(escapeHtml).join(', ') || 'None'}</div>
+        <div class="meta-item"><strong>Source</strong><a href="${meta.sourceUrl}" target="_blank" rel="noopener">Link</a></div>
       `;
       
       document.getElementById('chapterCount').textContent = meta.totalChapters;
       const sizeKB = Math.round(JSON.stringify(data).length / 1024);
       document.getElementById('jsonSize').textContent = `${sizeKB} KB`;
       
+      const range = meta.fetchedRange;
+      document.getElementById('rangeInfo').textContent = range 
+        ? `#${range.start}–${range.end}` 
+        : 'All';
+      
       document.getElementById('preview').classList.add('visible');
     }
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
     function downloadJson() {
-      if (!scrapedData) return alert('No data to download');
+      if (!scrapedData) {
+        alert('No data to download. Please scrape a novel first.');
+        return;
+      }
+      
+      const meta = scrapedData.meta;
+      const safeTitle = meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel';
+      const filename = `${meta.id}-${safeTitle}.json`;
+      
       const blob = new Blob([JSON.stringify(scrapedData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${scrapedData.meta.id || 'novel'}-${scrapedData.meta.title?.slice(0, 30) || 'data'}.json`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
-      log('✅ Download started', 'success');
+      
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      log('✅ Download started: ' + filename, 'success');
     }
 
+    // ===== SCRAPE LOGIC =====
     async function startScrape() {
       if (isScraping) return;
       
       const novelUrl = document.getElementById('novelUrl').value.trim();
-      const workerUrl = document.getElementById('workerUrl').value.trim();
+      const workerUrl = document.getElementById('workerUrl').value.trim().replace(/\/$/, '');
       const maxChapters = document.getElementById('maxChapters').value;
-      const includeChapters = document.getElementById('includeChapters').checked;
+      const startChapter = document.getElementById('startChapter').value;
+      const endChapter = document.getElementById('endChapter').value;
       
-      if (!novelUrl || !workerUrl) {
-        alert('Please enter both novel URL and Worker URL');
+      if (!novelUrl) {
+        alert('Please enter a novel URL');
+        document.getElementById('novelUrl').focus();
+        return;
+      }
+      if (!workerUrl) {
+        alert('Please configure the Worker endpoint in Settings');
         return;
       }
 
+      // Reset UI
       isScraping = true;
       document.getElementById('scrapeBtn').disabled = true;
       document.getElementById('log').innerHTML = '';
       document.getElementById('downloadBtn').style.display = 'none';
       document.getElementById('preview').classList.remove('visible');
-      updateProgress(10, 'Sending request...');
+      updateProgress(5, 'Preparing request...');
 
       try {
-        log('📤 Requesting Worker...');
+        log('📤 Sending request to Worker...');
+        
+        // Build request payload
+        const payload = {
+          url: novelUrl,
+          includeChapters: true, // Always true per requirements
+        };
+        
+        // Add chapter range options if provided
+        if (maxChapters) payload.maxChapters = parseInt(maxChapters, 10);
+        if (startChapter) payload.startChapter = parseInt(startChapter, 10);
+        if (endChapter) payload.endChapter = parseInt(endChapter, 10);
+        
+        updateProgress(15, 'Fetching from Worker...');
         
         const response = await fetch(`${workerUrl}/api/scrape`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: novelUrl,
-            includeChapters,
-            maxChapters: maxChapters ? parseInt(maxChapters) : null
-          })
+          body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err.error || `HTTP ${response.status}`);
+          let errMsg = `HTTP ${response.status}`;
+          try {
+            const err = await response.json();
+            errMsg = err.error || errMsg;
+          } catch {}
+          throw new Error(errMsg);
         }
 
-        updateProgress(60, 'Parsing response...');
+        updateProgress(60, 'Processing response...');
         const data = await response.json();
         
-        if (!data.success) throw new Error(data.error || 'Worker failed');
+        if (!data.success) {
+          throw new Error(data.error || 'Worker returned failure');
+        }
 
         updateProgress(100, '✅ Complete!');
-        log(`🎉 "${data.meta.title}" - ${data.meta.totalChapters} chapters`, 'success');
+        log(`🎉 "${data.meta.title}" • ${data.meta.totalChapters} chapters fetched`, 'success');
+        
+        if (data.meta.dedupCheck?.duplicate) {
+          log('⚠️  Note: This title may already exist in the database', 'warn');
+        }
+        
         showPreview(data);
         
       } catch (error) {
-        log(`❌ ${error.message}`, 'error');
-        alert(`Error: ${error.message}`);
+        log(`❌ Error: ${error.message}`, 'error');
+        alert(`Scraping failed:\n\n${error.message}\n\nCheck the log for details.`);
         updateProgress(0, 'Failed');
       } finally {
         isScraping = false;
@@ -171,11 +383,29 @@
       }
     }
 
-    // Init
-    document.getElementById('novelUrl').addEventListener('keypress', e => {
-      if (e.key === 'Enter' && !isScraping) startScrape();
+    // ===== INITIALIZATION =====
+    document.addEventListener('DOMContentLoaded', () => {
+      // Auto-focus input
+      document.getElementById('novelUrl').focus();
+      
+      // Enter key triggers scrape
+      document.getElementById('novelUrl').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !isScraping) startScrape();
+      });
+      
+      // Clear endChapter if maxChapters is filled (UX hint)
+      document.getElementById('maxChapters').addEventListener('input', function() {
+        if (this.value) {
+          document.getElementById('endChapter').placeholder = 'Disabled when using max';
+          document.getElementById('endChapter').disabled = true;
+        } else {
+          document.getElementById('endChapter').placeholder = 'e.g., 50';
+          document.getElementById('endChapter').disabled = false;
+        }
+      });
+      
+      log('👋 Ready! Enter a novel URL and click "Scrape Novel"', 'info');
     });
-    log('👋 Ready! Enter URLs and click Scrape.', 'info');
   </script>
 </body>
 </html>
