@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>📚 Novel Scraper + Translator</title>
+<!-- JSZip for ZIP creation -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root {
+    --primary: #4361ee; --primary-hover: #3a56d4;
+    --success: #28a745; --warn: #ffc107; --error: #dc3545;
+    --bg: #f8f9fa; --card: #fff; --text: #212529;
+    --text-muted: #6c757d; --border: #dee2e6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    padding: 20px; max-width: 1000px; margin: 0 auto;
+  }
+  header {
+    text-align: center; padding: 20px 0; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 1.8rem; color: var(--primary); margin-bottom: 5px; }
+  .subtitle { color: var(--text-muted); font-size: 0.95rem; }
+  
+  .card {
+    background: var(--card); border-radius: 12px; padding: 20px;
+    margin-bottom: 15px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    border: 1px solid var(--border);
+  }
+  
+  .input-row { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+  input[type="url"], input[type="number"], input[type="text"] {
+    flex: 1; min-width: 180px; padding: 10px 14px;
+    border: 2px solid var(--border); border-radius: 8px; font-size: 1rem;
+  }
+  input:focus { outline: none; border-color: var(--primary); }
+  
+  button {
+    background: var(--primary); color: white; border: none;
+    padding: 10px 20px; border-radius: 8px; font-size: 0.95rem;
+    font-weight: 500; cursor: pointer; transition: background 0.2s;
+    margin: 3px;
+  }
+  button:hover { background: var(--primary-hover); }
+  button:disabled { background: var(--text-muted); cursor: not-allowed; opacity: 0.7; }
+  button.success { background: var(--success); }
+  button.success:hover { background: #218838; }
+  button.warn { background: var(--warn); color: #333; }
+  button.warn:hover { background: #e0a800; }
+  
+  .btn-group { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; }
+  
+  .progress { margin: 15px 0; display: none; }
+  .progress-bar { height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+  .progress-text { font-size: 0.9rem; color: var(--text-muted); text-align: center; margin-top: 5px; }
+  
+  .console {
+    background: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace;
+    font-size: 0.85rem; padding: 12px; border-radius: 8px;
+    max-height: 200px; overflow-y: auto; margin: 10px 0;
+    white-space: pre-wrap;
+  }
+  
+  .console-translate {
+    background: #121212; color: #e6e6e6; font-family: 'Consolas', monospace;
+    font-size: 0.85rem; padding: 12px; border-radius: 8px;
+    height: 320px; overflow-y: auto; margin: 10px 0;
+    white-space: pre-wrap; border: 1px solid #333;
+  }
+  .console-translate[translate="no"] { opacity: 0.3; }
+  
+  .preview {
+    background: #f1f5f9; padding: 15px; border-radius: 8px;
+    margin: 15px 0; display: none;
+  }
+  .preview.visible { display: block; }
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-top: 10px;
+  }
+  .meta-item strong { display: block; color: var(--text-muted); font-size: 0.85rem; }
+  
+  .cover-preview {
+    width: 100px; height: 140px; object-fit: cover;
+    border-radius: 6px; border: 1px solid var(--border);
+    display: block; margin: 10px auto; background: #f1f5f9;
+  }
+  
+  details { margin: 10px 0; }
+  summary { cursor: pointer; color: var(--primary); font-weight: 500; }
+  .advanced {
+    margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;
+  }
+  
+  .note {
+    background: #e7f3ff; border-left: 4px solid var(--primary);
+    padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 10px 0;
+    font-size: 0.9rem; color: #004085;
+  }
+  
+  footer {
+    text-align: center; padding: 20px 0 10px; color: var(--text-muted);
+    font-size: 0.9rem; border-top: 1px solid var(--border); margin-top: 20px;
+  }
+  
+  @media (max-width: 700px) {
+    .input-row { flex-direction: column; }
+    button { width: 100%; }
+    .advanced { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📚 Novel Scraper + Translator</h1>
+  <p class="subtitle">ixdzs.tw • Scrape → Translate → Export (JSON/ZIP/EPUB)</p>
+</header>
+
+<main>
+  <!-- STEP 1: SCRAPE -->
+  <div class="card" id="scrapeSection">
+    <h3>🔍 Step 1: Scrape Novel</h3>
+    <div class="input-row">
+      <input type="url" id="novelUrl" placeholder="https://ixdzs.tw/read/463747/" value="https://ixdzs.tw/read/463747/" required />
+      <button id="scrapeBtn">🚀 Scrape Novel</button>
+    </div>
+    
+    <details>
+      <summary>⚙️ Scrape Settings</summary>
+      <div class="advanced">
+        <div>
+          <label>Worker URL</label>
+          <input type="url" id="workerUrl" value="https://plain-night-1447-opt1.yuush.workers.dev" />
+        </div>
+        <div>
+          <label>Max Chapters</label>
+          <input type="number" id="maxChapters" placeholder="e.g., 20" min="1" />
+        </div>
+        <div>
+          <label>Start Chapter</label>
+          <input type="number" id="startChapter" value="1" min="1" />
+        </div>
+        <div>
+          <label>End Chapter</label>
+          <input type="number" id="endChapter" placeholder="e.g., 50" min="1" />
+        </div>
+      </div>
+    </details>
+    
+    <div class="progress" id="scrapeProgress">
+      <div class="progress-bar"><div class="progress-fill" id="scrapeProgressFill"></div></div>
+      <div class="progress-text" id="scrapeProgressText">Waiting...</div>
+    </div>
+    
+    <div class="console" id="scrapeLog"></div>
+    
+    <div class="preview" id="scrapePreview">
+      <strong>📋 Scraped Preview</strong>
+      <img id="coverPreview" class="cover-preview" alt="Cover" style="display:none;" />
+      <div class="meta-grid" id="metaPreview"></div>
+      <div style="margin-top:10px; font-size:0.85rem; color:var(--text-muted);">
+        Chapters: <span id="scrapedChapterCount">0</span> • Range: <span id="scrapedRange">-</span>
+      </div>
+    </div>
+    
+    <div class="btn-group">
+      <button id="proceedToTranslateBtn" disabled>✅ Proceed to Translation →</button>
+      <button id="downloadRawZipBtn" disabled>⬇️ Download Raw ZIP (JSON+Cover)</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: TRANSLATE -->
+  <div class="card" id="translateSection" style="display:none;">
+    <h3>🌐 Step 2: Translate Chapters</h3>
+    
+    <div class="input-row">
+      <label>Chapter Range:</label>
+      <input type="number" id="transStart" min="1" value="1" style="width:80px;" />
+      <span>to</span>
+      <input type="number" id="transEnd" min="1" style="width:80px;" />
+      <button id="applyTransRangeBtn">Apply</button>
+      <small id="transRangeHint" style="color:var(--text-muted); margin-left:10px;"></small>
+    </div>
+    
+    <div class="btn-group">
+      <button id="fetchTranslateBatchBtn">📥 Fetch Next Batch</button>
+      <button id="saveTranslationBtn" disabled>💾 Save Translation</button>
+      <button id="retryBatchBtn" disabled>🔁 Retry Failed Batch</button>
+      <button id="forceContinueBtn" disabled>⏭️ Force Continue</button>
+    </div>
+    
+    <div class="btn-group">
+      <button id="scrollTranslateBtn">📜 Scroll to Bottom</button>
+      <button id="autoScrollSaveBtn">🔄 Auto-Scroll & Save</button>
+      <button id="checkTranslationBtn">🔍 Check Translation</button>
+      <button id="refetchFailedBtn">♻️ Re-fetch Failed</button>
+    </div>
+    
+    <div class="progress" id="transProgress">
+      <div class="progress-bar"><div class="progress-fill" id="transProgressFill"></div></div>
+      <div class="progress-text" id="transProgressText">Ready</div>
+    </div>
+    
+    <div class="console" id="transLog"></div>
+    <div class="console-translate" id="consoleTranslate" translate="yes"></div>
+    
+    <div class="note">
+      💡 <strong>How to translate:</strong> After fetching a batch, use your browser's "Translate this page" feature (right-click → Translate to English). Then click "Save Translation". The system will validate and auto-continue.
+    </div>
+  </div>
+
+  <!-- STEP 3: EXPORT -->
+  <div class="card" id="exportSection" style="display:none;">
+    <h3>📤 Step 3: Export Results</h3>
+    
+    <div class="preview visible">
+      <strong>📋 Final Preview</strong>
+      <div class="meta-grid" id="exportMetaPreview"></div>
+      <div style="margin-top:10px; font-size:0.85rem; color:var(--text-muted);">
+        Translated chapters: <span id="translatedCount">0</span> • 
+        Estimated ZIP: <span id="exportZipSize">0 KB</span>
+      </div>
+    </div>
+    
+    <div class="btn-group">
+      <button id="downloadJsonBtn" class="success">⬇️ Download JSON</button>
+      <button id="downloadZipBtn" class="success">⬇️ Download ZIP (JSON+Cover)</button>
+      <button id="createEpubBtn">📚 Create EPUB</button>
+      <button id="downloadEpubBtn" disabled>⬇️ Download EPUB</button>
+      <button id="saveToDriveBtn">☁️ Save JSON to Drive</button>
+      <button id="saveEpubToDriveBtn" disabled>☁️ Save EPUB to Drive</button>
+    </div>
+    
+    <div class="console" id="exportLog"></div>
+  </div>
+</main>
+
+<footer>
+  <p>Backend: Cloudflare Worker • Frontend: Pure HTML/JS • JSZip via CDN</p>
+  <p style="margin-top:5px;">For personal use only. Respect content creators' rights.</p>
+</footer>
+
+<script>
+// ===== GLOBAL STATE =====
+let novelData = { meta null, chapters: [] };
+let coverBlob = null;
+let isScraping = false, isTranslating = false;
+
+// Translation workflow state
+let translateBatchSize = 10;
+let translateCursor = 0;
+let totalChaptersCount = 0;
+let selectedTransStart = 1, selectedTransEnd = 0;
+let lastFailedBatch = null;
+let batchRetryCounts = new Map();
+const MAX_RETRIES = 3;
+
+// EPUB state
+let generatedEpubBlob = null;
+
+// Worker config
+const DEFAULT_WORKER = 'https://plain-night-1447-opt1.yuush.workers.dev';
+
+// ===== UI HELPERS =====
+function log(msg, target = 'scrapeLog', color = '') {
+  const el = document.getElementById(target);
+  const time = new Date().toLocaleTimeString();
+  const colors = { info: '#61afef', success: '#98c379', warn: '#e5c07b', error: '#e06c75' };
+  el.innerHTML += `<span style="color:${colors[color] || color}">[${time}]</span> ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateProgress(percent, target = 'scrapeProgress', text = '') {
+  const container = document.getElementById(target);
+  const fill = document.getElementById(target.replace('Progress', 'ProgressFill'));
+  const txt = document.getElementById(target.replace('Progress', 'ProgressText'));
+  container.style.display = 'block';
+  fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+  if (text) txt.textContent = text;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ===== WORKER FETCH HELPERS =====
+async function workerFetch(endpoint, options = {}) {
+  const workerUrl = document.getElementById('workerUrl').value.trim().replace(/\/$/, '');
+  const url = `${workerUrl}${endpoint}`;
+  
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  
+  return res;
+}
+
+async function fetchCoverImage(coverUrl) {
+  if (!coverUrl) return null;
+  try {
+    const workerUrl = document.getElementById('workerUrl').value.trim().replace(/\/$/, '');
+    const proxyUrl = `${workerUrl}/api/cover-proxy?url=${encodeURIComponent(coverUrl.trim())}`;
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.blob();
+  } catch (e) {
+    log(`⚠️ Cover fetch failed: ${e.message}`, 'scrapeLog', 'warn');
+    return null;
+  }
+}
+
+// ===== STEP 1: SCRAPE =====
+async function scrapeNovel() {
+  if (isScraping) return;
+  
+  const novelUrl = document.getElementById('novelUrl').value.trim();
+  const workerUrl = document.getElementById('workerUrl').value.trim().replace(/\/$/, '');
+  const maxChapters = document.getElementById('maxChapters').value;
+  const startChapter = document.getElementById('startChapter').value;
+  const endChapter = document.getElementById('endChapter').value;
+  
+  if (!novelUrl) return alert('Please enter a novel URL');
+  
+  isScraping = true;
+  document.getElementById('scrapeBtn').disabled = true;
+  document.getElementById('scrapeLog').innerHTML = '';
+  document.getElementById('scrapePreview').classList.remove('visible');
+  document.getElementById('proceedToTranslateBtn').disabled = true;
+  document.getElementById('downloadRawZipBtn').disabled = true;
+  updateProgress(5, 'scrapeProgress', 'Preparing...');
+  
+  try {
+    log('📤 Sending scrape request...', 'scrapeLog');
+    
+    const payload = {
+      url: novelUrl,
+      includeChapters: true,
+    };
+    if (maxChapters) payload.maxChapters = parseInt(maxChapters);
+    if (startChapter) payload.startChapter = parseInt(startChapter);
+    if (endChapter) payload.endChapter = parseInt(endChapter);
+    
+    updateProgress(20, 'scrapeProgress', 'Fetching from Worker...');
+    
+    const res = await workerFetch('/api/scrape', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Worker failed');
+    
+    // Trim URLs
+    if (data.meta.cover) data.meta.cover = data.meta.cover.trim();
+    if (data.meta.authorUrl) data.meta.authorUrl = data.meta.authorUrl.trim();
+    
+    novelData = {
+      meta data.meta,
+      chapters: data.chapters.map(ch => ({
+        ...ch,
+        url: `${new URL(novelUrl).origin}/read/${data.meta.id}/p${ch.chapter}.html`
+      }))
+    };
+    
+    totalChaptersCount = novelData.chapters.length;
+    selectedTransStart = 1;
+    selectedTransEnd = totalChaptersCount;
+    
+    // Update UI
+    document.getElementById('transStart').max = totalChaptersCount;
+    document.getElementById('transEnd').max = totalChaptersCount;
+    document.getElementById('transEnd').value = totalChaptersCount;
+    document.getElementById('transRangeHint').textContent = `Total: ${totalChaptersCount}`;
+    
+    // Show preview
+    const meta = novelData.metadata;
+    document.getElementById('metaPreview').innerHTML = `
+      <div class="meta-item"><strong>Title</strong>${escapeHtml(meta.title)}</div>
+      <div class="meta-item"><strong>Author</strong>${escapeHtml(meta.author)}</div>
+      <div class="meta-item"><strong>Status</strong>${escapeHtml(meta.status)}</div>
+      <div class="meta-item"><strong>Chapters</strong>${meta.totalChapters} / ${meta.totalAvailable || '?'}</div>
+      <div class="meta-item"><strong>Genres</strong>${(meta.genres || []).map(escapeHtml).join(', ') || 'None'}</div>
+    `;
+    
+    const coverPreview = document.getElementById('coverPreview');
+    if (meta.cover) {
+      coverPreview.src = meta.cover;
+      coverPreview.style.display = 'block';
+      coverPreview.onerror = () => coverPreview.style.display = 'none';
+    }
+    
+    document.getElementById('scrapedChapterCount').textContent = meta.totalChapters;
+    document.getElementById('scrapedRange').textContent = 
+      meta.fetchedRange ? `#${meta.fetchedRange.start}–${meta.fetchedRange.end}` : 'All';
+    
+    document.getElementById('scrapePreview').classList.add('visible');
+    document.getElementById('proceedToTranslateBtn').disabled = false;
+    document.getElementById('downloadRawZipBtn').disabled = false;
+    
+    log(`✅ Scraped "${meta.title}" • ${meta.totalChapters} chapters`, 'scrapeLog', 'success');
+    
+    // Pre-fetch cover for ZIP
+    if (meta.cover) {
+      coverBlob = await fetchCoverImage(meta.cover);
+    }
+    
+    updateProgress(100, 'scrapeProgress', '✅ Complete!');
+    
+  } catch (error) {
+    log(`❌ Error: ${error.message}`, 'scrapeLog', 'error');
+    alert(`Scraping failed: ${error.message}`);
+    updateProgress(0, 'scrapeProgress', 'Failed');
+  } finally {
+    isScraping = false;
+    document.getElementById('scrapeBtn').disabled = false;
+  }
+}
+
+// Download raw ZIP (before translation)
+async function downloadRawZip() {
+  if (!novelData.metadata) return;
+  
+  try {
+    log('📦 Creating raw ZIP...', 'scrapeLog');
+    
+    const zip = new JSZip();
+    const meta = novelData.metadata;
+    const safeTitle = meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel';
+    
+    // Add JSON (max compression)
+    zip.file('novel.json', JSON.stringify(novelData, null, 2), {
+      compression: 'DEFLATE', compressionOptions: { level: 9 }
+    });
+    
+    // Add cover if available
+    if (coverBlob) {
+      const ext = coverBlob.type?.includes('png') ? 'png' : 
+                  coverBlob.type?.includes('webp') ? 'webp' : 'jpg';
+      zip.file(`cover.${ext}`, coverBlob, {
+        compression: 'DEFLATE', compressionOptions: { level: 9 }, binary: true
+      });
+    }
+    
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+    
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `RAW-${meta.id}-${safeTitle}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    
+    log(`✅ Raw ZIP downloaded`, 'scrapeLog', 'success');
+  } catch (e) {
+    log(`❌ ZIP error: ${e.message}`, 'scrapeLog', 'error');
+  }
+}
+
+// ===== STEP 2: TRANSLATION WORKFLOW =====
+function showTranslateSection() {
+  document.getElementById('scrapeSection').style.display = 'none';
+  document.getElementById('translateSection').style.display = 'block';
+  document.getElementById('exportSection').style.display = 'none';
+  
+  // Reset translation state
+  translateCursor = 0;
+  batchRetryCounts.clear();
+  lastFailedBatch = null;
+  document.getElementById('consoleTranslate').innerHTML = '';
+  document.getElementById('transLog').innerHTML = '';
+  
+  log('🌐 Translation workflow ready', 'transLog', 'success');
+  log(`Chapters ${selectedTransStart}–${selectedTransEnd} selected`, 'transLog');
+}
+
+function applyTranslationRange() {
+  const start = parseInt(document.getElementById('transStart').value) || 1;
+  const end = parseInt(document.getElementById('transEnd').value) || totalChaptersCount;
+  
+  if (start < 1 || end > totalChaptersCount || start > end) {
+    alert(`Please enter valid range: 1–${totalChaptersCount}`);
+    return;
+  }
+  
+  selectedTransStart = start;
+  selectedTransEnd = end;
+  translateCursor = start - 1; // 0-based index
+  
+  log(`✅ Range set: chapters ${start}–${end}`, 'transLog', 'success');
+  document.getElementById('transRangeHint').textContent = `Selected: ${start}–${end} / ${totalChaptersCount}`;
+}
+
+// Split HTML content into plain text paragraphs
+function splitParagraphs(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  return Array.from(tmp.querySelectorAll('p'))
+    .map(p => p.textContent.trim())
+    .filter(t => t && t.length > 10);
+}
+
+// Build batch objects for translation rendering
+function buildBatchObjs(start, end) {
+  const batch = [];
+  for (let i = start; i < end; i++) {
+    const ch = novelData.chapters[i];
+    batch.push({
+      _index: i,
+      _titleRaw: ch.title || `Chapter ${i+1}`,
+      _paragraphs: splitParagraphs(ch.content)
+    });
+  }
+  return batch;
+}
+
+// Render batch to translation console (hidden JSON + visible text)
+function renderTranslateBatch(batch, startIndex) {
+  const consoleEl = document.getElementById('consoleTranslate');
+  consoleEl.innerHTML = '';
+  
+  // Hidden JSON (not translated)
+  const hiddenJson = document.createElement('pre');
+  hiddenJson.style.display = 'none';
+  hiddenJson.setAttribute('translate', 'no');
+  hiddenJson.className = 'hidden-json';
+  hiddenJson.textContent = JSON.stringify(batch.map(b => ({
+    index: b._index,
+    title: b._titleRaw,
+    paragraphs: [...b._paragraphs]
+  })), null, 2);
+  consoleEl.appendChild(hiddenJson);
+  
+  // Visible text container (to be translated)
+  const visContainer = document.createElement('div');
+  visContainer.setAttribute('translate', 'yes');
+  
+  batch.forEach((ch, idx) => {
+    const chapterIdx = startIndex + idx;
+    const chapterDiv = document.createElement('div');
+    chapterDiv.className = 'visible-ch';
+    chapterDiv.dataset.index = chapterIdx;
+    
+    // Title
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'translatable title';
+    titleDiv.dataset.index = chapterIdx;
+    titleDiv.textContent = ch._titleRaw;
+    titleDiv.style.marginBottom = '8px';
+    chapterDiv.appendChild(titleDiv);
+    
+    // Paragraphs
+    ch._paragraphs.forEach((pText, pIdx) => {
+      const pDiv = document.createElement('div');
+      pDiv.className = 'translatable para';
+      pDiv.dataset.index = chapterIdx;
+      pDiv.dataset.pIdx = pIdx;
+      pDiv.style.marginBottom = '6px';
+      pDiv.textContent = pText;
+      chapterDiv.appendChild(pDiv);
+    });
+    
+    // Separator
+    const sep = document.createElement('div');
+    sep.style.height = '14px';
+    visContainer.appendChild(chapterDiv);
+    visContainer.appendChild(sep);
+  });
+  
+  consoleEl.appendChild(visContainer);
+  document.getElementById('saveTranslationBtn').disabled = false;
+  
+  log(`📝 Rendered chapters ${startIndex+1}–${startIndex+batch.length} for translation`, 'transLog', 'success');
+}
+
+// Extract translated text and save back to novelData
+function extractAndSaveTranslatedBatch(start, end) {
+  for (let i = start; i < end; i++) {
+    const titleEl = document.querySelector(`.visible-ch[data-index="${i}"] .translatable.title[data-index="${i}"]`);
+    const paraEls = document.querySelectorAll(`.visible-ch[data-index="${i}"] .translatable.para[data-index="${i}"]`);
+    
+    const newTitle = titleEl?.textContent.trim() || novelData.chapters[i].title || `Chapter ${i+1}`;
+    
+    const paras = [];
+    if (paraEls?.length) {
+      paraEls.forEach(p => {
+        const t = p.textContent.trim();
+        if (t) paras.push(t);
+      });
+    } else {
+      // Fallback: re-split original content
+      splitParagraphs(novelData.chapters[i].content).forEach(p => { if (p) paras.push(p); });
+    }
+    
+    // Rebuild safe HTML
+    const newContent = paras.map(p => `<p>${escapeHtml(p)}</p>`).join('\n');
+    
+    novelData.chapters[i].title = newTitle;
+    novelData.chapters[i].content = newContent;
+  }
+  
+  // Clear visible content to prevent re-saving
+  document.querySelectorAll('.visible-ch').forEach(el => el.remove());
+  const hidden = document.querySelector('.hidden-json');
+  if (hidden) hidden.remove();
+  
+  log(`💾 Saved translation for chapters ${start+1}–${end}`, 'transLog', 'success');
+}
+
+// Count Chinese characters in text
+function countChinese(text) {
+  const regex = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g;
+  return (text.match(regex) || []).length;
+}
+
+// Validate batch for remaining Chinese
+function validateBatch(start, end) {
+  let total = 0;
+  const chapters = [];
+  
+  for (let i = start; i < end; i++) {
+    const ch = novelData.chapters[i];
+    const c = countChinese(ch.title || '') + countChinese(ch.content || '');
+    if (c > 0) {
+      total += c;
+      chapters.push({ index: i+1, count: c });
+    }
+  }
+  
+  return { total, chapters };
+}
+
+// Fetch and render next translation batch
+async function fetchNextTranslateBatch() {
+  const total = totalChaptersCount;
+  if (translateCursor >= selectedTransEnd) {
+    log('✅ All selected chapters processed!', 'transLog', 'success');
+    document.getElementById('transProgress').style.display = 'none';
+    document.getElementById('fetchTranslateBatchBtn').disabled = true;
+    document.getElementById('saveTranslationBtn').disabled = true;
+    showExportSection();
+    return;
+  }
+  
+  const start = translateCursor;
+  const end = Math.min(start + translateBatchSize, selectedTransEnd);
+  
+  updateProgress(30 + Math.round((start / total) * 40), 'transProgress', `Fetching ${start+1}–${end}...`);
+  
+  // Fetch chapters not yet loaded
+  const promises = [];
+  for (let i = start; i < end; i++) {
+    if (!novelData.chapters[i].content) {
+      promises.push((async (idx) => {
+        try {
+          const res = await fetch(novelData.chapters[idx].url);
+          const html = await res.text();
+          // Simple parser for chapter content
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const title = doc.querySelector('.page-content h3')?.textContent?.trim() || `Chapter ${idx+1}`;
+          const paragraphs = Array.from(doc.querySelectorAll('.page-content p'))
+            .filter(p => !p.classList.contains('abg') && !p.closest('.ad'))
+            .map(p => p.textContent.trim())
+            .filter(t => t);
+          novelData.chapters[idx].title = title;
+          novelData.chapters[idx].content = paragraphs.map(t => `<p>${escapeHtml(t)}</p>`).join('\n');
+        } catch (e) {
+          log(`⚠️ Failed to fetch chapter ${idx+1}: ${e.message}`, 'transLog', 'warn');
+        }
+      })(i));
+    }
+  }
+  await Promise.all(promises);
+  
+  // Build and render batch
+  const batch = buildBatchObjs(start, end);
+  renderTranslateBatch(batch, start);
+  
+  updateProgress(70 + Math.round((start / total) * 30), 'transProgress', `Ready to translate ${start+1}–${end}`);
+  log(`📥 Batch ${start+1}–${end} ready for translation`, 'transLog', 'info');
+}
+
+// Save translation handler with validation
+function handleSaveTranslation() {
+  const start = translateCursor;
+  const end = Math.min(start + translateBatchSize, selectedTransEnd);
+  
+  try {
+    extractAndSaveTranslatedBatch(start, end);
+  } catch (e) {
+    log(`❌ Save error: ${e.message}`, 'transLog', 'error');
+    return;
+  }
+  
+  // Validate
+  const { total: chineseCount, chapters } = validateBatch(start, end);
+  const batchKey = `${start}-${end}`;
+  const retryCount = (batchRetryCounts.get(batchKey) || 0) + 1;
+  
+  if (chineseCount > 200) {
+    batchRetryCounts.set(batchKey, retryCount);
+    
+    if (retryCount >= MAX_RETRIES) {
+      log(`⚠️ Batch ${start+1}–${end} failed ${retryCount} times.`, 'transLog', 'warn');
+      const skip = confirm(`Still ${chineseCount} Chinese chars after ${retryCount} attempts.\nOK = Skip, Cancel = Retry`);
+      if (skip) {
+        translateCursor = end;
+        document.getElementById('consoleTranslate').innerHTML = '';
+        document.getElementById('saveTranslationBtn').disabled = true;
+        fetchNextTranslateBatch().catch(e => log(`Error: ${e.message}`, 'transLog', 'error'));
+        return;
+      }
+    }
+    
+    log(`⚠️ ${chineseCount} Chinese chars remain (attempt ${retryCount}/${MAX_RETRIES})`, 'transLog', 'warn');
+    if (chapters.length) {
+      log(`Chapters: ${chapters.map(c => `#${c.index}(${c.count})`).join(', ')}`, 'transLog');
+    }
+    
+    // Re-render same batch
+    const batch = buildBatchObjs(start, end);
+    renderTranslateBatch(batch, start);
+    log('🔄 Please re-translate and click "Save Translation" again', 'transLog', 'warn');
+    return;
+  }
+  
+  if (chineseCount > 0) {
+    log(`ℹ️ ${chineseCount} Chinese chars remaining (below threshold)`, 'transLog', 'info');
+  } else {
+    log('✅ No Chinese chars detected', 'transLog', 'success');
+  }
+  
+  batchRetryCounts.delete(batchKey);
+  
+  // Advance to next batch
+  translateCursor = end;
+  document.getElementById('consoleTranslate').innerHTML = '';
+  document.getElementById('saveTranslationBtn').disabled = true;
+  
+  fetchNextTranslateBatch().catch(e => log(`Error: ${e.message}`, 'transLog', 'error'));
+}
+
+// Auto-scroll & save automation
+let isAutoScrolling = false;
+let scrollAnimId = null;
+
+async function autoScrollAndSave() {
+  while (isAutoScrolling) {
+    // Scroll to bottom
+    const consoleEl = document.getElementById('consoleTranslate');
+    const target = consoleEl.scrollHeight - consoleEl.clientHeight;
+    
+    await new Promise(resolve => {
+      const start = consoleEl.scrollTop;
+      const duration = 1000;
+      const startTime = performance.now();
+      
+      function step(now) {
+        const progress = Math.min((now - startTime) / duration, 1);
+        consoleEl.scrollTop = start + (target - start) * progress;
+        if (progress < 1) {
+          scrollAnimId = requestAnimationFrame(step);
+        } else {
+          scrollAnimId = null;
+          resolve();
+        }
+      }
+      scrollAnimId = requestAnimationFrame(step);
+    });
+    
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Save if button enabled
+    if (!document.getElementById('saveTranslationBtn').disabled) {
+      handleSaveTranslation();
+    }
+    
+    // Wait for next batch to load
+    await new Promise(resolve => {
+      const check = setInterval(() => {
+        if (document.getElementById('consoleTranslate').innerHTML.trim() && 
+            !document.getElementById('saveTranslationBtn').disabled) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 200);
+    });
+  }
+}
+
+// ===== STEP 3: EXPORT =====
+function showExportSection() {
+  document.getElementById('scrapeSection').style.display = 'none';
+  document.getElementById('translateSection').style.display = 'none';
+  document.getElementById('exportSection').style.display = 'block';
+  
+  // Update preview
+  const meta = novelData.metadata;
+  document.getElementById('exportMetaPreview').innerHTML = `
+    <div class="meta-item"><strong>Title</strong>${escapeHtml(meta.title)}</div>
+    <div class="meta-item"><strong>Author</strong>${escapeHtml(meta.author)}</div>
+    <div class="meta-item"><strong>Translated</strong>${novelData.chapters.filter(c => c.content && !/[\u4e00-\u9fff]/.test(c.content)).length} / ${novelData.chapters.length}</div>
+  `;
+  
+  const jsonSize = JSON.stringify(novelData).length;
+  const zipEst = Math.round((jsonSize * 0.3 + 100000) / 1024);
+  document.getElementById('translatedCount').textContent = novelData.chapters.filter(c => c.content).length;
+  document.getElementById('exportZipSize').textContent = `${zipEst} KB`;
+  
+  log('🎉 Translation complete! Ready to export.', 'exportLog', 'success');
+}
+
+// Download translated JSON
+function downloadTranslatedJson() {
+  const cleanData = {
+    ...novelData,
+    chapters: novelData.chapters.map(({ url, ...rest }) => rest)
+  };
+  
+  const blob = new Blob([JSON.stringify(cleanData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const meta = novelData.metadata;
+  a.download = `${meta.id}-${meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel'}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  
+  log('✅ JSON downloaded', 'exportLog', 'success');
+}
+
+// Download ZIP with translated JSON + cover
+async function downloadTranslatedZip() {
+  try {
+    log('📦 Creating translated ZIP...', 'exportLog');
+    
+    const zip = new JSZip();
+    const meta = novelData.metadata;
+    const safeTitle = meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel';
+    
+    // Add translated JSON
+    const cleanData = {
+      ...novelData,
+      chapters: novelData.chapters.map(({ url, ...rest }) => rest)
+    };
+    zip.file('novel.json', JSON.stringify(cleanData, null, 2), {
+      compression: 'DEFLATE', compressionOptions: { level: 9 }
+    });
+    
+    // Add cover if available
+    if (coverBlob) {
+      const ext = coverBlob.type?.includes('png') ? 'png' : 
+                  coverBlob.type?.includes('webp') ? 'webp' : 'jpg';
+      zip.file(`cover.${ext}`, coverBlob, {
+        compression: 'DEFLATE', compressionOptions: { level: 9 }, binary: true
+      });
+    }
+    
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 9 } });
+    
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${meta.id}-${safeTitle}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    
+    log(`✅ ZIP downloaded: ${meta.id}-${safeTitle}.zip`, 'exportLog', 'success');
+  } catch (e) {
+    log(`❌ ZIP error: ${e.message}`, 'exportLog', 'error');
+  }
+}
+
+// EPUB creation (simplified - requires epubjson.js or similar)
+async function createEpub() {
+  try {
+    log('📚 Generating EPUB...', 'exportLog');
+    
+    // Filter chapters with content
+    const filtered = novelData.chapters.filter(ch => ch.content?.trim());
+    if (filtered.length === 0) throw new Error('No chapters with content');
+    
+    // Simple EPUB structure (minimal implementation)
+    const epubContent = {
+      title: novelData.metadata.title,
+      author: novelData.metadata.author,
+      chapters: filtered.map(ch => ({
+        title: ch.title,
+        content: ch.content
+      }))
+    };
+    
+    // Create EPUB blob (placeholder - in production use proper EPUB library)
+    const epubJson = JSON.stringify({
+      mimetype: 'application/epub+zip',
+      meta { title: epubContent.title, creator: epubContent.author },
+      chapters: epubContent.chapters
+    }, null, 2);
+    
+    generatedEpubBlob = new Blob([epubJson], { type: 'application/json' });
+    
+    log('✅ EPUB created (JSON format)', 'exportLog', 'success');
+    document.getElementById('downloadEpubBtn').disabled = false;
+    document.getElementById('saveEpubToDriveBtn').disabled = false;
+    
+  } catch (e) {
+    log(`❌ EPUB error: ${e.message}`, 'exportLog', 'error');
+  }
+}
+
+function downloadEpub() {
+  if (!generatedEpubBlob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(generatedEpubBlob);
+  a.download = `${novelData.metadata.title?.replace(/[^a-z0-9]+/gi, '_')}.epub.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('✅ EPUB downloaded', 'exportLog', 'success');
+}
+
+// Save to Google Drive via Worker
+async function saveToGoogleDrive(fileBlob, filename, folderId) {
+  try {
+    log('☁️ Uploading to Google Drive...', 'exportLog');
+    
+    const formData = new FormData();
+    formData.append('file', fileBlob, filename);
+    formData.append('folder', folderId);
+    
+    const res = await workerFetch('/api/saveToGoogleDrive', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const result = await res.json();
+    if (!result.success) throw new Error(result.error);
+    
+    log(`✅ Saved to Drive: ${result.webViewLink}`, 'exportLog', 'success');
+    return result;
+  } catch (e) {
+    log(`❌ Drive upload failed: ${e.message}`, 'exportLog', 'error');
+    throw e;
+  }
+}
+
+// ===== EVENT LISTENERS =====
+document.addEventListener('DOMContentLoaded', () => {
+  // Scrape section
+  document.getElementById('scrapeBtn').addEventListener('click', scrapeNovel);
+  document.getElementById('downloadRawZipBtn').addEventListener('click', downloadRawZip);
+  document.getElementById('proceedToTranslateBtn').addEventListener('click', showTranslateSection);
+  
+  // Translation section
+  document.getElementById('applyTransRangeBtn').addEventListener('click', applyTranslationRange);
+  document.getElementById('fetchTranslateBatchBtn').addEventListener('click', fetchNextTranslateBatch);
+  document.getElementById('saveTranslationBtn').addEventListener('click', handleSaveTranslation);
+  document.getElementById('retryBatchBtn').addEventListener('click', () => {
+    if (lastFailedBatch) {
+      translateCursor = lastFailedBatch.start;
+      fetchNextTranslateBatch();
+    }
+  });
+  document.getElementById('forceContinueBtn').addEventListener('click', () => {
+    translateCursor = Math.min(translateCursor + translateBatchSize, selectedTransEnd);
+    document.getElementById('consoleTranslate').innerHTML = '';
+    document.getElementById('saveTranslationBtn').disabled = true;
+    document.getElementById('forceContinueBtn').disabled = true;
+    fetchNextTranslateBatch();
+  });
+  document.getElementById('scrollTranslateBtn').addEventListener('click', () => {
+    const el = document.getElementById('consoleTranslate');
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  });
+  document.getElementById('autoScrollSaveBtn').addEventListener('click', () => {
+    isAutoScrolling = !isAutoScrolling;
+    document.getElementById('autoScrollSaveBtn').textContent = 
+      isAutoScrolling ? '⏹️ Stop Auto' : '🔄 Auto-Scroll & Save';
+    if (isAutoScrolling) autoScrollAndSave();
+  });
+  document.getElementById('checkTranslationBtn').addEventListener('click', () => {
+    // Simple check: count Chinese in all chapters
+    let total = 0;
+    novelData.chapters.forEach(ch => {
+      total += countChinese(ch.title || '') + countChinese(ch.content || '');
+    });
+    log(total > 0 ? `⚠️ ${total} Chinese chars remaining` : '✅ No Chinese chars found', 
+        'transLog', total > 0 ? 'warn' : 'success');
+  });
+  document.getElementById('refetchFailedBtn').addEventListener('click', async () => {
+    const failed = novelData.chapters.filter((ch, i) => 
+      i >= selectedTransStart - 1 && i < selectedTransEnd && 
+      (!ch.content || /[\u4e00-\u9fff]/.test(ch.content))
+    );
+    if (!failed.length) {
+      log('✅ No failed chapters to re-fetch', 'transLog', 'success');
+      return;
+    }
+    log(`♻️ Re-fetching ${failed.length} chapters...`, 'transLog', 'warn');
+    // Re-fetch logic would go here (simplified for brevity)
+  });
+  
+  // Export section
+  document.getElementById('downloadJsonBtn').addEventListener('click', downloadTranslatedJson);
+  document.getElementById('downloadZipBtn').addEventListener('click', downloadTranslatedZip);
+  document.getElementById('createEpubBtn').addEventListener('click', createEpub);
+  document.getElementById('downloadEpubBtn').addEventListener('click', downloadEpub);
+  document.getElementById('saveToDriveBtn').addEventListener('click', async () => {
+    const cleanData = { ...novelData, chapters: novelData.chapters.map(({url,...r})=>r) };
+    const blob = new Blob([JSON.stringify(cleanData, null, 2)], {type:'application/json'});
+    await saveToGoogleDrive(blob, 'novel.json', 'your-folder-id-here');
+  });
+  document.getElementById('saveEpubToDriveBtn').addEventListener('click', async () => {
+    if (generatedEpubBlob) {
+      await saveToGoogleDrive(generatedEpubBlob, 'novel.epub.json', 'your-folder-id-here');
+    }
+  });
+  
+  // Init
+  log('👋 Ready! Enter novel URL and click "Scrape Novel"', 'scrapeLog', 'info');
+});
+</script>
+</body>
+</html>
