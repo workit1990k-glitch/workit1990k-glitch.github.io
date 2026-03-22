@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>📚 Novel Scraper - ixdzs.tw</title>
+  <!-- JSZip library for ZIP creation with compression -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha512-p8Gc3V3xGv3pXJl9VvL8H1p8h3vq8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3xJ8p3" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     :root {
       --primary: #4361ee; --primary-hover: #3a56d4;
@@ -79,6 +81,12 @@
     .meta-item a { color: var(--primary); text-decoration: none; }
     .meta-item a:hover { text-decoration: underline; }
     
+    .cover-preview {
+      width: 120px; height: 160px; object-fit: cover;
+      border-radius: 6px; border: 1px solid var(--border);
+      display: block; margin: 10px auto; background: #f1f5f9;
+    }
+    
     details { margin: 15px 0; }
     summary {
       cursor: pointer; color: var(--primary); font-weight: 500;
@@ -112,7 +120,7 @@
 <body>
   <header>
     <h1>📚 Novel Scraper</h1>
-    <p class="subtitle">ixdzs.tw • Worker-powered • Download JSON</p>
+    <p class="subtitle">ixdzs.tw • JSON + Cover ZIP Download</p>
   </header>
 
   <main>
@@ -129,7 +137,7 @@
         <button id="scrapeBtn" onclick="startScrape()">🚀 Scrape Novel</button>
       </div>
 
-      <!-- Worker URL (hidden by default, expandable) -->
+      <!-- Settings -->
       <details>
         <summary>⚙️ Settings</summary>
         <div class="advanced">
@@ -180,7 +188,7 @@
       </details>
 
       <div class="note">
-        💡 <strong>Tip:</strong> Chapter content is always included. Use <em>Max Chapters</em> for quick previews, or <em>Start/End</em> for specific ranges.
+        💡 <strong>Output:</strong> ZIP file containing <code>novel.json</code> + <code>cover.jpg</code> (max compression). Cover image is always included.
       </div>
 
       <!-- Progress -->
@@ -193,17 +201,18 @@
       <div class="log" id="log"></div>
 
       <!-- Download Button -->
-      <button id="downloadBtn" class="download-btn" onclick="downloadJson()">
-        ⬇️ Download JSON File
+      <button id="downloadBtn" class="download-btn" onclick="downloadZip()">
+        ⬇️ Download ZIP (JSON + Cover)
       </button>
 
       <!-- Preview -->
       <div class="preview" id="preview">
         <strong>📋 Result Preview</strong>
+        <img id="coverPreview" class="cover-preview" alt="Cover preview" style="display:none;" />
         <div class="meta-grid" id="metaPreview"></div>
         <div style="margin-top:12px; font-size:0.85rem; color:var(--text-muted);">
-          Chapters fetched: <span id="chapterCount">0</span> • 
-          File size: <span id="jsonSize">0 KB</span> • 
+          Chapters: <span id="chapterCount">0</span> • 
+          Estimated ZIP: <span id="zipSize">0 KB</span> • 
           Range: <span id="rangeInfo">-</span>
         </div>
       </div>
@@ -211,13 +220,14 @@
   </main>
 
   <footer>
-    <p>Backend: Cloudflare Worker • Frontend: Pure HTML/JS • No tracking</p>
+    <p>Backend: Cloudflare Worker • Frontend: Pure HTML/JS • JSZip via CDN</p>
     <p style="margin-top:5px;">For personal use only. Respect content creators' rights.</p>
   </footer>
 
   <script>
     // ===== STATE =====
     let scrapedData = null;
+    let coverBlob = null;
     let isScraping = false;
 
     // ===== UI HELPERS =====
@@ -254,13 +264,29 @@
       `;
       
       document.getElementById('chapterCount').textContent = meta.totalChapters;
-      const sizeKB = Math.round(JSON.stringify(data).length / 1024);
-      document.getElementById('jsonSize').textContent = `${sizeKB} KB`;
+      
+      // Show cover preview if available
+      const coverPreview = document.getElementById('coverPreview');
+      if (meta.cover) {
+        coverPreview.src = meta.cover;
+        coverPreview.style.display = 'block';
+        coverPreview.onerror = () => {
+          coverPreview.style.display = 'none';
+          log('⚠️  Cover image failed to load (CORS or broken URL)', 'warn');
+        };
+      } else {
+        coverPreview.style.display = 'none';
+      }
       
       const range = meta.fetchedRange;
       document.getElementById('rangeInfo').textContent = range 
         ? `#${range.start}–${range.end}` 
         : 'All';
+      
+      // Estimate ZIP size (JSON + ~100KB for cover)
+      const jsonSize = JSON.stringify(data).length;
+      const estimatedZipKB = Math.round((jsonSize * 0.3 + 100000) / 1024); // ~30% compression + cover
+      document.getElementById('zipSize').textContent = `${estimatedZipKB} KB`;
       
       document.getElementById('preview').classList.add('visible');
     }
@@ -272,30 +298,126 @@
       return div.innerHTML;
     }
 
-    function downloadJson() {
+    // ===== FETCH COVER IMAGE VIA WORKER PROXY =====
+    async function fetchCoverImage(coverUrl, workerUrl) {
+      if (!coverUrl) return null;
+      
+      try {
+        log('🖼️  Fetching cover image via proxy...');
+        
+        // Use Worker proxy to avoid CORS issues
+        const proxyUrl = `${workerUrl}/api/cover-proxy?url=${encodeURIComponent(coverUrl.trim())}`;
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        log('✅ Cover image fetched successfully', 'success');
+        return blob;
+        
+      } catch (error) {
+        log(`⚠️  Cover fetch failed: ${error.message}. ZIP will include JSON only.`, 'warn');
+        return null;
+      }
+    }
+
+    // ===== CREATE AND DOWNLOAD ZIP FILE =====
+    async function downloadZip() {
       if (!scrapedData) {
         alert('No data to download. Please scrape a novel first.');
         return;
       }
       
-      const meta = scrapedData.meta;
-      const safeTitle = meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel';
-      const filename = `${meta.id}-${safeTitle}.json`;
+      const btn = document.getElementById('downloadBtn');
+      const originalText = btn.innerHTML;
       
-      const blob = new Blob([JSON.stringify(scrapedData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-      
-      log('✅ Download started: ' + filename, 'success');
+      try {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Creating ZIP...';
+        updateProgress(70, 'Packaging files...');
+        
+        const meta = scrapedData.meta;
+        const workerUrl = document.getElementById('workerUrl').value.trim().replace(/\/$/, '');
+        
+        // Generate safe filename
+        const safeTitle = meta.title?.replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '_').slice(0, 40) || 'novel';
+        const zipFilename = `${meta.id}-${safeTitle}.zip`;
+        
+        // Fetch cover image (if not already fetched)
+        if (!coverBlob && meta.cover) {
+          coverBlob = await fetchCoverImage(meta.cover, workerUrl);
+        }
+        
+        // Create ZIP with JSZip
+        const zip = new JSZip();
+        
+        // Add JSON file with max compression (level 9)
+        zip.file('novel.json', JSON.stringify(scrapedData, null, 2), {
+          compression: 'DEFLATE',
+          compressionOptions: { level: 9 }
+        });
+        log('📄 Added novel.json (compression: 9)', 'info');
+        
+        // Add cover image if available
+        if (coverBlob) {
+          // Determine file extension from content type or URL
+          const contentType = coverBlob.type || '';
+          const urlExt = meta.cover?.split('.').pop()?.toLowerCase();
+          let ext = 'jpg'; // default
+          
+          if (contentType.includes('png') || urlExt === 'png') ext = 'png';
+          else if (contentType.includes('webp') || urlExt === 'webp') ext = 'webp';
+          else if (contentType.includes('gif') || urlExt === 'gif') ext = 'gif';
+          
+          zip.file(`cover.${ext}`, coverBlob, {
+            compression: 'DEFLATE',
+            compressionOptions: { level: 9 },
+            binary: true
+          });
+          log(`🖼️  Added cover.${ext} (compression: 9)`, 'success');
+        } else {
+          log('⚠️  Cover image not included (fetch failed or missing)', 'warn');
+        }
+        
+        updateProgress(90, 'Generating ZIP...');
+        
+        // Generate ZIP blob
+        const zipBlob = await zip.generateAsync({
+          type: 'blob',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 9 }
+        }, (metadata) => {
+          // Progress callback (optional)
+          updateProgress(70 + Math.round(metadata.percent * 0.3), `Compressing: ${Math.round(metadata.percent)}%`);
+        });
+        
+        updateProgress(100, '✅ ZIP ready!');
+        
+        // Trigger download
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = zipFilename;
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 100);
+        
+        const zipSizeKB = Math.round(zipBlob.size / 1024);
+        log(`✅ Download started: ${zipFilename} (${zipSizeKB} KB)`, 'success');
+        
+      } catch (error) {
+        log(`❌ ZIP creation failed: ${error.message}`, 'error');
+        alert(`Failed to create ZIP:\n\n${error.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     }
 
     // ===== SCRAPE LOGIC =====
@@ -320,6 +442,7 @@
 
       // Reset UI
       isScraping = true;
+      coverBlob = null; // Reset cover cache
       document.getElementById('scrapeBtn').disabled = true;
       document.getElementById('log').innerHTML = '';
       document.getElementById('downloadBtn').style.display = 'none';
@@ -332,15 +455,14 @@
         // Build request payload
         const payload = {
           url: novelUrl,
-          includeChapters: true, // Always true per requirements
+          includeChapters: true, // Always true
         };
         
-        // Add chapter range options if provided
         if (maxChapters) payload.maxChapters = parseInt(maxChapters, 10);
         if (startChapter) payload.startChapter = parseInt(startChapter, 10);
         if (endChapter) payload.endChapter = parseInt(endChapter, 10);
         
-        updateProgress(15, 'Fetching from Worker...');
+        updateProgress(15, 'Fetching novel data...');
         
         const response = await fetch(`${workerUrl}/api/scrape`, {
           method: 'POST',
@@ -357,20 +479,32 @@
           throw new Error(errMsg);
         }
 
-        updateProgress(60, 'Processing response...');
+        updateProgress(50, 'Processing response...');
         const data = await response.json();
         
         if (!data.success) {
           throw new Error(data.error || 'Worker returned failure');
         }
 
+        // Trim cover URL (remove trailing spaces from source)
+        if (data.meta.cover) {
+          data.meta.cover = data.meta.cover.trim();
+        }
+
+        updateProgress(65, 'Fetching cover image...');
+        // Pre-fetch cover for faster ZIP creation
+        if (data.meta.cover) {
+          coverBlob = await fetchCoverImage(data.meta.cover, workerUrl);
+        }
+
         updateProgress(100, '✅ Complete!');
-        log(`🎉 "${data.meta.title}" • ${data.meta.totalChapters} chapters fetched`, 'success');
+        log(`🎉 "${data.meta.title}" • ${data.meta.totalChapters} chapters`, 'success');
         
         if (data.meta.dedupCheck?.duplicate) {
           log('⚠️  Note: This title may already exist in the database', 'warn');
         }
         
+        scrapedData = data;
         showPreview(data);
         
       } catch (error) {
@@ -385,15 +519,12 @@
 
     // ===== INITIALIZATION =====
     document.addEventListener('DOMContentLoaded', () => {
-      // Auto-focus input
       document.getElementById('novelUrl').focus();
       
-      // Enter key triggers scrape
       document.getElementById('novelUrl').addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !isScraping) startScrape();
       });
       
-      // Clear endChapter if maxChapters is filled (UX hint)
       document.getElementById('maxChapters').addEventListener('input', function() {
         if (this.value) {
           document.getElementById('endChapter').placeholder = 'Disabled when using max';
@@ -404,7 +535,7 @@
         }
       });
       
-      log('👋 Ready! Enter a novel URL and click "Scrape Novel"', 'info');
+      log('👋 Ready! Enter URL and click "Scrape Novel"', 'info');
     });
   </script>
 </body>
