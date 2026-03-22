@@ -3,689 +3,179 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Novel Scraper - Download JSON</title>
+  <title>Novel Scraper</title>
   <style>
-    :root {
-      --primary: #4361ee;
-      --primary-hover: #3a56d4;
-      --bg: #f8f9fa;
-      --card: #ffffff;
-      --text: #212529;
-      --text-muted: #6c757d;
-      --border: #dee2e6;
-      --success: #28a745;
-      --warning: #ffc107;
-      --error: #dc3545;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      padding: 20px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
-    header {
-      text-align: center;
-      padding: 30px 0;
-      margin-bottom: 25px;
-      border-bottom: 1px solid var(--border);
-    }
-    h1 {
-      font-size: 1.8rem;
-      margin-bottom: 8px;
-      color: var(--primary);
-    }
-    .subtitle {
-      color: var(--text-muted);
-      font-size: 1rem;
-    }
-    .card {
-      background: var(--card);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-      border: 1px solid var(--border);
-    }
-    .input-group {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-    input[type="url"] {
-      flex: 1;
-      min-width: 250px;
-      padding: 12px 16px;
-      border: 2px solid var(--border);
-      border-radius: 8px;
-      font-size: 1rem;
-      transition: border-color 0.2s;
-    }
-    input[type="url"]:focus {
-      outline: none;
-      border-color: var(--primary);
-    }
-    button {
-      background: var(--primary);
-      color: white;
-      border: none;
-      padding: 12px 24px;
-      border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-    button:hover { background: var(--primary-hover); }
-    button:disabled {
-      background: var(--text-muted);
-      cursor: not-allowed;
-      opacity: 0.7;
-    }
-    button.secondary {
-      background: #6c757d;
-    }
-    button.secondary:hover { background: #5a6268; }
-    button.download-btn {
-      background: var(--success);
-      margin-top: 15px;
-      width: 100%;
-      justify-content: center;
-      font-size: 1.1rem;
-      padding: 14px;
-    }
-    button.download-btn:hover { background: #218838; }
-    .progress-container {
-      margin: 20px 0;
-      display: none;
-    }
-    .progress-bar {
-      height: 8px;
-      background: var(--border);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .progress-fill {
-      height: 100%;
-      background: var(--primary);
-      width: 0%;
-      transition: width 0.3s ease;
-    }
-    .progress-text {
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      text-align: center;
-    }
-    .log-area {
-      background: #1e1e1e;
-      color: #d4d4d4;
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 0.85rem;
-      padding: 15px;
-      border-radius: 8px;
-      max-height: 200px;
-      overflow-y: auto;
-      margin: 15px 0;
-      white-space: pre-wrap;
-      display: none;
-    }
-    .log-area.visible { display: block; }
-    .warning-box {
-      background: #fff3cd;
-      border-left: 4px solid var(--warning);
-      padding: 12px 16px;
-      border-radius: 0 8px 8px 0;
-      margin: 15px 0;
-      font-size: 0.9rem;
-      color: #856404;
-    }
-    .result-preview {
-      margin-top: 20px;
-      padding: 15px;
-      background: #f1f5f9;
-      border-radius: 8px;
-      font-size: 0.9rem;
-      display: none;
-    }
-    .result-preview.visible { display: block; }
-    .meta-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
-      margin-top: 10px;
-    }
-    .meta-item strong {
-      display: block;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      margin-bottom: 4px;
-    }
-    footer {
-      text-align: center;
-      padding: 25px 0 10px;
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      border-top: 1px solid var(--border);
-      margin-top: 10px;
-    }
-    @media (max-width: 600px) {
-      .input-group { flex-direction: column; }
-      button { width: 100%; }
-    }
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f8f9fa; }
+    .card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin: 20px 0; }
+    input { width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 8px; font-size: 1rem; margin: 8px 0; }
+    button { background: #4361ee; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; }
+    button:hover { background: #3a56d4; }
+    button:disabled { background: #6c757d; cursor: not-allowed; }
+    .download-btn { background: #28a745; margin-top: 15px; }
+    .download-btn:hover { background: #218838; }
+    .progress { margin: 20px 0; display: none; }
+    .progress-bar { height: 8px; background: #dee2e6; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #4361ee; width: 0%; transition: width 0.3s; }
+    .log { background: #1e1e1e; color: #d4d4d4; font-family: monospace; font-size: 0.85rem; padding: 12px; border-radius: 8px; max-height: 150px; overflow-y: auto; margin: 15px 0; white-space: pre-wrap; display: none; }
+    .log.visible { display: block; }
+    .preview { background: #f1f5f9; padding: 15px; border-radius: 8px; margin-top: 15px; display: none; }
+    .preview.visible { display: block; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
+    .meta-item strong { display: block; color: #6c757d; font-size: 0.85rem; }
+    details { margin: 15px 0; }
+    summary { cursor: pointer; color: #4361ee; font-weight: 500; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>📚 Novel Scraper</h1>
-    <p class="subtitle">Paste a novel URL → Scrape content → Download JSON</p>
-  </header>
-
-  <main>
-    <div class="card">
-      <div class="input-group">
-        <input 
-          type="url" 
-          id="novelUrl" 
-          placeholder="https://ixdzs.tw/read/617729/" 
-          value="https://ixdzs.tw/read/617729/"
-          required
-        />
-        <button id="scrapeBtn" onclick="startScraping()">
-          ▶️ Start Scraping
-        </button>
-      </div>
-      
-      <div class="warning-box">
-        ⚠️ <strong>CORS Notice:</strong> If scraping fails due to CORS errors, you may need:
-        <ul style="margin-left: 20px; margin-top: 8px;">
-          <li>A CORS proxy endpoint (configure below)</li>
-          <li>Or use a browser extension like "Allow CORS" for testing</li>
-          <li>Or run with <code>--disable-web-security</code> (development only)</li>
-        </ul>
-      </div>
-
-      <details style="margin: 15px 0; font-size: 0.9rem;">
-        <summary style="cursor: pointer; color: var(--primary);">⚙️ Advanced Settings</summary>
-        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border);">
-          <label style="display: block; margin-bottom: 8px;">
-            <strong>CORS Proxy (optional):</strong><br/>
-            <small style="color: var(--text-muted);">Leave empty to fetch directly. Example: <code>https://your-worker.workers.dev/proxy?url=</code></small>
-          </label>
-          <input 
-            type="url" 
-            id="proxyUrl" 
-            placeholder="https://your-proxy.example.com/fetch?url=" 
-            style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px;"
-          />
-          <label style="display: block; margin: 15px 0 8px;">
-            <strong>Max Concurrent Requests:</strong>
-          </label>
-          <input 
-            type="number" 
-            id="concurrency" 
-            value="5" 
-            min="1" 
-            max="20"
-            style="width: 80px; padding: 8px; border: 1px solid var(--border); border-radius: 6px;"
-          />
-        </div>
-      </details>
-
-      <div class="progress-container" id="progressContainer">
-        <div class="progress-bar">
-          <div class="progress-fill" id="progressFill"></div>
-        </div>
-        <div class="progress-text" id="progressText">Initializing...</div>
-      </div>
-
-      <div class="log-area" id="logArea"></div>
-
-      <button id="downloadBtn" class="download-btn" style="display: none;" onclick="downloadJson()">
-        ⬇️ Download JSON File
-      </button>
-
-      <div class="result-preview" id="resultPreview">
-        <strong>📋 Preview</strong>
-        <div class="meta-grid" id="metaPreview"></div>
-        <div style="margin-top: 12px; font-size: 0.85rem; color: var(--text-muted);">
-          Chapters: <span id="chapterCount">0</span> • Total size: <span id="jsonSize">0 KB</span>
-        </div>
+  <h1>📚 Novel Scraper</h1>
+  <p>Worker-powered • No CORS • Download JSON</p>
+  
+  <div class="card">
+    <input type="url" id="novelUrl" placeholder="https://ixdzs.tw/read/463747/" value="https://ixdzs.tw/read/463747/" />
+    
+    <details>
+      <summary>⚙️ Advanced Options</summary>
+      <input type="url" id="workerUrl" placeholder="Worker URL" value="https://novel-scraper.YOUR_SUBDOMAIN.workers.dev" style="margin-top:10px;" />
+      <input type="number" id="maxChapters" placeholder="Max chapters (optional)" min="1" style="margin-top:10px;" />
+      <label style="margin-top:10px; display:block;">
+        <input type="checkbox" id="includeChapters" checked /> Include chapter content
+      </label>
+    </details>
+    
+    <button id="scrapeBtn" onclick="startScrape()">🚀 Scrape Novel</button>
+    
+    <div class="progress" id="progress">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div style="font-size:0.9rem; color:#6c757d; text-align:center; margin-top:8px;" id="progressText">Starting...</div>
+    </div>
+    
+    <div class="log" id="log"></div>
+    
+    <button id="downloadBtn" class="download-btn" style="display:none;" onclick="downloadJson()">⬇️ Download JSON</button>
+    
+    <div class="preview" id="preview">
+      <strong>📋 Preview</strong>
+      <div class="meta-grid" id="metaPreview"></div>
+      <div style="margin-top:12px; font-size:0.85rem; color:#6c757d;">
+        Chapters: <span id="chapterCount">0</span> • Size: <span id="jsonSize">0 KB</span>
       </div>
     </div>
-  </main>
-
-  <footer>
-    <p>💡 Tip: For best results, use with sites that allow CORS or configure a proxy endpoint.</p>
-    <p style="margin-top: 8px;">Built for browser use • No server required</p>
-  </footer>
+  </div>
 
   <script>
-    // ===== CONFIGURATION =====
-    // Default proxy prefix (set to empty string to fetch directly)
-    // Example: 'https://your-worker.workers.dev/proxy?url='
-    let PROXY_PREFIX = ''; 
-    let MAX_CONCURRENCY = 5;
-
-    // ===== STATE =====
     let scrapedData = null;
     let isScraping = false;
 
-    // ===== UTILITIES =====
-    function log(message, type = 'info') {
-      const logArea = document.getElementById('logArea');
-      const timestamp = new Date().toLocaleTimeString();
-      const colors = {
-        info: '#61afef',
-        success: '#98c379',
-        warn: '#e5c07b',
-        error: '#e06c75'
-      };
-      logArea.innerHTML += `<span style="color:${colors[type]}">[${timestamp}]</span> ${message}\n`;
-      logArea.scrollTop = logArea.scrollHeight;
-      logArea.classList.add('visible');
+    function log(msg, type = 'info') {
+      const logEl = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const colors = { info: '#61afef', success: '#98c379', warn: '#e5c07b', error: '#e06c75' };
+      logEl.innerHTML += `[${time}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      logEl.classList.add('visible');
     }
 
-    function updateProgress(current, total, message) {
-      const container = document.getElementById('progressContainer');
-      const fill = document.getElementById('progressFill');
-      const text = document.getElementById('progressText');
-      
-      container.style.display = 'block';
-      const percent = Math.round((current / total) * 100);
-      fill.style.width = `${percent}%`;
-      text.textContent = message || `${current}/${total} completed`;
+    function updateProgress(percent, text) {
+      document.getElementById('progress').style.display = 'block';
+      document.getElementById('progressFill').style.width = `${percent}%`;
+      document.getElementById('progressText').textContent = text;
     }
 
-    function showDownload(data) {
+    function showPreview(data) {
       scrapedData = data;
       document.getElementById('downloadBtn').style.display = 'block';
       
-      // Show preview
-      const preview = document.getElementById('resultPreview');
-      const metaPreview = document.getElementById('metaPreview');
       const meta = data.meta;
-      
-      metaPreview.innerHTML = `
+      document.getElementById('metaPreview').innerHTML = `
         <div class="meta-item"><strong>Title</strong>${meta.title}</div>
         <div class="meta-item"><strong>Author</strong>${meta.author || 'Unknown'}</div>
         <div class="meta-item"><strong>Status</strong>${meta.status || 'Unknown'}</div>
         <div class="meta-item"><strong>Chapters</strong>${meta.totalChapters}</div>
         <div class="meta-item"><strong>Genres</strong>${(meta.genres || []).join(', ') || 'None'}</div>
-        <div class="meta-item"><strong>Source</strong><a href="${meta.sourceUrl}" target="_blank" style="color:var(--primary);">Link</a></div>
       `;
       
       document.getElementById('chapterCount').textContent = meta.totalChapters;
       const sizeKB = Math.round(JSON.stringify(data).length / 1024);
       document.getElementById('jsonSize').textContent = `${sizeKB} KB`;
       
-      preview.classList.add('visible');
+      document.getElementById('preview').classList.add('visible');
     }
 
     function downloadJson() {
-      if (!scrapedData) {
-        alert('No data to download. Please scrape a novel first.');
-        return;
-      }
-      
+      if (!scrapedData) return alert('No data to download');
       const blob = new Blob([JSON.stringify(scrapedData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${scrapedData.meta.id || 'novel'}-${scrapedData.meta.title?.substring(0, 30) || 'data'}.json`;
+      a.download = `${scrapedData.meta.id || 'novel'}-${scrapedData.meta.title?.slice(0, 30) || 'data'}.json`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 0);
-      
-      log('✅ JSON file downloaded successfully', 'success');
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+      log('✅ Download started', 'success');
     }
 
-    // ===== FETCH WITH PROXY SUPPORT =====
-    async function fetchWithProxy(url, options = {}) {
-      const proxy = PROXY_PREFIX ? `${PROXY_PREFIX}${encodeURIComponent(url)}` : url;
-      
-      try {
-        const response = await fetch(proxy, {
-          ...options,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'zh-TW,zh,en-US;q=0.9,en;q=0.8',
-            ...options.headers
-          }
-        });
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        return response;
-      } catch (error) {
-        if (PROXY_PREFIX && error.message.includes('Failed to fetch')) {
-          log('⚠️ Proxy request failed. Try checking your proxy endpoint or CORS settings.', 'warn');
-        }
-        throw error;
-      }
-    }
-
-    // ===== HTML PARSER (Browser DOMParser) =====
-    function parseHTML(html) {
-      const parser = new DOMParser();
-      return parser.parseFromString(html, 'text/html');
-    }
-
-    function resolveUrl(relative, base) {
-      try {
-        return relative ? new URL(relative, base).href : '';
-      } catch (e) {
-        return relative || '';
-      }
-    }
-
-    // ===== SCRAPING LOGIC =====
-    async function fetchAuthorWorks(authorUrl, baseUrl, currentNovelId) {
-      const allWorks = [];
-      let currentPage = 1;
-      const maxPages = 3; // Safety limit for browser environment
-
-      while (currentPage <= maxPages) {
-        try {
-          const pageUrl = currentPage === 1 
-            ? authorUrl 
-            : `${authorUrl}?page=${currentPage}`;
-          
-          log(`📄 Fetching author page ${currentPage}...`);
-          const response = await fetchWithProxy(pageUrl);
-          const html = await response.text();
-          const doc = parseHTML(html);
-          
-          const items = doc.querySelectorAll('li.burl');
-          if (items.length === 0) break; // No more items
-          
-          items.forEach(el => {
-            const novelLink = el.querySelector('div.l-img a')?.getAttribute('href') || 
-                             el.querySelector('h3.bname a')?.getAttribute('href');
-            
-            if (!novelLink || !novelLink.startsWith('/read/')) return;
-            
-            const idMatch = novelLink.match(/\/read\/(\d+)\//);
-            if (!idMatch || idMatch[1] === currentNovelId) return;
-            
-            const title = el.querySelector('h3.bname a')?.textContent?.trim() || 'Untitled';
-            const imgSrc = el.querySelector('div.l-img img')?.getAttribute('src') || '';
-            const description = el.querySelector('p.l-p2')?.textContent?.trim() || '';
-            
-            allWorks.push({
-              title,
-              image: resolveUrl(imgSrc, baseUrl),
-              description,
-              url: resolveUrl(novelLink, baseUrl)
-            });
-          });
-          
-          // Simple pagination check
-          const nextBtn = Array.from(doc.querySelectorAll('.pager a')).find(a => 
-            a.textContent.trim() === (currentPage + 1).toString() || a.classList.contains('next')
-          );
-          
-          if (!nextBtn) break;
-          currentPage++;
-          
-          // Small delay to be polite
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-        } catch (error) {
-          log(`⚠️ Error on author page ${currentPage}: ${error.message}`, 'warn');
-          break;
-        }
-      }
-      
-      return allWorks;
-    }
-
-    async function scrapeNovel(startUrl) {
-      isScraping = true;
-      const scrapeBtn = document.getElementById('scrapeBtn');
-      scrapeBtn.disabled = true;
-      scrapeBtn.innerHTML = '⏳ Scraping...';
-      
-      // Reset UI
-      document.getElementById('logArea').innerHTML = '';
-      document.getElementById('downloadBtn').style.display = 'none';
-      document.getElementById('resultPreview').classList.remove('visible');
-      document.getElementById('progressContainer').style.display = 'none';
-      
-      try {
-        // Normalize URL
-        if (!startUrl.startsWith('http')) {
-          startUrl = `https://${startUrl}`;
-        }
-        
-        const novelIdMatch = startUrl.match(/\/read\/(\d+)/);
-        if (!novelIdMatch) throw new Error('Invalid URL: must contain /read/ followed by digits');
-        const novelId = novelIdMatch[1];
-        
-        const baseUrl = new URL(startUrl).origin;
-        log(`🎯 Starting scrape: ${startUrl}`);
-        
-        // Fetch main page
-        log('📥 Fetching novel metadata...');
-        const mainResponse = await fetchWithProxy(startUrl);
-        const mainHtml = await mainResponse.text();
-        const $main = parseHTML(mainHtml);
-        
-        // Extract metadata
-        const novelTitle = $main.querySelector('.n-text h1')?.textContent?.trim() || 'Untitled';
-        const cover = resolveUrl($main.querySelector('.n-img img')?.getAttribute('src'), baseUrl);
-        const author = $main.querySelector('.n-text p a.bauthor')?.textContent?.trim() || 'Unknown';
-        const authorUrlEl = $main.querySelector('.n-text p a.bauthor')?.getAttribute('href');
-        const authorUrl = authorUrlEl ? resolveUrl(authorUrlEl, baseUrl) : null;
-        
-        let status = 'Unknown';
-        if ($main.querySelector('.n-text p .lz')) {
-          status = $main.querySelector('.n-text p .lz').textContent.trim();
-        } else if ($main.querySelector('.n-text p .end')) {
-          status = $main.querySelector('.n-text p .end').textContent.trim();
-        }
-        
-        const description = $main.querySelector('#intro')?.textContent?.trim() || '';
-        const genres = Array.from($main.querySelectorAll('.tags em a'))
-          .map(el => el.textContent.trim()).filter(t => t);
-        
-        // Extract chapter list
-        const latestChapterUrl = $main.querySelector('ul.u-chapter.cfirst li a')?.getAttribute('href');
-        if (!latestChapterUrl) throw new Error('Could not find chapter links');
-        
-        const latestChapterMatch = latestChapterUrl.match(/p(\d+)\.html/);
-        if (!latestChapterMatch) throw new Error('Could not extract chapter number');
-        const latestChapter = parseInt(latestChapterMatch[1], 10);
-        
-        log(`📚 Found ${latestChapter} chapters. Starting download...`);
-        
-        // Generate chapter URLs (reverse order: latest first)
-        const chapterUrls = Array.from({ length: latestChapter }, (_, i) =>
-          `${baseUrl}/read/${novelId}/p${latestChapter - i}.html`
-        );
-        
-        // Fetch chapters with concurrency control
-        const chapters = new Array(latestChapter);
-        let completed = 0;
-        const queue = [];
-        
-        // Simple concurrency limiter
-        async function processQueue() {
-          while (queue.length > 0 && activeRequests < MAX_CONCURRENCY) {
-            const { url, index } = queue.shift();
-            activeRequests++;
-            
-            fetchChapter(url, index).finally(() => {
-              activeRequests--;
-              completed++;
-              updateProgress(completed, chapterUrls.length, 
-                `Downloading chapters: ${completed}/${chapterUrls.length}`);
-              processQueue(); // Process next in queue
-            });
-          }
-        }
-        
-        let activeRequests = 0;
-        
-        async function fetchChapter(url, index) {
-          try {
-            const response = await fetchWithProxy(url);
-            const html = await response.text();
-            const $ = parseHTML(html);
-            
-            // Remove unwanted elements
-            $('script, style, iframe, noscript, .abg, .ad, .ads, .hidden')?.forEach?.(el => el.remove());
-            
-            const title = $('article.page-content > h3')?.[0]?.textContent?.trim() || '';
-            const paragraphs = [];
-            
-            $('article.page-content section p')?.forEach?.(p => {
-              if (p.classList?.contains('abg')) return;
-              if (p.closest?.('.ad, .ads')) return;
-              
-              const htmlContent = p.innerHTML;
-              if (htmlContent?.trim()) {
-                paragraphs.push(`<p>${htmlContent.trim()}</p>`);
-              }
-            });
-            
-            const chapterNumber = latestChapter - index;
-            let content = paragraphs.join('\n');
-            
-            if (!title && !content) return;
-            if (!content) content = "<p>Chapter content unavailable</p>";
-            if (!title) title = `Chapter ${chapterNumber}`;
-            
-            chapters[index] = { title, content };
-            
-          } catch (error) {
-            log(`⚠️ Failed to fetch chapter ${index + 1}: ${error.message}`, 'warn');
-            // Still reserve slot to maintain order
-            if (!chapters[index]) {
-              chapters[index] = {
-                title: `Chapter ${latestChapter - index}`,
-                content: '<p>Failed to load chapter content</p>'
-              };
-            }
-          }
-        }
-        
-        // Initialize queue
-        chapterUrls.forEach((url, index) => {
-          queue.push({ url, index });
-        });
-        
-        // Start processing
-        processQueue();
-        
-        // Wait for all to complete
-        await new Promise(resolve => {
-          const check = setInterval(() => {
-            if (completed >= chapterUrls.length) {
-              clearInterval(check);
-              resolve();
-            }
-          }, 100);
-        });
-        
-        // Filter out undefined chapters
-        const filteredChapters = chapters.filter(ch => ch !== undefined);
-        
-        // Fetch author's other works (optional)
-        let otherWorks = [];
-        if (authorUrl) {
-          try {
-            log('🔍 Fetching author\'s other works...');
-            otherWorks = await fetchAuthorWorks(authorUrl, baseUrl, novelId);
-            log(`✅ Found ${otherWorks.length} other works`);
-          } catch (e) {
-            log(`⚠️ Could not fetch author works: ${e.message}`, 'warn');
-          }
-        }
-        
-        // Compile final output
-        const finalOutput = {
-          meta: {
-            id: novelId,
-            title: novelTitle,
-            cover,
-            author,
-            authorUrl,
-            status,
-            description,
-            genres,
-            totalChapters: filteredChapters.length,
-            sourceUrl: startUrl,
-            otherworks: otherWorks
-          },
-          chapters: filteredChapters
-        };
-        
-        log('✅ Scraping complete! Preparing download...', 'success');
-        showDownload(finalOutput);
-        
-      } catch (error) {
-        log(`❌ Error: ${error.message}`, 'error');
-        alert(`Scraping failed: ${error.message}\n\nCheck the log for details.`);
-      } finally {
-        isScraping = false;
-        scrapeBtn.disabled = false;
-        scrapeBtn.innerHTML = '▶️ Start Scraping';
-      }
-    }
-
-    async function startScraping() {
+    async function startScrape() {
       if (isScraping) return;
       
-      const urlInput = document.getElementById('novelUrl');
-      const proxyInput = document.getElementById('proxyUrl');
-      const concurrencyInput = document.getElementById('concurrency');
+      const novelUrl = document.getElementById('novelUrl').value.trim();
+      const workerUrl = document.getElementById('workerUrl').value.trim();
+      const maxChapters = document.getElementById('maxChapters').value;
+      const includeChapters = document.getElementById('includeChapters').checked;
       
-      const url = urlInput.value.trim();
-      if (!url) {
-        alert('Please enter a novel URL');
-        urlInput.focus();
+      if (!novelUrl || !workerUrl) {
+        alert('Please enter both novel URL and Worker URL');
         return;
       }
-      
-      // Update config from UI
-      PROXY_PREFIX = proxyInput.value.trim();
-      MAX_CONCURRENCY = parseInt(concurrencyInput.value) || 5;
-      
-      if (PROXY_PREFIX && !PROXY_PREFIX.endsWith('=')) {
-        log('⚠️ Proxy URL should end with "=" or "?" for proper URL encoding', 'warn');
+
+      isScraping = true;
+      document.getElementById('scrapeBtn').disabled = true;
+      document.getElementById('log').innerHTML = '';
+      document.getElementById('downloadBtn').style.display = 'none';
+      document.getElementById('preview').classList.remove('visible');
+      updateProgress(10, 'Sending request...');
+
+      try {
+        log('📤 Requesting Worker...');
+        
+        const response = await fetch(`${workerUrl}/api/scrape`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: novelUrl,
+            includeChapters,
+            maxChapters: maxChapters ? parseInt(maxChapters) : null
+          })
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || `HTTP ${response.status}`);
+        }
+
+        updateProgress(60, 'Parsing response...');
+        const data = await response.json();
+        
+        if (!data.success) throw new Error(data.error || 'Worker failed');
+
+        updateProgress(100, '✅ Complete!');
+        log(`🎉 "${data.meta.title}" - ${data.meta.totalChapters} chapters`, 'success');
+        showPreview(data);
+        
+      } catch (error) {
+        log(`❌ ${error.message}`, 'error');
+        alert(`Error: ${error.message}`);
+        updateProgress(0, 'Failed');
+      } finally {
+        isScraping = false;
+        document.getElementById('scrapeBtn').disabled = false;
       }
-      
-      await scrapeNovel(url);
     }
 
-    // ===== INITIALIZATION =====
-    document.addEventListener('DOMContentLoaded', () => {
-      // Auto-focus input
-      document.getElementById('novelUrl').focus();
-      
-      // Allow Enter key to trigger scrape
-      document.getElementById('novelUrl').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !isScraping) {
-          startScraping();
-        }
-      });
-      
-      log('👋 Ready! Paste a novel URL and click "Start Scraping"', 'info');
+    // Init
+    document.getElementById('novelUrl').addEventListener('keypress', e => {
+      if (e.key === 'Enter' && !isScraping) startScrape();
     });
+    log('👋 Ready! Enter URLs and click Scrape.', 'info');
   </script>
 </body>
 </html>
