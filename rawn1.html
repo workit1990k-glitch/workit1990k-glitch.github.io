@@ -365,74 +365,100 @@ async function scrapeNovel() {
     });
     
     const data = await res.json();
-    if (!data.success) throw new Error(data.error || 'Worker failed');
     
-    // Trim URLs
-    if (data.meta.cover) data.meta.cover = data.meta.cover.trim();
-    if (data.meta.authorUrl) data.meta.authorUrl = data.meta.authorUrl.trim();
+    // ✅ Check for Worker errors
+    if (!data.success) {
+      throw new Error(data.error || 'Worker returned failure');
+    }
     
+    // ✅ Check for metadata
+    if (!data.meta && !data.metadata) {
+      throw new Error('No metadata in Worker response');
+    }
+    
+    // ✅ Map response to novelData (handle both formats)
+    const meta = data.meta || data.metadata;
     novelData = {
-      meta: data.meta,
-      chapters: data.chapters.map(ch => ({
-        ...ch,
-        url: `${new URL(novelUrl).origin}/read/${data.meta.id}/p${ch.chapter}.html`
+      metadata: {
+        id: meta.id || 'unknown',
+        title: meta.title || 'Untitled',
+        cover: (meta.cover || '').trim(),
+        author: meta.author || 'Unknown',
+        authorUrl: (meta.authorUrl || '').trim(),
+        status: meta.status || 'Unknown',
+        description: meta.description || '',
+        genres: meta.genres || [],
+        totalChapters: meta.totalChapters || 0,
+        totalAvailable: meta.totalAvailable || meta.totalChapters || 0,
+        fetchedRange: meta.fetchedRange || { start: 1, end: meta.totalChapters || 0 },
+        sourceUrl: meta.sourceUrl || novelUrl,
+        otherworks: meta.otherworks || [],
+        dedupCheck: meta.dedupCheck || { duplicate: false }
+      },
+      chapters: (data.chapters || []).map((ch, idx) => ({
+        chapter: ch.chapter || ch.number || (idx + 1),
+        title: ch.title || `Chapter ${idx + 1}`,
+        content: ch.content || '',
+        url: `${new URL(novelUrl).origin}/read/${meta.id || 'unknown'}/p${ch.chapter || ch.number || (idx + 1)}.html`
       }))
     };
+    
+    // ✅ Validate metadata before proceeding
+    if (!novelData.metadata.title) {
+      throw new Error('Metadata title is missing');
+    }
     
     totalChaptersCount = novelData.chapters.length;
     selectedTransStart = 1;
     selectedTransEnd = totalChaptersCount;
     
-    // Update UI
+    // ✅ Update UI safely
     document.getElementById('transStart').max = totalChaptersCount;
     document.getElementById('transEnd').max = totalChaptersCount;
     document.getElementById('transEnd').value = totalChaptersCount;
     document.getElementById('transRangeHint').textContent = `Total: ${totalChaptersCount}`;
     
-    // Show preview
-    const meta = novelData.metadata;
+    const m = novelData.metadata;
     document.getElementById('metaPreview').innerHTML = `
-      <div class="meta-item"><strong>Title</strong>${escapeHtml(meta.title)}</div>
-      <div class="meta-item"><strong>Author</strong>${escapeHtml(meta.author)}</div>
-      <div class="meta-item"><strong>Status</strong>${escapeHtml(meta.status)}</div>
-      <div class="meta-item"><strong>Chapters</strong>${meta.totalChapters} / ${meta.totalAvailable || '?'}</div>
-      <div class="meta-item"><strong>Genres</strong>${(meta.genres || []).map(escapeHtml).join(', ') || 'None'}</div>
+      <div class="meta-item"><strong>Title</strong>${escapeHtml(m.title)}</div>
+      <div class="meta-item"><strong>Author</strong>${escapeHtml(m.author)}</div>
+      <div class="meta-item"><strong>Status</strong>${escapeHtml(m.status)}</div>
+      <div class="meta-item"><strong>Chapters</strong>${m.totalChapters} / ${m.totalAvailable || '?'}</div>
+      <div class="meta-item"><strong>Genres</strong>${(m.genres || []).map(escapeHtml).join(', ') || 'None'}</div>
     `;
     
     const coverPreview = document.getElementById('coverPreview');
-    if (meta.cover) {
-      coverPreview.src = meta.cover;
+    if (m.cover) {
+      coverPreview.src = m.cover;
       coverPreview.style.display = 'block';
       coverPreview.onerror = () => coverPreview.style.display = 'none';
     }
     
-    document.getElementById('scrapedChapterCount').textContent = meta.totalChapters;
+    document.getElementById('scrapedChapterCount').textContent = m.totalChapters;
     document.getElementById('scrapedRange').textContent = 
-      meta.fetchedRange ? `#${meta.fetchedRange.start}–${meta.fetchedRange.end}` : 'All';
+      m.fetchedRange ? `#${m.fetchedRange.start}–${m.fetchedRange.end}` : 'All';
     
     document.getElementById('scrapePreview').classList.add('visible');
     document.getElementById('proceedToTranslateBtn').disabled = false;
     document.getElementById('downloadRawZipBtn').disabled = false;
     
-    log(`✅ Scraped "${meta.title}" • ${meta.totalChapters} chapters`, 'scrapeLog', 'success');
+    log(`✅ Scraped "${m.title}" • ${m.totalChapters} chapters`, 'scrapeLog', 'success');
     
-    // Pre-fetch cover for ZIP
-    if (meta.cover) {
-      coverBlob = await fetchCoverImage(meta.cover);
+    if (m.cover) {
+      coverBlob = await fetchCoverImage(m.cover);
     }
     
     updateProgress(100, 'scrapeProgress', '✅ Complete!');
     
   } catch (error) {
     log(`❌ Error: ${error.message}`, 'scrapeLog', 'error');
-    alert(`Scraping failed: ${error.message}`);
+    alert(`Scraping failed: ${error.message}\n\nCheck the Worker URL and novel URL.`);
     updateProgress(0, 'scrapeProgress', 'Failed');
   } finally {
     isScraping = false;
     document.getElementById('scrapeBtn').disabled = false;
   }
 }
-
 // Download raw ZIP (before translation)
 async function downloadRawZip() {
   if (!novelData.metadata) return;
