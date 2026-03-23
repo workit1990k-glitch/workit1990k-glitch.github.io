@@ -906,7 +906,7 @@ async function createEpub() {
     // Create EPUB blob (placeholder - in production use proper EPUB library)
     const epubJson = JSON.stringify({
       mimetype: 'application/epub+zip',
-      meta { title: epubContent.title, creator: epubContent.author },
+      meta: { title: epubContent.title, creator: epubContent.author },
       chapters: epubContent.chapters
     }, null, 2);
     
