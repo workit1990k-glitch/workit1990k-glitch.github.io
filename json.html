@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Novel Crawler</title>
+  <style> 
+    body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;max-width:800px;margin:0 auto;padding:20px;background:#f5f5f5}
+    h1{color:#333;text-align:center}
+    .container{background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+    .form-group{margin-bottom:15px}
+    label{display:block;margin-bottom:5px;font-weight:bold}
+    input[type=text]{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box}
+    button{background:#4CAF50;color:#fff;border:none;padding:10px 15px;border-radius:4px;cursor:pointer;font-size:16px;margin-right:10px}
+    button:disabled{background:#ccc}
+    #console{background:#1e1e1e;color:#d4d4d4;padding:15px;border-radius:4px;font-family:'Courier New',Courier,monospace;height:300px;overflow-y:auto;white-space:pre-wrap;margin-top:20px}
+    .progress-container{margin-top:15px;display:none}
+    progress{width:100%}
+    .status{text-align:center;margin:10px 0;font-weight:bold}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+     
+</head>
+<body>
+  <div class="container">
+    <h1>Novel Crawler</h1>
+
+    <div class="form-group">
+      <label for="novelUrl">Novel URL:</label>
+      <input type="text" id="novelUrl" placeholder="link">
+    </div>
+    <div class="form-group">
+  <label for="jsonUrl">JSON URL (optional):</label>
+  <input type="text" id="jsonUrl" placeholder="https://raw.githubu...">
+  <button id="loadJsonBtn" style="margin-top:8px">Load from JSON</button>
+</div>
+    https://raw.githubusercontent.com/workit1990k-glitch/crawl-tw/refs/heads/main/results/620883.json
+    <div class="form-group">
+  <label for="chapterRange">Chapter Range (e.g., 1–100):</label>
+  <div style="display:flex;gap:10px;align-items:center">
+    <input type="number" id="startChapter" min="1" placeholder="Start" style="width:100px">
+    <span>to</span>
+    <input type="number" id="endChapter" min="1" placeholder="End" style="width:100px">
+    <button id="applyRangeBtn">Apply Range</button>
+  </div>
+  <small id="rangeHint" style="color:#666;display:block;margin-top:5px"></small>
+</div>
+
+    <button id="fetchMetadataBtn">Fetch Metadata</button>
+    <button id="fetchChaptersBtn" disabled>Fetch Chapters</button>
+    <button id="retryBatchBtn" disabled>Retry Failed Batch</button>
+    <button id="downloadBtn" disabled>Download as JSON</button>
+    <button id="forceContinueBtn" disabled>Force Continue (Skip Validation)</button>
+    <button id="saveToJsonBtn" disabled>Save JSON</button> 
+  <button id="editMetadataBtn" disabled>Edit Metadata</button>
+    <button id="saveMetadataBtn">Save Metadata</button>
+    <div class="progress-container" id="progressContainer">
+      <div class="status" id="statusText">Processing...</div>
+      <progress id="progressBar" value="0" max="100"></progress>
+    </div>
+
+    <div id="console"></div>
+
+<div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
+  <button id="saveTranslationBtn" disabled>Save Translation</button>
+</div>
+<button id="scroll-btn">Scroll to Bottom</button>
+<button id="auto-scroll-save-btn">Start Auto-Scroll & Save</button>
+    <button id="checkTranslationBtn">Check Translation</button>
+<button id="refetchFailedBtn">Re-fetch Failed Chapters</button>
+    <div id="console-translate" translate="yes"
+     class="console-like"
+     style="background:#121212;color:#e6e6e6;padding:15px;border-radius:4px;
+            font-family:'Courier New',Courier,monospace;height:320px;
+            overflow-y:auto;white-space:pre; margin-top:8px; border:1px solid #333">
+</div>
+
+
+  </div>
+
+  <script>
+    // ---- DOM refs ----
+    const consoleOutput   = document.getElementById('console');
+    const novelUrlInput   = document.getElementById('novelUrl');
+    const fetchMetadataBtn= document.getElementById('fetchMetadataBtn');
+    const fetchChaptersBtn= document.getElementById('fetchChaptersBtn');
+    const downloadBtn     = document.getElementById('downloadBtn');
+        const saveToJsonBtn   = document.getElementById('saveToJsonBtn'); 
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar     = document.getElementById('progressBar');
+    const statusText      = document.getElementById('statusText');
+    const checkTranslationBtn = document.getElementById('checkTranslationBtn');
+let selectedStart = 1;
+let selectedEnd = 0; 
+    
+    // ---- config ----
+    const WORKER_URL = 'https://curly-pond-9050.yuush.workers.dev';
+
+    // ---- helpers ----
+   function log(msg, color = '') {
+  const messageElement = document.createElement('div');
+  messageElement.textContent = msg;
+  
+  if (color) {
+    messageElement.style.color = color;
+    messageElement.style.fontWeight = 'bold';
+  }
+  
+  consoleOutput.appendChild(messageElement);
+  consoleOutput.scrollTop = consoleOutput.scrollHeight;
+}
+
+    function updateProgress(current, total) {
+      const pct = Math.round((current / total) * 100);
+      progressBar.value = pct;
+      statusText.textContent = `Processing ${current}/${total} (${pct}%)`;
+    }
+
+    // ---- data store ----
+    let novelData = { metadata: null, chapters: [] };
+
+    // ---- fetch raw html via worker ----
+    async function fetchRawHTML(targetUrl) {
+      const res = await fetch(`${WORKER_URL}/api/raw?url=${encodeURIComponent(targetUrl)}`);
+      if (!res.ok) throw new Error(`raw fetch ${res.status}`);
+      return res.text();
+    }
+
+    // ---- fetch metadata (browser-side) ----
+async function fetchMetadata() {
+  const url = novelUrlInput.value.trim();
+  if (!url) return alert('Please enter a novel URL');
+
+  try {
+    log('Fetching novel page…');
+    fetchMetadataBtn.disabled = true;
+
+    const html = await fetchRawHTML(url);
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+    // Extract metadata
+    const title = doc.querySelector('.n-text h1')?.textContent.trim() || 'Untitled';
+    const cover = doc.querySelector('.n-img img')?.src || '';
+    const author = doc.querySelector('.n-text p a.bauthor')?.textContent.trim() || 'Unknown';
+const status = doc.querySelector('.n-text p .lz')?.textContent.trim() 
+            || doc.querySelector('.n-text p .end')?.textContent.trim() 
+            || 'Unknown';
+    const description = doc.querySelector('#intro')?.textContent.trim() || '';
+
+const Url = doc.querySelector('.n-text a.bauthor')?.getAttribute('href') || null;
+const authorUrl = Url ? new URL(Url, url).href : null;
+
+    
+    // Extract genres/tags
+    const genres = Array.from(doc.querySelectorAll('.tags em a')).map(a => a.textContent.trim());
+
+    // find the last <a> inside .u-chapter.cfirst
+    const lastLink = doc.querySelector('.u-chapter.cfirst li a:last-of-type');
+    if (!lastLink) throw new Error("Couldn't find last chapter link");
+
+    // extract last chapter number (e.g. /p1355.html → 1355)
+    const href = lastLink.getAttribute('href');
+    const match = href.match(/p(\d+)\.html$/);
+    if (!match) throw new Error("Couldn't extract last chapter number");
+    const lastNumber = parseInt(match[1], 10);
+
+    // construct chapter list p1 → plast
+    const chapters = [];
+    for (let i = 1; i <= lastNumber; i++) {
+      chapters.push({
+        title: `Chapter ${i}`,
+        url: new URL(`p${i}.html`, url).href
+      });
+    }
+
+    novelData.metadata = { 
+      title, 
+      cover, 
+      author, 
+      status, 
+      genres, 
+      description,
+      authorUrl
+    };
+    novelData.chapters = chapters;
+
+    log(`\n=== Metadata ===`);
+    log(`Title: ${title}`);
+    log(`Cover: ${cover}`);
+    log(`Author: ${author}`);
+    log(`Status: ${status}`);
+    log(`Genres: ${genres.join(', ')}`);
+    log(`Description: ${description}`);
+    log(`Total chapters found: ${chapters.length}`);
+    fetchChaptersBtn.disabled = false;
+    checkTitle();
+if (authorUrl) {
+        log('\nFetching author\'s other works...');
+        try {
+          const otherWorks = await fetchAuthorWorks(authorUrl);
+          novelData.metadata.otherworks = otherWorks;
+          log(`Found ${otherWorks.length} other works by this author`, 'green');
+        } catch (err) {
+          log(`Error fetching author works: ${err.message}`, 'red');
+        }
+      } else {
+        log('No author URL found - skipping author works fetch', 'yellow');
+      }
+
+  // Inside fetchMetadata(), after you determine `lastNumber`:
+selectedEnd = lastNumber;
+document.getElementById('endChapter').max = lastNumber;
+document.getElementById('endChapter').value = lastNumber;
+document.getElementById('startChapter').max = lastNumber;
+document.getElementById('startChapter').value = 1;
+document.getElementById('rangeHint').textContent = `Total chapters: ${lastNumber}`;
+
+  } catch (err) {
+    log(`Error: ${err.message}`, 'red');
+    fetchMetadataBtn.disabled = false;
+  }
+
+}
+
+    document.getElementById('applyRangeBtn').addEventListener('click', () => {
+  const start = parseInt(document.getElementById('startChapter').value) || 1;
+  const end = parseInt(document.getElementById('endChapter').value) || selectedEnd;
+
+  if (start < 1 || end > selectedEnd || start > end) {
+    alert(`Please enter a valid range between 1 and ${selectedEnd}.`);
+    return;
+  }
+
+  selectedStart = start;
+  selectedEnd = end;
+  log(`Chapter range set to ${selectedStart}–${selectedEnd}`, 'green');
+});
+    
+    // ---- fetch chapter content (browser-side) ----
+async function fetchChapterContent(chapterUrl) {
+  const html = await fetchRawHTML(chapterUrl);
+  const doc  = new DOMParser().parseFromString(html, 'text/html');
+
+  const title = doc.querySelector('.page-content h3')?.textContent?.trim() || 'Untitled Chapter';
+
+  const paragraphs = [...doc.querySelectorAll('.page-content p')]
+    .filter(p => 
+      !p.classList.contains('abg') &&
+      !p.closest('.ad') &&
+      !p.closest('.ads')
+    )
+    .map(p => p.textContent.trim())
+    .filter(txt => txt.length > 0);
+
+  // If no paragraphs, return empty string or throw?
+  const content = paragraphs.length > 0 
+    ? paragraphs.map(txt => `<p>${txt}</p>`).join('\n')
+    : "";
+
+  return { title, content };
+}
+
+
+    // ---- fetch all chapters ----
+  // ---- fetch all chapters, BUT in translation-first batches (NEW) ----
+async function fetchChapters() {
+  if (!novelData.chapters || novelData.chapters.length === 0) {
+    return alert('No chapters available. Please load metadata first.');
+  }
+  
+  // Use selected range
+  const totalChaptersInFullNovel = novelData.chapters.length;
+  if (selectedStart < 1 || selectedEnd > totalChaptersInFullNovel || selectedStart > selectedEnd) {
+    return alert('Invalid chapter range selected.');
+  }
+  
+  try {
+    fetchChaptersBtn.disabled = true;
+    progressContainer.style.display = 'block';
+    
+    // Slice to selected range (no actual fetching needed - content already in JSON)
+    const startIndex = selectedStart - 1;
+    const endIndex = selectedEnd;
+    const chaptersToProcess = novelData.chapters.slice(startIndex, endIndex).map((ch, i) => ({
+      ...ch,
+      originalIndex: startIndex + i + 1
+    }));
+    
+    // Update global state
+    novelData.chapters = chaptersToProcess;
+    totalChaptersCount = novelData.chapters.length;
+    translateCursor = 0;
+    
+    // Skip to translation step immediately
+    log(`✓ Skipping fetch - ${totalChaptersCount} chapters ready for translation`, 'green');
+    await fetchNextTranslateBatch();
+    
+  } catch (err) {
+    log(`Error: ${err.message}`, 'red');
+    fetchChaptersBtn.disabled = false;
+    progressContainer.style.display = 'none';
+  }
+}
+// ---- Re-fetch only failed or empty chapters ----
+async function refetchFailedChapters() {
+  if (!novelData.chapters || novelData.chapters.length === 0) {
+    log('No chapters to re-fetch.', 'red');
+    return;
+  }
+
+  // Identify indices of chapters with missing or empty content
+  const failedIndices = novelData.chapters
+    .map((ch, i) => (!ch.content || ch.content.trim() === '') ? i : -1)
+    .filter(i => i !== -1);
+
+  if (failedIndices.length === 0) {
+    log('✅ No failed or empty chapters found.', 'green');
+    return;
+  }
+
+  log(`🔁 Re-fetching ${failedIndices.length} failed/empty chapter(s)...`, 'orange');
+  refetchFailedBtn.disabled = true;
+  progressContainer.style.display = 'block';
+
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const idx of failedIndices) {
+    const ch = novelData.chapters[idx];
+    try {
+      log(`Fetching failed chapter ${idx + 1}: ${ch.url}`);
+      const freshData = await fetchChapterContent(ch.url);
+      novelData.chapters[idx] = { ...ch, ...freshData };
+      successCount++;
+    } catch (err) {
+      log(`❌ Failed to re-fetch chapter ${idx + 1}: ${err.message}`, 'red');
+      errorCount++;
+    }
+    updateProgress(successCount + errorCount, failedIndices.length);
+  }
+
+  log(`✅ Re-fetch complete: ${successCount} succeeded, ${errorCount} still failed.`, 
+      errorCount === 0 ? 'green' : 'orange');
+  progressContainer.style.display = 'none';
+  refetchFailedBtn.disabled = false;
+
+  // Re-enable EPUB/Create if now valid
+  if (novelData.chapters.some(ch => ch.content?.trim())) {
+    createEpubBtn.disabled = false;
+    downloadBtn.disabled = false;
+    saveToJsonBtn.disabled = false;
+  }
+}
+    document.getElementById('refetchFailedBtn').addEventListener('click', refetchFailedChapters);
+    
+// ---- Save Metadata ----
+async function saveMetadata() {
+  try {
+    progressContainer.style.display = 'block';
+    statusText.textContent = 'Saving metadata...';
+    
+    const metadata = novelData.metadata;
+    if (!metadata) {
+      alert('No metadata available to save');
+      return false;
+    }
+
+    console.log('Saving metadata to server...');
+    
+    const response = await fetch(`${WORKER_URL}/api/saveMetadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(metadata)
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Failed to save metadata');
+    }
+
+    log('✓ Metadata saved successfully', 'green');
+    return true;
+    
+  } catch (error) {
+    log('✓ Metadata saved successfully', 'red');
+    return false;
+  } finally {
+    progressContainer.style.display = 'none';
+  }
+}
+    // ---- export JSON ----
+function downloadJson() {
+  if (!novelData.metadata?.title) return alert('No data to save');
+  
+  const cleanData = {
+    ...novelData,
+    chapters: novelData.chapters.map(({ url, ...rest }) => rest) // Exclude 'url'
+  };
+  
+  const blob = new Blob([JSON.stringify(cleanData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${novelData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+  // ---- save JSON to Google Drive ----
+async function saveJsonToGoogleDrive() {
+  if (!novelData.metadata?.title) return alert('No data to save');
+  
+  try {
+    saveToJsonBtn.disabled = true;
+    log('Preparing data for Google Drive...');
+    
+    // Clean data and convert to pretty JSON
+    const cleanData = {
+      ...novelData,
+      chapters: novelData.chapters.map(({ url, ...rest }) => rest)
+    };
+    const jsonContent = JSON.stringify(cleanData, null, 2);
+
+    log('Starting upload...');
+    const response = await fetch(`${WORKER_URL}/api/saveToGoogleDrive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `${novelData.metadata.title}`,
+        content: jsonContent,
+        folder: '16D-B7--4_NOjICRqDnHg0Z0SRH-SiWrH' // Your folder ID
+      })
+    });
+
+    const result = await response.json();
+    
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Upload failed with unknown error');
+    }
+
+    log(`✓ Successfully saved to Google Drive`, 'green');
+    log(`File: ${result.webViewLink}`);
+    log(`File ID: ${result.fileId}`);
+    
+  } catch (error) {
+    log(`Error: ${error.message}`, 'red');
+    console.error('Upload error details:', error);
+  } finally {
+    saveToJsonBtn.disabled = false;
+  }
+}
+
+
+    
+    // ---- events ----
+    fetchMetadataBtn.addEventListener('click', fetchMetadata);
+    fetchChaptersBtn.addEventListener('click', fetchChapters);
+    downloadBtn.addEventListener('click', downloadJson);
+     saveToJsonBtn.addEventListener('click', saveJsonToGoogleDrive); 
+    saveMetadataBtn.addEventListener('click', async () => {
+  await saveMetadata();
+});
+    
+
+
+// ---- EPUB Functions ----
+
+// Global for storing the generated EPUB blob
+let generatedEpubBlob = null;
+
+// Create EPUB button
+const createEpubBtn = document.createElement('button');
+createEpubBtn.textContent = 'Create EPUB';
+createEpubBtn.disabled = true;
+
+// Download EPUB button
+const downloadEpubBtn = document.createElement('button');
+downloadEpubBtn.textContent = 'Download EPUB';
+downloadEpubBtn.disabled = true;
+
+// Save EPUB button
+const saveEpubBtn = document.createElement('button');
+saveEpubBtn.textContent = 'Save EPUB';
+saveEpubBtn.disabled = true;
+
+// Add buttons to container
+document.querySelector('.container').appendChild(createEpubBtn);
+document.querySelector('.container').appendChild(downloadEpubBtn);
+document.querySelector('.container').appendChild(saveEpubBtn);
+
+// 1️⃣ Create EPUB function
+async function createEpub() {
+  if (!novelData.metadata?.title) {
+    throw new Error('No metadata title available to create an EPUB.');
+  }
+
+  // Filter out chapters with empty content
+  const filteredChapters = novelData.chapters.filter(ch => ch.content?.trim());
+
+  if (filteredChapters.length === 0) {
+    throw new Error('No chapters with content to include in EPUB.');
+  }
+
+  // Optional: Warn user about skipped chapters
+  const emptyCount = novelData.chapters.length - filteredChapters.length;
+  if (emptyCount > 0) {
+    log(`⚠️ Warning: ${emptyCount} empty chapters skipped in EPUB.`, 'orange');
+  }
+
+  try {
+    createEpubBtn.disabled = true;
+    log('Generating EPUB...');
+
+    const cleanNovelData = {
+      ...novelData,
+      chapters: filteredChapters
+    };
+
+    const generator = new EpubGenerator(cleanNovelData);
+    generatedEpubBlob = await generator.generate(log);
+    
+    log('✓ EPUB created successfully (not downloaded yet)', 'green');
+    downloadEpubBtn.disabled = false;
+    saveEpubBtn.disabled = false;
+    return generatedEpubBlob;
+  } catch (err) {
+    log(`EPUB generation error: ${err.message}`, 'red');
+    throw err;
+  } finally {
+    createEpubBtn.disabled = false;
+  }
+}
+
+// 2️⃣ Download EPUB function
+function downloadEpub() {
+  if (!generatedEpubBlob) {
+    throw new Error('No EPUB generated yet.');
+  }
+  
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(generatedEpubBlob);
+  a.download = `${novelData.metadata.title.replace(/[^a-z0-9]/gi, '_')}.epub`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('EPUB download started.');
+}
+
+// 3️⃣ Save EPUB to Google Drive function
+async function saveEpubToDrive() {
+  if (!generatedEpubBlob) {
+    throw new Error('No EPUB generated yet.');
+  }
+
+  try {
+    saveEpubBtn.disabled = true;
+    log('Uploading EPUB to Google Drive...');
+
+    const formData = new FormData();
+    formData.append('file', generatedEpubBlob, `${novelData.metadata.title}.epub`);
+    formData.append('folder', '1_P5VjIMg8PTp6_4en8d23hngim4NXED6');
+
+    const response = await fetch(`${WORKER_URL}/api/saveEpubToGoogleDrive`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Upload failed');
+    }
+
+    log(`✓ Successfully saved EPUB to Google Drive`, 'green');
+    log(`File: ${result.webViewLink}`);
+    log(`File ID: ${result.fileId}`);
+    return result;
+  } catch (error) {
+    log(`Error: ${error.message}`, 'red');
+    throw error;
+  } finally {
+    saveEpubBtn.disabled = false;
+  }
+}
+
+// Button event listeners
+createEpubBtn.addEventListener('click', async () => {
+  try {
+    await createEpub();
+  } catch (err) {
+    console.error('EPUB creation failed:', err);
+  }
+});
+
+downloadEpubBtn.addEventListener('click', () => {
+  try {
+    downloadEpub();
+  } catch (err) {
+    log(`Download error: ${err.message}`);
+  }
+});
+
+saveEpubBtn.addEventListener('click', async () => {
+  try {
+    await saveEpubToDrive();
+  } catch (err) {
+    console.error('EPUB save failed:', err);
+  }
+});
+
+// Enable Create EPUB button after chapters are loaded
+fetchChaptersBtn.addEventListener('click', () => {
+  const check = setInterval(() => {
+    if (novelData.chapters.length && novelData.chapters[0]?.content) {
+      createEpubBtn.disabled = false;
+                checkTranslationBtn.disabled = false; 
+      clearInterval(check);
+    }
+  }, 500);
+});
+
+
+
+// ---- Edit metadata ----
+const editMetadataBtn = document.getElementById('editMetadataBtn');
+
+// ---- helpers ----
+function showEditMetadataForm() {
+  const metadata = novelData.metadata;
+  if (!metadata) return alert('No metadata available to edit');
+
+  const formHTML = `
+    <form id="metadataForm">
+      <div class="form-group">
+        <label for="editTitle">Title:</label>
+        <input type="text" id="editTitle" name="title" value="${metadata.title}" required>
+      </div>
+      <div class="form-group">
+        <label for="editCover">Cover URL:</label>
+        <input type="text" id="editCover" name="cover" value="${metadata.cover}">
+      </div>
+      <div class="form-group">
+        <label for="editAuthors">Authors (comma-separated):</label>
+        <input type="text" id="editAuthors" name="authors" value="${metadata.author}">
+      </div>
+      <div class="form-group">
+        <label for="editGenres">Genres (comma-separated):</label>
+        <input type="text" id="editGenres" name="genres" value="${metadata.genres.join(', ')}">
+      </div>
+      <div class="form-group">
+        <label for="editStatus">Status:</label>
+        <input type="text" id="editStatus" name="status" value="${metadata.status}">
+      </div>
+      <div class="form-group">
+        <label for="editDescription">Description:</label>
+        <textarea id="editDescription" name="description" rows="5">${metadata.description}</textarea>
+      </div>
+      <div id="otherWorksStatus"></div>
+      <button type="submit">Save Changes</button>
+      <button type="button" id="fetchWorksBtn">Fetch Author's Other Works</button>
+      <button type="button" onclick="document.getElementById('metadataForm').remove()">Cancel</button>
+    </form>
+  `;
+
+  const formContainer = document.createElement('div');
+  formContainer.innerHTML = formHTML;
+  document.body.appendChild(formContainer);
+
+  // Add event listener for fetching author works
+// Updated fetchAuthorWorks function call
+document.getElementById('fetchWorksBtn').addEventListener('click', async () => {
+    // Get the author URL from the novelData metadata
+    const authorUrl = novelData.metadata.authorUrl;
+    
+    if (!authorUrl) {
+        alert('No author URL found in metadata');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('otherWorksStatus');
+    statusDiv.textContent = 'Fetching author works...';
+    statusDiv.style.color = 'blue';
+    
+    try {
+        const otherWorksData = await fetchAuthorWorks(authorUrl);
+        novelData.metadata.otherworks = otherWorksData;
+        
+        statusDiv.textContent = `Found ${otherWorksData.length} other works`;
+        statusDiv.style.color = 'green';
+    } catch (error) {
+        statusDiv.textContent = `Error fetching works: ${error.message}`;
+        statusDiv.style.color = 'red';
+    }
+});
+
+  document.getElementById('metadataForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+
+    const newMetadata = {
+      title: formData.get('title'),
+      cover: formData.get('cover'),
+      author: formData.get('authors'),
+      genres: formData.get('genres').split(',').map(genre => genre.trim()),
+      status: formData.get('status'),
+      description: formData.get('description'),
+      otherworks: novelData.metadata.otherworks || [],
+    };
+
+    novelData.metadata = newMetadata;
+    log('Metadata updated successfully', 'green');
+    document.getElementById('metadataForm').remove();
+  });
+}
+
+// Updated fetchAuthorWorks function with current selectors
+async function fetchAuthorWorks(authorUrl) {
+  try {
+    log(`Fetching author works from: ${authorUrl}`);
+    const authorHtml = await fetchRawHTML(authorUrl);
+    const authorDoc = new DOMParser().parseFromString(authorHtml, 'text/html');
+    
+    // Get all novel items from the list
+    const works = authorDoc.querySelectorAll('ul.u-list > li.burl');
+
+    if (!works.length) {
+      log('No works found for this author.');
+      return [];
+    }
+
+    const worksData = [];
+
+    works.forEach(work => {
+      // Extract cover image URL
+      const img = work.querySelector('.l-img img')?.src || '';
+      
+      // Extract title and URL
+      const titleEl = work.querySelector('.bname a');
+      const title = titleEl?.textContent?.trim() || 'No Title';
+      const titleHref = titleEl?.href || '#';
+      
+      // Extract author (though we already know it from the URL)
+      const author = work.querySelector('.bauthor a')?.textContent?.trim() || '';
+      
+      // Extract word count and status
+      const wordCount = work.querySelector('.size')?.textContent?.trim() || '';
+      const status = work.querySelector('.end, .lz')?.textContent?.trim() || '';
+      
+      // Extract description
+      const description = work.querySelector('.l-p2')?.textContent?.trim() || '';
+      
+      // Extract latest chapter info
+      const latestChapter = work.querySelector('.l-chapter')?.textContent?.trim() || '';
+      const updateTime = work.querySelector('.l-time')?.textContent?.trim() || '';
+
+      worksData.push({
+        title,
+        cover: img,
+        author,
+        wordCount,
+        status,
+        description,
+        latestChapter,
+        updateTime
+      });
+    });
+
+    return worksData;
+  } catch (e) {
+    log(`Error fetching author works: ${e.message}`);
+    return [];
+  }
+}
+
+// ---- events ----
+editMetadataBtn.addEventListener('click', showEditMetadataForm);
+
+// Enable the edit metadata button after fetching metadata
+fetchMetadataBtn.addEventListener('click', () => {
+  const check = setInterval(() => {
+    if (novelData.metadata) {
+      editMetadataBtn.disabled = false;
+      clearInterval(check);
+    }
+  }, 500);
+});
+
+// Function to check title similarity
+async function checkTitle() {
+  if (!novelData.metadata?.title) {
+    return alert('No metadata title available.');
+  }
+
+  try {
+    log(`Checking title against database...`);
+    
+    const res = await fetch('https://curly-pond-9050.yuush.workers.dev/titles.json');
+    if (!res.ok) throw new Error(`Failed to fetch titles.json (${res.status})`);
+    
+    const data = await res.json();
+    const targetTitle = novelData.metadata.title.trim().toLowerCase();
+
+    // Exact match check (you can replace with fuzzy match if needed)
+const match = data.some(item => 
+  item.title.trim().toLowerCase() === targetTitle
+);
+
+    // Output result in color
+    const message = match 
+      ? `%cDuplicate` 
+      : `%cOriginal`;
+    const style = match 
+      ? 'color: red; font-weight: bold;' 
+      : 'color: green; font-weight: bold;';
+
+    consoleOutput.innerHTML += `<div style="${style.replace(/%c/g, '')}">${match ? 'Duplicate' : 'Original'}</div>`;
+    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+
+  if (!match) {
+      saveMetadata();
+    }
+    
+  } catch (err) {
+    log(`Error checking title: ${err.message}`);
+  }
+}
+
+// ====== TRANSLATION BATCH FLOW (NEW) ======
+const consoleTranslate   = document.getElementById('console-translate');
+const saveTranslationBtn = document.getElementById('saveTranslationBtn');
+
+// State for batched fetching/translation
+let translateBatchSize = 10;
+let translateCursor    = 0;      // next chapter index to fetch
+let totalChaptersCount = 0;      // filled after metadata is loaded
+
+// ---------------------
+// Replace previous renderTranslationBatchToConsole + extractAndSaveTranslatedBatch
+// ---------------------
+
+// Utility: escape HTML
+function esc(s='') {
+  return String(s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;');
+}
+function splitParagraphsFromContent(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  const ps = Array.from(tmp.querySelectorAll('p'))
+    .map(p => (p.textContent || '').trim())
+    .filter(Boolean);
+  return ps.length ? ps : (html ? [tmp.textContent.trim()] : []);
+}
+// Render a batch so:
+// - Hidden: JSON string (translate="no") — exact structure preserved
+// - Visible: plain text only (title, newline, paragraphs) and each text piece has .translatable spans
+function renderTranslationBatchToConsole(batch, startIndex) {
+  // Clear console-translate
+  consoleTranslate.innerHTML = '';
+
+  // Build hidden JSON structure (array of objects)
+  const jsonArray = batch.map((ch, i) => ({
+    index: ch._index,
+    title: ch._titleRaw,
+    paragraphs: ch._paragraphs.slice() // copy
+  }));
+
+  // Hidden JSON holder (not translated)
+  const hiddenPre = document.createElement('pre');
+  hiddenPre.style.display = 'none';
+  hiddenPre.setAttribute('translate', 'no'); // prevent browser translate
+  hiddenPre.className = 'hidden-json';
+  hiddenPre.textContent = JSON.stringify(jsonArray, null, 2);
+  consoleTranslate.appendChild(hiddenPre);
+
+  // Visible container (this will be what the user translates)
+  const visContainer = document.createElement('div');
+  visContainer.setAttribute('translate', 'yes');
+
+  // For each chapter, output pure text: Title, blank line, then paragraphs joined with blank line
+  batch.forEach((ch, idx) => {
+    const chapterIndex = startIndex + idx;
+
+    const chapterDiv = document.createElement('div');
+    chapterDiv.className = 'visible-ch';
+    chapterDiv.dataset.index = chapterIndex;
+
+    // Title (single line)
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'translatable title';
+    titleDiv.dataset.index = chapterIndex;
+    titleDiv.textContent = ch._titleRaw || `Chapter ${chapterIndex + 1}`;
+
+    // Add a blank-line visually after title with margin
+    titleDiv.style.marginBottom = '8px';
+    chapterDiv.appendChild(titleDiv);
+
+    // Paragraphs: each paragraph in its own div so the translator can translate them individually
+    ch._paragraphs.forEach((pText, pIdx) => {
+      const pDiv = document.createElement('div');
+      pDiv.className = 'translatable para';
+      pDiv.dataset.index = chapterIndex;
+      pDiv.dataset.pIndex = pIdx;
+      pDiv.style.marginBottom = '6px';
+      pDiv.textContent = pText;
+      chapterDiv.appendChild(pDiv);
+    });
+
+    // Add an extra blank line between chapters
+    const sep = document.createElement('div');
+    sep.style.height = '14px';
+
+    visContainer.appendChild(chapterDiv);
+    visContainer.appendChild(sep);
+  });
+
+  // Append visible container after hidden JSON
+  consoleTranslate.appendChild(visContainer);
+
+  // Enable Save Translation button for user to click after translating the page
+  saveTranslationBtn.disabled = false;
+
+  // Log for the user
+  log(`Rendered chapters ${startIndex + 1}–${startIndex + batch.length} for translation (visible text only).`, 'green');
+  log('Use your browser "Translate" UI (or right-click → Translate) to translate the visible text, then click "Save Translation".', 'green');
+}
+
+function buildBatchObjects(start, end) {
+  const arr = [];
+  for (let i = start; i < end; i++) {
+    const ch = novelData.chapters[i];
+    // ensure we have content/title from fetch
+    const titleRaw = ch.title || `Chapter ${i+1}`;
+    const paragraphs = splitParagraphsFromContent(ch.content);
+    arr.push({
+      _index: i,
+      _titleRaw: titleRaw,
+      _paragraphs: paragraphs
+    });
+  }
+  return arr;
+}
+    
+// Read back translated visible text and inject into novelData for the range [start, end)
+function extractAndSaveTranslatedBatch(start, end) {
+  for (let i = start; i < end; i++) {
+    // Find title element and paragraph elements for this index
+    const titleEl = consoleTranslate.querySelector(`.visible-ch[data-index="${i}"] .translatable.title[data-index="${i}"]`);
+    const paraEls = consoleTranslate.querySelectorAll(`.visible-ch[data-index="${i}"] .translatable.para[data-index="${i}"]`);
+
+    // Gather translated values; fallback to original if missing
+    const newTitle = titleEl && titleEl.textContent.trim()
+      ? titleEl.textContent.trim()
+      : (novelData.chapters[i].title || `Chapter ${i+1}`);
+
+    const paras = [];
+    if (paraEls && paraEls.length) {
+      paraEls.forEach(pNode => {
+        const t = (pNode.textContent || '').trim();
+        if (t) paras.push(t);
+      });
+    } else {
+      // If translator removed paragraph nodes for some reason, fall back to splitting existing content
+      const fallBackParas = splitParagraphsFromContent(novelData.chapters[i].content);
+      fallBackParas.forEach(p => { if (p) paras.push(p); });
+    }
+
+    // Rebuild safe HTML content (we escape the translated text to avoid injected HTML)
+    const newContent = paras.map(p => `<p>${esc(p)}</p>`).join('\n');
+
+    // Save into canonical structure (overwriting title + content)
+    novelData.chapters[i].title = newTitle;
+    novelData.chapters[i].content = newContent;
+  }
+
+  // After writing back, clear visible console to avoid accidental re-saving
+  consoleTranslate.querySelectorAll('.visible-ch').forEach(n => n.remove());
+  // Keep hidden JSON removed as well (we will generate a new hidden JSON on next batch)
+  const hidden = consoleTranslate.querySelector('.hidden-json');
+  if (hidden) hidden.remove();
+
+  log(`Saved translation for chapters ${start + 1}–${end}.`, 'green');
+}
+
+
+
+
+// Fetch next N chapters (Chinese), then show them in the translate console
+async function fetchNextTranslateBatch() {
+  const total = totalChaptersCount || novelData.chapters.length;
+  if (translateCursor >= total) {
+    // Done
+    log('All chapters processed through translate-save flow!', 'green');
+    progressContainer.style.display = 'none';
+    downloadBtn.disabled     = false;
+    saveToJsonBtn.disabled   = false;
+    createEpubBtn.disabled   = false; // in case it was waiting
+    saveTranslationBtn.disabled = true;
+    return;
+  }
+
+  progressContainer.style.display = 'block';
+  const start = translateCursor;
+  const end   = Math.min(start + translateBatchSize, total);
+
+  // Fetch this batch (Chinese source)
+  const promises = [];
+  for (let i = start; i < end; i++) {
+    // only fetch if not fetched yet
+    if (!novelData.chapters[i].content) {
+      promises.push((async (idx) => {
+        log(`Fetching ${idx+1}/${total} - ${novelData.chapters[idx].title}`);
+        const data = await fetchChapterContent(novelData.chapters[idx].url);
+        novelData.chapters[idx] = { ...novelData.chapters[idx], ...data };
+      })(i));
+    }
+  }
+
+  await Promise.all(promises);
+
+  // Update progress UI to "fetched this batch"
+  updateProgress(end, total);
+  statusText.textContent = `Ready to translate ${start+1}–${end} / ${total}`;
+
+  // Build + render batch into the translation console
+  const batchObjs = buildBatchObjects(start, end);
+  renderTranslationBatchToConsole(batchObjs, start);
+
+  // Now we wait for the user to Google-Translate the page
+  // and click "Save Translation".
+}
+
+let lastFailedBatchStart = null;
+let lastFailedBatchEnd = null;
+
+// Wrap the original fetchNextTranslateBatch to capture failure range
+const originalFetchNextTranslateBatch = fetchNextTranslateBatch;
+fetchNextTranslateBatch = async function() {
+  const total = totalChaptersCount || novelData.chapters.length;
+  const start = translateCursor;
+  const end = Math.min(start + translateBatchSize, total);
+  
+  try {
+    await originalFetchNextTranslateBatch();
+    // If successful, clear retry state
+    lastFailedBatchStart = null;
+    lastFailedBatchEnd = null;
+    document.getElementById('retryBatchBtn').disabled = true;
+  } catch (err) {
+    // Save the failed range for retry
+    lastFailedBatchStart = start;
+    lastFailedBatchEnd = end;
+    document.getElementById('retryBatchBtn').disabled = false;
+    throw err; // re-throw so original error handling still runs
+  }
+};
+
+// Retry button handler
+document.getElementById('retryBatchBtn').addEventListener('click', async () => {
+  if (lastFailedBatchStart === null || lastFailedBatchEnd === null) return;
+
+  log(`Retrying batch: chapters ${lastFailedBatchStart + 1}–${lastFailedBatchEnd}`, 'orange');
+
+  // Temporarily set cursor to the failed start
+  const originalCursor = translateCursor;
+  translateCursor = lastFailedBatchStart;
+
+  try {
+    await fetchNextTranslateBatch();
+    log('Retry succeeded!', 'green');
+  } catch (err) {
+    log(`Retry failed again: ${err.message}`, 'red');
+    // Keep retry button enabled so user can try again
+  } finally {
+    // Ensure cursor is restored if something went wrong
+    if (translateCursor !== lastFailedBatchEnd) {
+      translateCursor = originalCursor;
+    }
+  }
+});
+
+    
+// Wire the save button: read translations back, move to next batch
+// Wire the save button: read translations back, validate, then move to next batch
+saveTranslationBtn.addEventListener('click', () => {
+  const total = totalChaptersCount || novelData.chapters.length;
+  const start = translateCursor;
+  const end   = Math.min(start + translateBatchSize, total);
+  
+  try {
+    extractAndSaveTranslatedBatch(start, end);
+    log(`Saved translated chapters ${start+1}–${end}.`, 'green');
+  } catch (e) {
+    log(`Error saving translation: ${e.message}`, 'red');
+    return;
+  }
+  
+  // === VALIDATION: Check for remaining Chinese characters ===
+  const { totalChinese, chaptersWithChinese } = countChineseInBatch(start, end);
+  
+  if (totalChinese > 200) {
+    // More than 200 Chinese symbols - needs re-translation
+    log(`⚠️ Warning: ${totalChinese} Chinese characters detected in this batch!`, 'orange');
+    log(`Chapters with Chinese: ${chaptersWithChinese.map(c => `Ch${c.index}(${c.count})`).join(', ')}`, 'orange');
+    log(`Re-rendering batch ${start+1}–${end} for re-translation...`, 'orange');
+    
+    // Re-render the same batch instead of advancing
+    const batchObjs = buildBatchObjects(start, end);
+    renderTranslationBatchToConsole(batchObjs, start);
+    
+    // Don't advance cursor - user needs to re-translate
+    log('Please re-translate this batch and click "Save Translation" again.', 'orange');
+    return;
+  } else if (totalChinese > 0) {
+    // Some Chinese but under threshold - warn but continue
+    log(`ℹ️ Note: ${totalChinese} Chinese characters remaining (below 200 threshold)`, 'blue');
+    log(`Chapters: ${chaptersWithChinese.map(c => `Ch${c.index}(${c.count})`).join(', ')}`, 'blue');
+  } else {
+    log('✓ No Chinese characters detected in this batch', 'green');
+  }
+  
+  // Validation passed - advance cursor & fetch next batch
+  translateCursor = end;
+  consoleTranslate.innerHTML = '';
+  saveTranslationBtn.disabled = true;
+  
+  // Auto-continue to next batch
+  fetchNextTranslateBatch().catch(err => {
+    log(`Error loading next batch: ${err.message}`, 'red');
+  });
+});
+
+// scroll
+const btn       = document.getElementById('scroll-btn');
+const consoleEl = document.getElementById('console-translate');
+
+let animId = null;         
+
+btn.addEventListener('click', () => {
+  // If an animation is already running → cancel it
+  if (animId) {
+    cancelAnimationFrame(animId);
+    animId = null;
+    btn.textContent = 'Scroll to Bottom';
+    return;
+  }
+
+  // Disable button
+  btn.textContent = 'Scrolling...';
+
+  const totalChars     = consoleEl.textContent.length;
+  const charsPerSecond = 6000;
+  const durationMs     = (totalChars / charsPerSecond) * 1000;
+
+  const start         = performance.now();
+  const startScroll   = consoleEl.scrollTop;
+  const maxScrollTop  = consoleEl.scrollHeight - consoleEl.clientHeight;
+
+  function step(now) {
+    const elapsed  = now - start;
+    const progress = Math.min(elapsed / durationMs, 1);
+
+    consoleEl.scrollTop = startScroll + (maxScrollTop - startScroll) * progress;
+
+    if (progress < 1) {
+      animId = requestAnimationFrame(step);
+    } else {
+      animId = null;
+      btn.textContent = 'Scroll to Bottom';
+    }
+  }
+
+  animId = requestAnimationFrame(step);
+});
+
+    const autoScrollSaveBtn = document.getElementById('auto-scroll-save-btn');
+let isAutoScrolling = false;
+
+// This is the main automation function
+async function autoScrollAndSave() {
+  // This loop will continue as long as isAutoScrolling is true
+  while (isAutoScrolling) {
+    // 1. Programmatically click the 'Scroll to Bottom' button
+    btn.click();
+    
+    // 2. Wait for the scrolling animation to finish completely
+    await new Promise(resolve => {
+      const checkInterval = setInterval(() => {
+        // The 'animId' is null when the scrolling stops
+        if (!animId) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 5000); // Check every 100 milliseconds
+    });
+
+    // Add a small delay to ensure the browser has caught up
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // 3. Programmatically click the 'Save Translation' button
+    saveTranslationBtn.click();
+    
+    // 4. Wait for the next batch of text to load in the console
+    await new Promise(resolve => {
+      const checkInterval = setInterval(() => {
+        // When the console has content again, we can continue
+        if (consoleTranslate.innerHTML.trim() !== '') {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 3000); // Check every 100 milliseconds
+    });
+  }
+}
+
+// This listens for clicks on the new button to start or stop the process
+autoScrollSaveBtn.addEventListener('click', () => {
+  // Flips the value (true to false, false to true)
+  isAutoScrolling = !isAutoScrolling;
+  
+  if (isAutoScrolling) {
+    // If we just turned it ON
+    autoScrollSaveBtn.textContent = 'Stop Auto-Scroll & Save';
+    autoScrollAndSave(); // Start the automation loop
+  } else {
+    // If we just turned it OFF
+    autoScrollSaveBtn.textContent = 'Start Auto-Scroll & Save';
+    // The loop in autoScrollAndSave() will stop automatically
+  }
+});
+
+
+     // Function to detect Chinese characters
+    function hasChinese(text) {
+      const chineseRegex = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
+      return chineseRegex.test(text);
+    }
+
+    // Check Translation functionality
+    function checkTranslation() {
+      if (!novelData.chapters.length) {
+        log('No chapters to check', 'red');
+        return;
+      }
+
+      // Clear console-translate
+      consoleTranslate.innerHTML = '';
+      
+      // Find chapters with Chinese characters
+      const chineseChapters = [];
+      novelData.chapters.forEach((chapter, index) => {
+        if (hasChinese(chapter.title) || hasChinese(chapter.content)) {
+          chineseChapters.push({ ...chapter, _index: index });
+        }
+      });
+
+      if (chineseChapters.length === 0) {
+        log('✓ No Chinese characters detected in any chapters!', 'green');
+        return;
+      }
+
+      log(`Found ${chineseChapters.length} chapters with Chinese characters`, 'orange');
+      
+      // Build hidden JSON structure
+      const jsonArray = chineseChapters.map(ch => ({
+        index: ch._index,
+        title: ch.title,
+        paragraphs: splitParagraphsFromContent(ch.content)
+      }));
+
+      const hiddenPre = document.createElement('pre');
+      hiddenPre.style.display = 'none';
+      hiddenPre.setAttribute('translate', 'no');
+      hiddenPre.className = 'hidden-json';
+      hiddenPre.textContent = JSON.stringify(jsonArray, null, 2);
+      consoleTranslate.appendChild(hiddenPre);
+
+      // Render visible content for translation
+      const visContainer = document.createElement('div');
+      visContainer.setAttribute('translate', 'yes');
+
+      chineseChapters.forEach(ch => {
+        const chapterDiv = document.createElement('div');
+        chapterDiv.className = 'visible-ch';
+        chapterDiv.dataset.index = ch._index;
+
+        // Title
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'translatable title';
+        titleDiv.dataset.index = ch._index;
+        titleDiv.textContent = ch.title;
+        titleDiv.style.marginBottom = '8px';
+        chapterDiv.appendChild(titleDiv);
+
+        // Paragraphs
+        const paragraphs = splitParagraphsFromContent(ch.content);
+        paragraphs.forEach((pText, pIdx) => {
+          const pDiv = document.createElement('div');
+          pDiv.className = 'translatable para';
+          pDiv.dataset.index = ch._index;
+          pDiv.dataset.pIndex = pIdx;
+          pDiv.style.marginBottom = '6px';
+          pDiv.textContent = pText;
+          chapterDiv.appendChild(pDiv);
+        });
+
+        // Chapter separator
+        const sep = document.createElement('div');
+        sep.style.height = '14px';
+        visContainer.appendChild(chapterDiv);
+        visContainer.appendChild(sep);
+      });
+
+      consoleTranslate.appendChild(visContainer);
+      saveTranslationBtn.disabled = false;
+      log('Chapters with Chinese characters loaded for translation. Use browser translate then click "Save Translation".', 'green');
+    }
+
+    // Event listener for Check Translation button
+checkTranslationBtn.addEventListener('click', () => {
+  // Stop auto-scroll/save if it's running
+  if (isAutoScrolling) {
+    isAutoScrolling = false;
+    autoScrollSaveBtn.textContent = 'Start Auto-Scroll & Save';
+    log('Auto-scroll/save stopped by manual "Check Translation"', 'orange');
+  }
+
+  checkTranslation(); // your existing function
+});
+
+    // ---- Load novel data directly from JSON URL ----
+async function loadFromJsonUrl() {
+  const jsonUrl = document.getElementById('jsonUrl').value.trim();
+  if (!jsonUrl) return alert('Please enter a JSON URL');
+  
+  try {
+    log('Loading novel data from JSON...', 'blue');
+    document.getElementById('loadJsonBtn').disabled = true;
+    
+    // Fetch JSON data
+    const res = await fetch(jsonUrl);
+    if (!res.ok) throw new Error(`Failed to load JSON: ${res.status}`);
+    const jsonData = await res.json();
+    
+  // === MAP otherWorks → otherworks (lowercase) with cover field ===
+    const otherworks = (jsonData.meta.otherworks || []).map(work => ({
+      cover: work.image?.trim() || '',      // image → cover
+      title: work.title || '',
+      description: work.description || '',
+      url: work.url?.trim() || '',
+      genres: [] // Optional: add if your JSON has it
+    }));
+    
+    // Map JSON structure to novelData format
+    novelData.metadata = {
+      title: jsonData.meta.title || 'Untitled',
+      cover: jsonData.meta.cover?.trim() || '',
+      author: jsonData.meta.author || 'Unknown',
+      status: jsonData.meta.status || 'Unknown',
+      genres: jsonData.meta.genres || [],
+      description: jsonData.meta.description || '',
+      authorUrl: jsonData.meta.authorUrl?.trim() || null,
+      sourceUrl: jsonData.meta.sourceUrl?.trim() || jsonUrl,
+      totalChapters: jsonData.meta.totalChapters || jsonData.chapters?.length || 0,
+      otherworks: otherworks
+    };
+    
+    // Map chapters (preserve original structure but add url field for compatibility)
+    novelData.chapters = jsonData.chapters.map((ch, idx) => ({
+      title: ch.title || `Chapter ${idx + 1}`,
+      content: ch.content || '',
+      url: jsonData.meta.sourceUrl ? 
+           `${jsonData.meta.sourceUrl.replace(/\/$/, '')}/p${idx + 1}.html` : 
+           `#chapter-${idx + 1}`,
+      originalIndex: idx + 1
+    }));
+    
+    // Update UI state
+    totalChaptersCount = novelData.chapters.length;
+    selectedStart = 1;
+    selectedEnd = totalChaptersCount;
+    
+    // Update chapter range UI
+    document.getElementById('startChapter').value = 1;
+    document.getElementById('startChapter').max = totalChaptersCount;
+    document.getElementById('endChapter').value = totalChaptersCount;
+    document.getElementById('endChapter').max = totalChaptersCount;
+    document.getElementById('rangeHint').textContent = `Total chapters: ${totalChaptersCount}`;
+    
+    // Log metadata
+    log(`=== Loaded from JSON ===`, 'green');
+    log(`Title: ${novelData.metadata.title}`);
+    log(`Description: ${novelData.metadata.description}`);
+    log(`Author: ${novelData.metadata.author}`);
+    log(`Total chapters: ${totalChaptersCount}`);
+    
+    // Enable buttons
+    fetchChaptersBtn.disabled = false;
+    editMetadataBtn.disabled = false;
+    checkTranslationBtn.disabled = false;
+    
+    // Optional: auto-check title duplication
+    await checkTitle();
+    
+    log('✓ JSON loaded successfully! Click "Fetch Chapters" to start translation workflow.', 'green');
+    
+  } catch (err) {
+    log(`Error loading JSON: ${err.message}`, 'red');
+    console.error(err);
+  } finally {
+    document.getElementById('loadJsonBtn').disabled = false;
+  }
+}
+
+// Add event listener
+document.getElementById('loadJsonBtn').addEventListener('click', loadFromJsonUrl);
+
+    // Function to detect Chinese characters
+function hasChinese(text) {
+  const chineseRegex = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/;
+  return chineseRegex.test(text);
+}
+
+// Count Chinese characters in text
+function countChineseChars(text) {
+  const chineseRegex = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g;
+  const matches = text.match(chineseRegex);
+  return matches ? matches.length : 0;
+}
+
+// Count Chinese characters in a batch of chapters
+function countChineseInBatch(start, end) {
+  let totalChinese = 0;
+  let chaptersWithChinese = [];
+  
+  for (let i = start; i < end; i++) {
+    const ch = novelData.chapters[i];
+    const titleCount = countChineseChars(ch.title || '');
+    const contentCount = countChineseChars(ch.content || '');
+    const chapterTotal = titleCount + contentCount;
+    
+    if (chapterTotal > 0) {
+      totalChinese += chapterTotal;
+      chaptersWithChinese.push({
+        index: i + 1,
+        title: ch.title,
+        count: chapterTotal
+      });
+    }
+  }
+  
+  return { totalChinese, chaptersWithChinese };
+}
+
+    // Track retry attempts per batch
+let batchRetryCounts = new Map();
+const MAX_RETRIES_PER_BATCH = 3;
+
+// Modified save handler with retry limit
+saveTranslationBtn.addEventListener('click', () => {
+  const total = totalChaptersCount || novelData.chapters.length;
+  const start = translateCursor;
+  const end   = Math.min(start + translateBatchSize, total);
+  
+  try {
+    extractAndSaveTranslatedBatch(start, end);
+    log(`Saved translated chapters ${start+1}–${end}.`, 'green');
+  } catch (e) {
+    log(`Error saving translation: ${e.message}`, 'red');
+    return;
+  }
+  
+  // === VALIDATION: Check for remaining Chinese characters ===
+  const { totalChinese, chaptersWithChinese } = countChineseInBatch(start, end);
+  
+  if (totalChinese > 200) {
+    // Track retry count for this batch
+    const batchKey = `${start}-${end}`;
+    const retryCount = (batchRetryCounts.get(batchKey) || 0) + 1;
+    batchRetryCounts.set(batchKey, retryCount);
+    
+    if (retryCount >= MAX_RETRIES_PER_BATCH) {
+      log(`⚠️ Batch ${start+1}–${end} has failed translation ${retryCount} times.`, 'red');
+      log(`Skipping this batch due to retry limit. You can manually re-translate later.`, 'red');
+      
+      // Ask user if they want to skip or continue retrying
+      const skip = confirm(`Batch ${start+1}–${end} still has ${totalChinese} Chinese characters after ${retryCount} attempts.\n\nClick OK to skip this batch, or Cancel to try again.`);
+      
+      if (skip) {
+        // Skip and continue
+        translateCursor = end;
+        consoleTranslate.innerHTML = '';
+        saveTranslationBtn.disabled = true;
+        fetchNextTranslateBatch().catch(err => {
+          log(`Error loading next batch: ${err.message}`, 'red');
+        });
+        return;
+      } else {
+        // User chose to retry - continue below
+      }
+    }
+    
+    // More than 200 Chinese symbols - needs re-translation
+    log(`⚠️ Warning: ${totalChinese} Chinese characters detected in this batch!`, 'orange');
+    log(`Chapters with Chinese: ${chaptersWithChinese.map(c => `Ch${c.index}(${c.count})`).join(', ')}`, 'orange');
+    log(`Re-rendering batch ${start+1}–${end} for re-translation (attempt ${retryCount}/${MAX_RETRIES_PER_BATCH})...`, 'orange');
+    
+    // Re-render the same batch instead of advancing
+    const batchObjs = buildBatchObjects(start, end);
+    renderTranslationBatchToConsole(batchObjs, start);
+    
+    // Don't advance cursor - user needs to re-translate
+    log('Please re-translate this batch and click "Save Translation" again.', 'orange');
+    return;
+  } else if (totalChinese > 0) {
+    // Some Chinese but under threshold - warn but continue
+    log(`ℹ️ Note: ${totalChinese} Chinese characters remaining (below 200 threshold)`, 'blue');
+    if (chaptersWithChinese.length > 0) {
+      log(`Chapters: ${chaptersWithChinese.map(c => `Ch${c.index}(${c.count})`).join(', ')}`, 'blue');
+    }
+  } else {
+    log('✓ No Chinese characters detected in this batch', 'green');
+    // Clear retry count for this batch since it passed
+    batchRetryCounts.delete(`${start}-${end}`);
+  }
+  
+  // Validation passed - advance cursor & fetch next batch
+  translateCursor = end;
+  consoleTranslate.innerHTML = '';
+  saveTranslationBtn.disabled = true;
+  
+  // Auto-continue to next batch
+  fetchNextTranslateBatch().catch(err => {
+    log(`Error loading next batch: ${err.message}`, 'red');
+  });
+});
+
+    const forceContinueBtn = document.createElement('button');
+forceContinueBtn.textContent = 'Force Continue (Skip Validation)';
+forceContinueBtn.disabled = true;
+forceContinueBtn.id = 'forceContinueBtn';
+document.querySelector('.container').appendChild(forceContinueBtn);
+
+// Enable when validation fails
+let validationFailed = false;
+let failedBatchStart = null;
+let failedBatchEnd = null;
+
+// Modified validation section in save handler:
+if (totalChinese > 200) {
+  validationFailed = true;
+  failedBatchStart = start;
+  failedBatchEnd = end;
+  forceContinueBtn.disabled = false;
+  
+  // ... rest of validation code
+}
+
+// Force continue handler
+forceContinueBtn.addEventListener('click', () => {
+  if (!validationFailed) return;
+  
+  log('⚠️ Forcing continuation despite Chinese characters...', 'orange');
+  log(`Skipping validation for batch ${failedBatchStart+1}–${failedBatchEnd}`, 'orange');
+  
+  // Advance cursor & fetch next batch
+  translateCursor = failedBatchEnd;
+  consoleTranslate.innerHTML = '';
+  saveTranslationBtn.disabled = true;
+  forceContinueBtn.disabled = true;
+  validationFailed = false;
+  
+  fetchNextTranslateBatch().catch(err => {
+    log(`Error loading next batch: ${err.message}`, 'red');
+  });
+});
+  </script>
+</body>
+
+<script src="epubjson.js"></script>
+</html>
