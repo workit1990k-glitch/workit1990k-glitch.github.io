@@ -372,7 +372,7 @@ async function scrapeNovel() {
     if (data.meta.authorUrl) data.meta.authorUrl = data.meta.authorUrl.trim();
     
     novelData = {
-      meta data.meta,
+      meta: data.meta,
       chapters: data.chapters.map(ch => ({
         ...ch,
         url: `${new URL(novelUrl).origin}/read/${data.meta.id}/p${ch.chapter}.html`
