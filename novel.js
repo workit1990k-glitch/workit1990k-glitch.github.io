@@ -1,21 +1,9 @@
-(async function WTREpubDownloader() {
+(async function WTRJsonDownloader() {
 "use strict";
 
 // --- Configuration ---
-const STORAGE_KEY = 'wtr_epub_data';
+const STORAGE_KEY = 'wtr_json_data';
 const DELAY_MS = 12000; // 12 seconds
-
-// --- Load JSZip dynamically ---
-async function loadJSZip() {
-    if (typeof JSZip !== 'undefined') return JSZip;
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-        script.onload = () => resolve(JSZip);
-        script.onerror = reject;
-        document.head.appendChild(script);
-    });
-}
 
 // --- State ---
 let isDownloading = false;
@@ -25,8 +13,7 @@ let downloadState = {
     novelId: '',
     chapters: [], // { order, title, content }
     totalChapters: 0,
-    lastUpdated: Date.now(),
-    metadata: {} // { cover, author, description, genres }
+    lastUpdated: Date.now()
 };
 
 // --- Helper: Load/Save State ---
@@ -36,7 +23,7 @@ function loadState() {
         if (raw) {
             const parsed = JSON.parse(raw);
             if (parsed.novelId === downloadState.novelId) {
-                downloadState = { ...downloadState, ...parsed };
+                downloadState = parsed;
             }
         }
     } catch (e) {
@@ -50,7 +37,7 @@ function saveState() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(downloadState));
         updateProgressUI();
     } catch (e) {
-        alert("Storage Full! Please click 'Download EPUB' to save and clear space.");
+        alert("Storage Full! Please click 'Download JSON' to save and clear space.");
         stopDownload();
     }
 }
@@ -62,62 +49,20 @@ function clearState() {
         novelId: '',
         chapters: [],
         totalChapters: 0,
-        lastUpdated: Date.now(),
-        metadata: {}
+        lastUpdated: Date.now()
     };
     updateProgressUI();
 }
 
-// --- Extract Novel Metadata from Main Page ---
-async function fetchNovelMetadata(novelId, language) {
-    try {
-        const novelUrl = `https://wtr-lab.com/${language}/novel/${novelId}`;
-        const resp = await fetch(novelUrl, { credentials: "include" });
-        const html = await resp.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        
-        // Cover image
-        const coverImg = doc.querySelector('.image-wrap img');
-        const coverUrl = coverImg?.src ? `https://wtr-lab.com${coverImg.src}` : null;
-        
-        // Title (first <li> in title-list)
-        const titleList = doc.querySelector('ul.title-list li');
-        const title = titleList?.textContent?.trim() || "Unknown Novel";
-        
-        // Description
-        const descEl = doc.querySelector('span.description p');
-        const description = descEl?.textContent?.trim() || "";
-        
-        // Genres (only genre tags)
-        const genreTags = doc.querySelectorAll('a.genre.tag');
-        const genres = Array.from(genreTags).map(el => el.textContent.trim()).filter(g => g);
-        
-        // Author
-        const authorEl = doc.querySelector('.sig-author a');
-        const author = authorEl?.textContent?.trim() || "Unknown Author";
-        
-        return { cover: coverUrl, title, description, genres, author };
-    } catch (e) {
-        console.error("Failed to fetch metadata", e);
-        return { cover: null, title: "Unknown Novel", description: "", genres: [], author: "Unknown" };
-    }
-}
-
-// --- DOM Setup ---
+// --- 1. Chapter Info ---
 const dom = document;
 const leaves = dom.baseURI.split("/");
 const novelIndex = leaves.indexOf("novel");
 const id = leaves[novelIndex + 1];
-const language = leaves[novelIndex - 1] || 'en';
+const novelLink = document.querySelector('a[href*="/novel/"]');
+const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"<>]/g, '-') : "Unknown Novel";
 
-// Try to get title from menu-button first, fallback to current method
-const menuButton = document.querySelector('a.menu-button[href*="/novel/"]');
-const novelTitle = menuButton 
-    ? menuButton.querySelector('.title')?.textContent?.trim().replace(/[\/\\?%*:|"<>]/g, '-') || "Unknown Novel"
-    : (document.querySelector('a[href*="/novel/"]')?.textContent?.trim().replace(/[\/\\?%*:|"<>]/g, '-') || "Unknown Novel");
-
-// Initialize State
+// Initialize State ID
 downloadState.novelId = id;
 downloadState.novelTitle = novelTitle;
 loadState();
@@ -125,41 +70,65 @@ loadState();
 // Fetch Chapter List
 const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { credentials: "include" });
 const chaptersJson = await chaptersResp.json();
-const chapters = chaptersJson.chapters;
-downloadState.totalChapters = chapters.length;
+const allChapters = chaptersJson.chapters;
+downloadState.totalChapters = allChapters.length;
 
-// Fetch metadata if not already loaded
-if (!downloadState.metadata?.author) {
-    const meta = await fetchNovelMetadata(id, language);
-    downloadState.metadata = meta;
-    saveState();
+// --- Parse Chapter Range ---
+function parseChapterRange(rangeStr, total) {
+    if (!rangeStr || rangeStr.trim() === '') {
+        return { start: 1, end: total };
+    }
+    const match = rangeStr.trim().match(/^(\d+)\s*-\s*(\d+)$/);
+    if (match) {
+        let start = parseInt(match[1], 10);
+        let end = parseInt(match[2], 10);
+        start = Math.max(1, Math.min(start, total));
+        end = Math.max(start, Math.min(end, total));
+        return { start, end };
+    }
+    return { start: 1, end: total };
 }
 
-// --- Menu UI ---
+function getChaptersInRange(rangeStr) {
+    const { start, end } = parseChapterRange(rangeStr, allChapters.length);
+    return allChapters.filter(ch => ch.order >= start && ch.order <= end);
+}
+
+// --- 2. Menu UI ---
 const menu = document.createElement("div");
 menu.style.cssText = `
 position: fixed; top: 60px; right: 20px; background: #fff; border-radius: 12px;
 padding: 0; max-height: 80vh; overflow-y: auto; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-display: none; width: 350px; font-family: sans-serif;
+display: none; width: 380px; font-family: sans-serif;
 `;
 
 menu.innerHTML = `
 <div id="menuHeader" style="
 position: sticky; top: 0; background: #fff; z-index: 10;
-padding: 10px; border-bottom: 1px solid #ddd;
+padding: 12px; border-bottom: 1px solid #ddd;
 ">
-<h3 style="margin: 0 0 6px 0;">EPUB Downloader</h3>
-<div style="font-size:12px; color:#666; margin-bottom:8px;" id="progressText">Ready</div>
-<div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button id="toggleDownloadBtn" style="flex:1; background:#28a745; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Start</button>
-    <button id="downloadEpubBtn" style="flex:1; background:#007bff; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save EPUB</button>
-    <button id="clearBtn" style="background:#dc3545; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Clear</button>
+<h3 style="margin: 0 0 8px 0;">📚 JSON/EPUB Downloader</h3>
+<div style="font-size:12px; color:#666; margin-bottom:10px;" id="progressText">Ready</div>
+
+<!-- Chapter Range Selector -->
+<div style="margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    <label style="font-size:12px; font-weight:500;">Chapters:</label>
+    <input type="text" id="rangeInput" placeholder="e.g., 1-100 or 400-700" 
+           style="flex:1; min-width:120px; padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+    <span style="font-size:11px; color:#888;">(default: all)</span>
+</div>
+
+<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+    <button id="toggleDownloadBtn" style="flex:1; min-width:70px; background:#28a745; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Start</button>
+    <button id="downloadJsonBtn" style="flex:1; min-width:70px; background:#007bff; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Save JSON</button>
+    <button id="downloadEpubBtn" style="flex:1; min-width:70px; background:#6f42c1; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Export EPUB</button>
+    <button id="clearBtn" style="background:#dc3545; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Clear</button>
 </div>
 </div>
-<div id="chaptersList" style="padding:10px;">
-${chapters.map(ch => `
-<div style="padding:4px 0; border-bottom:1px solid #eee; font-size:13px;">
-    ${ch.order}: ${ch.title}
+<div id="chaptersList" style="padding:10px; max-height:50vh; overflow-y:auto;">
+${allChapters.map(ch => `
+<div style="padding:4px 0; border-bottom:1px solid #eee; font-size:13px;" data-order="${ch.order}">
+    <span style="color:#666;">${ch.order}:</span> ${ch.title}
 </div>
 `).join("")}
 </div>
@@ -169,12 +138,61 @@ document.body.appendChild(menu);
 
 // Toggle Menu Button
 const toggleBtn = document.createElement("button");
-toggleBtn.textContent = "📚 EPUB Download";
-toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 999999; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer;`;
+toggleBtn.textContent = "📥 Download";
+toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 999999; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size:13px;`;
 toggleBtn.onclick = () => menu.style.display = menu.style.display === "none" ? "block" : "none";
 document.body.appendChild(toggleBtn);
 
-// --- Fetch Chapter Content (Same as original) ---
+// --- EPUB Metadata Modal ---
+const epubModal = document.createElement("div");
+epubModal.style.cssText = `
+position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+background: rgba(0,0,0,0.5); z-index: 100000; display: none; 
+justify-content: center; align-items: center;
+`;
+epubModal.innerHTML = `
+<div style="background:#fff; border-radius:12px; padding:20px; width:90%; max-width:500px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+    <h3 style="margin:0 0 15px 0; border-bottom:1px solid #eee; padding-bottom:10px;">📖 EPUB Export Settings</h3>
+    
+    <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL</label>
+        <input type="url" id="epubCover" placeholder="https://example.com/cover.jpg" 
+               style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+    </div>
+    
+    <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Book Title</label>
+        <input type="text" id="epubTitle" value="${novelTitle}" 
+               style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+    </div>
+    
+    <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Author</label>
+        <input type="text" id="epubAuthor" placeholder="Author name" 
+               style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+    </div>
+    
+    <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Description</label>
+        <textarea id="epubDesc" rows="3" placeholder="Brief description..." 
+                  style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px; resize:vertical;"></textarea>
+    </div>
+    
+    <div style="margin-bottom:15px;">
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Tags (comma-separated)</label>
+        <input type="text" id="epubTags" placeholder="fantasy, romance, cultivation" 
+               style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+    </div>
+    
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button id="epubCancel" style="padding:8px 20px; background:#6c757d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
+        <button id="epubConfirm" style="padding:8px 20px; background:#6f42c1; color:#fff; border:none; border-radius:4px; cursor:pointer;">Generate EPUB</button>
+    </div>
+</div>
+`;
+document.body.appendChild(epubModal);
+
+// --- 3. Fetch Chapter Content ---
 async function fetchChapterContent(order) {
     const formData = { translate: "ai", language: leaves[novelIndex - 1], raw_id: id, chapter_no: order };
     const res = await fetch("https://wtr-lab.com/api/reader/get", {
@@ -192,22 +210,26 @@ async function fetchChapterContent(order) {
     if (!json?.data?.data?.body) {
         throw new Error("Missing body");
     }
-    // Reconstruct text simply
+    
     const tempDiv = document.createElement("div");
     let imgCounter = 0;
+    
     json.data.data.body.forEach(el => {
         if (el === "[image]") {
             const src = json.data.data?.images?.[imgCounter++] ?? "";
             if (src) {
                 const img = document.createElement("img");
                 img.src = src;
+                img.alt = "Chapter image";
+                img.style.maxWidth = "100%";
                 tempDiv.appendChild(img);
             }
         } else {
             const pnode = document.createElement("p");
             const wrapper = document.createElement("div");
             wrapper.innerHTML = el;
-            pnode.textContent = wrapper.textContent;
+            pnode.textContent = wrapper.textContent || wrapper.innerText;
+            
             if (json?.data?.data?.glossary_data?.terms) {
                 for (let i = 0; i < json.data.data.glossary_data.terms.length; i++) {
                     const term = json.data.data.glossary_data.terms[i][0];
@@ -220,6 +242,7 @@ async function fetchChapterContent(order) {
             tempDiv.appendChild(pnode);
         }
     });
+    
     const text = Array.from(tempDiv.querySelectorAll("p")).map(p => p.textContent).join("\n").trim();
     return {
         order: order,
@@ -228,173 +251,18 @@ async function fetchChapterContent(order) {
     };
 }
 
-// --- EPUB Generation Functions ---
-function escapeXml(unsafe) {
-    return unsafe.replace(/[<>&'"]/g, c => ({
-        '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
-    })[c]);
-}
-
-function generateMimetype() {
-    return "application/epub+zip";
-}
-
-function generateContainerXml() {
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`;
-}
-
-function generateContentOpf(metadata, chapters) {
-    const { title, author, description, genres, cover } = metadata;
-    const uid = `wtr-${downloadState.novelId}`;
-    const date = new Date().toISOString().split('T')[0];
-    
-    // Generate manifest items
-    let manifestItems = `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-    <item id="nav" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>`;
-    
-    chapters.forEach((ch, idx) => {
-        const fname = `chapter_${String(idx).padStart(3, '0')}.xhtml`;
-        manifestItems += `\n    <item id="chap${idx}" href="${fname}" media-type="application/xhtml+xml"/>`;
-    });
-    
-    if (cover) {
-        manifestItems += `\n    <item id="cover-image" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>`;
-    }
-    
-    // Generate spine
-    let spineItems = chapters.map((_, idx) => `<itemref idref="chap${idx}"/>`).join('\n      ');
-    
-    // Generate metadata
-    const authorList = Array.isArray(author) ? author : [author];
-    const authorXml = authorList.map(a => `<dc:creator opf:role="aut">${escapeXml(a)}</dc:creator>`).join('\n      ');
-    const genreXml = genres.map(g => `<dc:subject>${escapeXml(g)}</dc:subject>`).join('\n      ');
-    
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<package version="3.0" unique-identifier="uid" xmlns="http://www.idpf.org/2007/opf">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:identifier id="uid">${uid}</dc:identifier>
-    <dc:title>${escapeXml(title)}</dc:title>
-    ${authorXml}
-    <dc:language>en</dc:language>
-    <dc:date>${date}</dc:date>
-    <dc:publisher>wtr-lab.com</dc:publisher>
-    ${description ? `<dc:description>${escapeXml(description)}</dc:description>` : ''}
-    ${genreXml}
-    ${cover ? '<meta property="dcterms:modified">' + date + '</meta>' : ''}
-  </metadata>
-  <manifest>
-    ${manifestItems}
-  </manifest>
-  <spine>
-    ${spineItems}
-  </spine>
-</package>`;
-}
-
-function generateTocNcx(metadata, chapters) {
-    const { title } = metadata;
-    const uid = `wtr-${downloadState.novelId}`;
-    
-    let navPoints = chapters.map((ch, idx) => `
-    <navPoint id="navpoint-${idx}" playOrder="${idx + 1}">
-      <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
-      <content src="OEBPS/chapter_${String(idx).padStart(3, '0')}.xhtml"/>
-    </navPoint>`).join('');
-    
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
-  <head>
-    <meta name="dtb:uid" content="${uid}"/>
-    <meta name="dtb:depth" content="1"/>
-    <meta name="dtb:totalPageCount" content="0"/>
-    <meta name="dtb:maxPageNumber" content="0"/>
-  </head>
-  <docTitle><text>${escapeXml(title)}</text></docTitle>
-  <navMap>
-    ${navPoints}
-  </navMap>
-</ncx>`;
-}
-
-function generateTocXhtml(metadata, chapters) {
-    const { title } = metadata;
-    
-    let navItems = chapters.map((ch, idx) => `
-      <li><a href="chapter_${String(idx).padStart(3, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`).join('');
-    
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-  <title>Table of Contents</title>
-  <style>
-    body { font-family: sans-serif; padding: 1em; }
-    nav ol { list-style: none; padding-left: 0; }
-    nav li { margin: 0.5em 0; }
-    nav a { text-decoration: none; color: #333; }
-  </style>
-</head>
-<body>
-  <nav epub:type="toc" id="toc">
-    <h1>Table of Contents</h1>
-    <ol>
-      ${navItems}
-    </ol>
-  </nav>
-</body>
-</html>`;
-}
-
-function generateChapterXhtml(chapter, index) {
-    const { title, content } = chapter;
-    // Convert plain text to simple XHTML paragraphs
-    const paragraphs = content.split('\n\n').filter(p => p.trim()).map(p => 
-        `<p>${escapeXml(p.trim())}</p>`
-    ).join('\n');
-    
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <title>${escapeXml(title)}</title>
-  <style>
-    body { font-family: serif; line-height: 1.6; padding: 1em; max-width: 40em; margin: 0 auto; }
-    h1 { text-align: center; margin-bottom: 1.5em; }
-    p { text-indent: 1.5em; margin: 0 0 1em 0; }
-    p:first-of-type { text-indent: 0; }
-  </style>
-</head>
-<body>
-  <h1>${escapeXml(title)}</h1>
-  ${paragraphs}
-</body>
-</html>`;
-}
-
-async function fetchCoverImage(url) {
-    if (!url) return null;
-    try {
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        return await blob.arrayBuffer();
-    } catch (e) {
-        console.warn("Failed to fetch cover image", e);
-        return null;
-    }
-}
-
-// --- Download Logic ---
+// --- 4. Download Logic ---
 const toggleBtnEl = document.getElementById("toggleDownloadBtn");
 const progressText = document.getElementById("progressText");
+const rangeInput = document.getElementById("rangeInput");
 
 function updateProgressUI() {
     const count = downloadState.chapters.length;
     const total = downloadState.totalChapters;
-    progressText.textContent = `${count} / ${total} Chapters Saved`;
-    toggleBtnEl.textContent = isDownloading ? "Pause" : "Start";
+    const range = rangeInput.value.trim();
+    const { start, end } = parseChapterRange(range, total);
+    progressText.textContent = `${count} / ${total} Saved | Range: ${start}-${end}`;
+    toggleBtnEl.textContent = isDownloading ? "⏸ Pause" : "▶ Start";
     toggleBtnEl.style.background = isDownloading ? "#dc3545" : "#28a745";
 }
 
@@ -422,80 +290,269 @@ document.getElementById("clearBtn").onclick = () => {
     }
 };
 
-document.getElementById("downloadEpubBtn").onclick = async () => {
+// JSON Download
+document.getElementById("downloadJsonBtn").onclick = () => {
     if (downloadState.chapters.length === 0) {
         alert("No chapters downloaded yet.");
         return;
     }
+    const range = rangeInput.value.trim();
+    const { start, end } = parseChapterRange(range, downloadState.totalChapters);
+    const filename = (start === 1 && end === downloadState.totalChapters) 
+        ? `${downloadState.novelTitle}.json` 
+        : `${downloadState.novelTitle} ${start}-${end}.json`;
     
-    progressText.textContent = "Generating EPUB...";
+    const blob = new Blob([JSON.stringify(downloadState, null, 2)], { type: 'application/json' });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     
-    try {
-        const JSZip = await loadJSZip();
-        const zip = new JSZip();
-        const { title, author, description, genres, cover: coverUrl } = downloadState.metadata;
-        
-        // Add mimetype (must be first, uncompressed)
-        zip.file("mimetype", generateMimetype(), { compression: "STORE" });
-        
-        // Add META-INF/container.xml
-        zip.file("META-INF/container.xml", generateContainerXml());
-        
-        // Add OEBPS files
-        const oebps = zip.folder("OEBPS");
-        oebps.file("content.opf", generateContentOpf(downloadState.metadata, downloadState.chapters));
-        oebps.file("toc.ncx", generateTocNcx(downloadState.metadata, downloadState.chapters));
-        oebps.file("toc.xhtml", generateTocXhtml(downloadState.metadata, downloadState.chapters));
-        
-        // Add chapter files
-        downloadState.chapters.forEach((ch, idx) => {
-            const fname = `chapter_${String(idx).padStart(3, '0')}.xhtml`;
-            oebps.file(fname, generateChapterXhtml(ch, idx));
-        });
-        
-        // Add cover image if available
-        if (coverUrl) {
-            const coverBuffer = await fetchCoverImage(coverUrl);
-            if (coverBuffer) {
-                oebps.folder("images").file("cover.jpg", coverBuffer);
-            }
-        }
-        
-        // Generate EPUB blob
-        const blob = await zip.generateAsync({ 
-            type: "blob",
-            mimeType: "application/epub+zip",
-            compression: "DEFLATE"
-        });
-        
-        // Trigger download
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `${downloadState.novelTitle.replace(/[^\w\-]+/g, '_')}.epub`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-        
-        progressText.textContent = "EPUB Ready!";
-        
-        // Optional: Clear storage after download
-        if(confirm("Download complete. Clear local storage to save space?")) {
-            clearState();
-        }
-    } catch (err) {
-        console.error("EPUB generation failed", err);
-        alert("Failed to generate EPUB. Check console for details.");
-        updateProgressUI();
+    if(confirm("Download complete. Clear local storage to save space?")) {
+        clearState();
     }
 };
 
+// EPUB Modal Handlers
+document.getElementById("downloadEpubBtn").onclick = () => {
+    if (downloadState.chapters.length === 0) {
+        alert("No chapters downloaded yet. Please download chapters first.");
+        return;
+    }
+    // Pre-fill title with range if specified
+    const range = rangeInput.value.trim();
+    if (range) {
+        const { start, end } = parseChapterRange(range, downloadState.totalChapters);
+        if (start !== 1 || end !== downloadState.totalChapters) {
+            document.getElementById("epubTitle").value = `${downloadState.novelTitle} ${start}-${end}`;
+        }
+    }
+    epubModal.style.display = "flex";
+};
+
+document.getElementById("epubCancel").onclick = () => {
+    epubModal.style.display = "none";
+};
+
+document.getElementById("epubConfirm").onclick = async () => {
+    epubModal.style.display = "none";
+    
+    const metadata = {
+        cover: document.getElementById("epubCover").value.trim(),
+        title: document.getElementById("epubTitle").value.trim() || downloadState.novelTitle,
+        author: document.getElementById("epubAuthor").value.trim() || "Unknown",
+        description: document.getElementById("epubDesc").value.trim(),
+        tags: document.getElementById("epubTags").value.trim().split(',').map(t => t.trim()).filter(t => t)
+    };
+    
+    const range = rangeInput.value.trim();
+    const { start, end } = parseChapterRange(range, downloadState.totalChapters);
+    
+    try {
+        await generateAndDownloadEpub(metadata, start, end);
+        if(confirm("EPUB generated! Clear local storage to save space?")) {
+            clearState();
+        }
+    } catch (err) {
+        console.error("EPUB generation failed:", err);
+        alert("Failed to generate EPUB: " + err.message);
+    }
+};
+
+// --- EPUB Generation (Pure JS, no external libs) ---
+async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
+    // Filter chapters in range
+    const chapters = downloadState.chapters
+        .filter(c => c.order >= startOrder && c.order <= endOrder)
+        .sort((a, b) => a.order - b.order);
+    
+    if (chapters.length === 0) {
+        throw new Error("No chapters in selected range");
+    }
+    
+    // Load JSZip dynamically if not present
+    if (typeof JSZip === 'undefined') {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("Failed to load JSZip library"));
+            document.head.appendChild(script);
+        });
+    }
+    
+    const zip = new JSZip();
+    const timestamp = new Date().toISOString().split('T')[0];
+    const uid = `urn:uuid:${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 1. mimetype (must be first, uncompressed)
+    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+    
+    // 2. META-INF/container.xml
+    zip.file("META-INF/container.xml", `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`);
+    
+    // 3. Generate chapter XHTML files
+    const oebps = zip.folder("OEBPS");
+    oebps.file("styles.css", `
+        body { font-family: serif; line-height: 1.6; margin: 5%; color: #333; }
+        h1 { text-align: center; color: #2c3e50; }
+        p { margin: 1em 0; text-indent: 1.5em; }
+        img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+        .chapter-title { text-align: center; margin-bottom: 2em; }
+    `);
+    
+    let manifestItems = '';
+    let spineItems = '';
+    
+    // Cover page
+    oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>Cover</title>
+    <style>body{margin:0;padding:0;text-align:center}</style>
+</head>
+<body>
+    ${metadata.cover ? `<img src="${metadata.cover}" alt="Cover" style="max-width:100%;max-height:100vh"/>` : '<h1 style="margin-top:40vh">'+metadata.title+'</h1>'}
+</body>
+</html>`);
+    manifestItems += `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n`;
+    manifestItems += `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n`;
+    
+    // Chapter files
+    for (const ch of chapters) {
+        const safeTitle = ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]));
+        const safeContent = ch.content
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '</p><p>');
+        
+        const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>${safeTitle}</title>
+    <link rel="stylesheet" type="text/css" href="styles.css"/>
+</head>
+<body>
+    <h1 class="chapter-title">${safeTitle}</h1>
+    <p>${safeContent}</p>
+</body>
+</html>`;
+        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
+        oebps.file(filename, xhtml);
+        manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
+        spineItems += `<itemref idref="ch${ch.order}"/>\n`;
+    }
+    
+    // 4. content.opf
+    const tagsXml = metadata.tags.map(tag => `<dc:subject>${tag.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:subject>`).join('\n');
+    const descSafe = (metadata.description || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]));
+    
+    oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">${uid}</dc:identifier>
+    <dc:title>${metadata.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:title>
+    <dc:creator>${metadata.author.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:date>${timestamp}</dc:date>
+    ${metadata.description ? `<dc:description>${descSafe}</dc:description>` : ''}
+    ${tagsXml}
+    <meta property="rendition:orientation">portrait</meta>
+    <meta property="rendition:flow">paginated</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="css" href="styles.css" media-type="text/css"/>
+    ${manifestItems}
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="cover"/>
+    ${spineItems}
+  </spine>
+</package>`);
+    
+    // 5. toc.ncx
+    let navPoints = chapters.map((ch, idx) => `
+    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}">
+      <navLabel><text>${ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></navLabel>
+      <content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/>
+    </navPoint>`).join('');
+    
+    oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="${uid}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>${metadata.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></docTitle>
+  <docAuthor><text>${metadata.author.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></docAuthor>
+  <navMap>
+    ${navPoints}
+  </navMap>
+</ncx>`);
+    
+    // 6. nav.xhtml (EPUB3 navigation)
+    const navItems = chapters.map(ch => 
+        `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</a></li>`
+    ).join('\n');
+    
+    oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>Table of Contents</title>
+</head>
+<body>
+    <nav epub:type="toc">
+        <h1>Chapters</h1>
+        <ol>
+            ${navItems}
+        </ol>
+    </nav>
+</body>
+</html>`);
+    
+    // Generate and download
+    const filename = (startOrder === 1 && endOrder === downloadState.totalChapters) 
+        ? `${metadata.title}.epub` 
+        : `${metadata.title}.epub`;
+    
+    const blob = await zip.generateAsync({ 
+        type: "blob", 
+        mimeType: "application/epub+zip",
+        compression: "DEFLATE"
+    });
+    
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+}
+
+// --- Main Download Loop ---
 async function runDownloadLoop() {
+    const range = rangeInput.value.trim();
+    const chaptersToDownload = getChaptersInRange(range);
     const existingOrders = new Set(downloadState.chapters.map(c => c.order));
-    const remaining = chapters.filter(ch => !existingOrders.has(ch.order));
+    const remaining = chaptersToDownload.filter(ch => !existingOrders.has(ch.order));
 
     if (remaining.length === 0) {
-        alert("All chapters already downloaded!");
+        alert("All chapters in range already downloaded!");
         isDownloading = false;
         updateProgressUI();
         return;
@@ -506,17 +563,20 @@ async function runDownloadLoop() {
             break;
         }
 
-        progressText.textContent = `Fetching ${ch.order}...`;
+        progressText.textContent = `Fetching #${ch.order}...`;
         try {
             const data = await fetchChapterContent(ch.order);
-            downloadState.chapters.push(data);
-            saveState();
-            console.log(`Saved chapter ${ch.order}`);
+            // Avoid duplicates
+            if (!downloadState.chapters.some(c => c.order === data.order)) {
+                downloadState.chapters.push(data);
+                saveState();
+                console.log(`✓ Saved chapter ${ch.order}`);
+            }
         } catch (err) {
-            console.error(`Failed chapter ${ch.order}`, err);
-            progressText.textContent = `Error at ${ch.order}. Paused.`;
+            console.error(`✗ Failed chapter ${ch.order}`, err);
+            progressText.textContent = `Error at #${ch.order}. Paused.`;
             stopDownload();
-            alert(`Failed to download chapter ${ch.order}. Check console.`);
+            alert(`Failed to download chapter ${ch.order}:\n${err.message}`);
             break;
         }
 
@@ -524,11 +584,23 @@ async function runDownloadLoop() {
     }
 
     if (isDownloading && !stopRequested) {
-        alert("Download Complete! Click 'Save EPUB' to export.");
+        alert(`✓ Download Complete! ${downloadState.chapters.length} chapters saved.`);
         isDownloading = false;
         updateProgressUI();
     }
 }
 
+// Initialize
 updateProgressUI();
+
+// Highlight chapters in range (visual feedback)
+rangeInput.addEventListener('input', () => {
+    const { start, end } = parseChapterRange(rangeInput.value.trim(), allChapters.length);
+    document.querySelectorAll('#chaptersList > div').forEach(div => {
+        const order = parseInt(div.dataset.order, 10);
+        div.style.background = (order >= start && order <= end) ? '#e8f4fd' : 'transparent';
+    });
+    updateProgressUI();
+});
+
 })();
