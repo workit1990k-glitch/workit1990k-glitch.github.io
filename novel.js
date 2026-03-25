@@ -1,3 +1,13 @@
+// ==UserScript==
+// @name        WTR Lab JSON & EPUB Downloader (Fixed Storage)
+// @namespace   Violentmonkey Scripts
+// @match       https://wtr-lab.com/en/*
+// @grant       none
+// @version     4.1
+// @author      -
+// @description Fixed Storage Full error. Blocks Base64 covers. Adds Nuke Storage button.
+// ==/UserScript==
+
 (async function WTRMetaDownloader() {
 "use strict";
 
@@ -30,7 +40,9 @@ function loadState() {
                 downloadState = parsed;
             }
         }
-    } catch (e) { console.error("Failed to load state", e); }
+    } catch (e) { 
+        console.error("Failed to load state", e); 
+    }
 }
 
 function saveState() {
@@ -39,14 +51,19 @@ function saveState() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(downloadState));
         updateProgressUI();
     } catch (e) {
-        alert("Storage Full! Please click 'Save JSON' to backup and clear space.");
+        // IMPROVED ERROR HANDLING
+        let msg = "Storage Error: " + e.name;
+        if (e.name === 'QuotaExceededError') {
+            msg = "Storage FULL! Click 'Nuke Storage' to clear space.";
+        }
+        console.error(msg, e);
+        alert(msg);
         stopDownload();
     }
 }
 
 function clearState() {
     localStorage.removeItem(STORAGE_KEY);
-    // Reset chapters but keep metadata if possible
     const meta = { ...downloadState };
     downloadState = {
         novelId: meta.novelId,
@@ -75,7 +92,7 @@ downloadState.novelId = id;
 downloadState.title = novelTitle;
 loadState();
 
-// Scrape Metadata from Page (Adjust selectors if site changes)
+// Scrape Metadata from Page
 function scrapeMetadata() {
     // Author
     const authorEl = document.querySelector('.author, .mb-2 a[href*="/author/"]');
@@ -89,12 +106,21 @@ function scrapeMetadata() {
     const descEl = document.querySelector('.description, .summary, .mb-3');
     downloadState.description = descEl ? descEl.textContent.trim() : "";
 
-    // Cover
+    // Cover (FIXED: Ignore Base64 Data URIs to save space)
     const coverEl = document.querySelector('.image-wrap img, .cover img, picture source[srcset]');
     if (coverEl) {
-        downloadState.coverUrl = coverEl.src || coverEl.srcset;
+        let url = coverEl.src || coverEl.srcset;
+        // Only save if it starts with http (ignore data:image/base64)
+        if (url && url.startsWith('http')) {
+            downloadState.coverUrl = url.split(' ')[0]; // Take first URL if srcset has multiple
+        } else {
+            downloadState.coverUrl = '';
+        }
     }
-    saveState();
+    // Only save if we actually have new metadata (avoid triggering quota on load)
+    if (downloadState.author !== "Unknown" || downloadState.genres.length > 0) {
+        saveState();
+    }
 }
 
 // Fetch Chapter List
@@ -102,7 +128,7 @@ const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { cre
 const chaptersJson = await chaptersResp.json();
 const chapters = chaptersJson.chapters;
 downloadState.totalChapters = chapters.length;
-scrapeMetadata(); // Run scraping immediately
+scrapeMetadata();
 
 // --- 2. Menu UI ---
 const menu = document.createElement("div");
@@ -123,7 +149,10 @@ padding: 10px; border-bottom: 1px solid #ddd;
     <button id="toggleDownloadBtn" style="flex:1; background:#28a745; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Start</button>
     <button id="saveJsonBtn" style="flex:1; background:#007bff; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save JSON</button>
     <button id="saveEpubBtn" style="flex:1; background:#6f42c1; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save EPUB</button>
-    <button id="clearBtn" style="background:#dc3545; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Clear</button>
+</div>
+<div style="display:flex; gap:8px; margin-top:8px;">
+    <button id="clearBtn" style="flex:1; background:#dc3545; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Clear Chapters</button>
+    <button id="nukeBtn" style="flex:1; background:#333; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">🗑️ Nuke Storage</button>
 </div>
 <div style="margin-top:8px; font-size:11px; color:#555;">
     <strong>Meta:</strong> <span id="metaStatus">Loaded</span>
@@ -175,7 +204,6 @@ async function fetchChapterContent(order) {
             const wrapper = document.createElement("div");
             wrapper.innerHTML = el;
             pnode.textContent = wrapper.textContent;
-            // Basic glossary replacement (kept minimal from original script)
             if (json?.data?.data?.glossary_data?.terms) {
                 for (let i = 0; i < json.data.data.glossary_data.terms.length; i++) {
                     const term = json.data.data.glossary_data.terms[i][0];
@@ -231,6 +259,14 @@ document.getElementById("clearBtn").onclick = () => {
     if(confirm("Clear all saved chapters? (Metadata kept)")) {
         clearState();
         stopDownload();
+    }
+};
+
+// --- Nuke Storage Button (FIX) ---
+document.getElementById("nukeBtn").onclick = () => {
+    if(confirm("WARNING: This will delete ALL saved data for this script on this site. Continue?")) {
+        localStorage.clear(); // Clears everything for this domain
+        location.reload();
     }
 };
 
