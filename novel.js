@@ -1,26 +1,20 @@
-// ==UserScript==
-// @name        WTR Lab JSON Downloader
-// @namespace   Violentmonkey Scripts
-// @match       https://wtr-lab.com/en/*
-// @grant       none
-// @version     3.0
-// @author      -
-// @description Downloads chapters to JSON with 12s delay. No EPUB, No Replacer.
-// ==/UserScript==
-
-(async function WTRJsonDownloader() {
+(async function WTRMetaDownloader() {
 "use strict";
 
 // --- Configuration ---
-const STORAGE_KEY = 'wtr_json_data';
+const STORAGE_KEY = 'wtr_meta_download_data';
 const DELAY_MS = 12000; // 12 seconds
 
 // --- State ---
 let isDownloading = false;
 let stopRequested = false;
 let downloadState = {
-    novelTitle: '',
     novelId: '',
+    title: '',
+    author: '',
+    genres: [],
+    description: '',
+    coverUrl: '',
     chapters: [], // { order, title, content }
     totalChapters: 0,
     lastUpdated: Date.now()
@@ -32,14 +26,11 @@ function loadState() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            // Merge if same novel, otherwise reset
             if (parsed.novelId === downloadState.novelId) {
                 downloadState = parsed;
             }
         }
-    } catch (e) {
-        console.error("Failed to load state", e);
-    }
+    } catch (e) { console.error("Failed to load state", e); }
 }
 
 function saveState() {
@@ -48,24 +39,30 @@ function saveState() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(downloadState));
         updateProgressUI();
     } catch (e) {
-        alert("Storage Full! Please click 'Download JSON' to save and clear space.");
+        alert("Storage Full! Please click 'Save JSON' to backup and clear space.");
         stopDownload();
     }
 }
 
 function clearState() {
     localStorage.removeItem(STORAGE_KEY);
+    // Reset chapters but keep metadata if possible
+    const meta = { ...downloadState };
     downloadState = {
-        novelTitle: '',
-        novelId: '',
+        novelId: meta.novelId,
+        title: meta.title,
+        author: meta.author,
+        genres: meta.genres,
+        description: meta.description,
+        coverUrl: meta.coverUrl,
         chapters: [],
-        totalChapters: 0,
+        totalChapters: meta.totalChapters,
         lastUpdated: Date.now()
     };
     updateProgressUI();
 }
 
-// --- 1. Chapter Info ---
+// --- 1. Scraping Metadata & Chapter Info ---
 const dom = document;
 const leaves = dom.baseURI.split("/");
 const novelIndex = leaves.indexOf("novel");
@@ -75,14 +72,37 @@ const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"
 
 // Initialize State ID
 downloadState.novelId = id;
-downloadState.novelTitle = novelTitle;
+downloadState.title = novelTitle;
 loadState();
+
+// Scrape Metadata from Page (Adjust selectors if site changes)
+function scrapeMetadata() {
+    // Author
+    const authorEl = document.querySelector('.author, .mb-2 a[href*="/author/"]');
+    downloadState.author = authorEl ? authorEl.textContent.trim() : "Unknown";
+
+    // Genres
+    const genreEls = document.querySelectorAll('.genres a, .mb-2 a[href*="/genre/"]');
+    downloadState.genres = Array.from(genreEls).map(el => el.textContent.trim());
+
+    // Description
+    const descEl = document.querySelector('.description, .summary, .mb-3');
+    downloadState.description = descEl ? descEl.textContent.trim() : "";
+
+    // Cover
+    const coverEl = document.querySelector('.image-wrap img, .cover img, picture source[srcset]');
+    if (coverEl) {
+        downloadState.coverUrl = coverEl.src || coverEl.srcset;
+    }
+    saveState();
+}
 
 // Fetch Chapter List
 const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { credentials: "include" });
 const chaptersJson = await chaptersResp.json();
 const chapters = chaptersJson.chapters;
 downloadState.totalChapters = chapters.length;
+scrapeMetadata(); // Run scraping immediately
 
 // --- 2. Menu UI ---
 const menu = document.createElement("div");
@@ -97,12 +117,16 @@ menu.innerHTML = `
 position: sticky; top: 0; background: #fff; z-index: 10;
 padding: 10px; border-bottom: 1px solid #ddd;
 ">
-<h3 style="margin: 0 0 6px 0;">JSON Downloader</h3>
+<h3 style="margin: 0 0 6px 0;">Downloader</h3>
 <div style="font-size:12px; color:#666; margin-bottom:8px;" id="progressText">Ready</div>
 <div style="display:flex; gap:8px; flex-wrap:wrap;">
     <button id="toggleDownloadBtn" style="flex:1; background:#28a745; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Start</button>
-    <button id="downloadJsonBtn" style="flex:1; background:#007bff; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save JSON</button>
+    <button id="saveJsonBtn" style="flex:1; background:#007bff; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save JSON</button>
+    <button id="saveEpubBtn" style="flex:1; background:#6f42c1; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Save EPUB</button>
     <button id="clearBtn" style="background:#dc3545; color:#fff; border:none; padding:6px; border-radius:4px; cursor:pointer;">Clear</button>
+</div>
+<div style="margin-top:8px; font-size:11px; color:#555;">
+    <strong>Meta:</strong> <span id="metaStatus">Loaded</span>
 </div>
 </div>
 <div id="chaptersList" style="padding:10px;">
@@ -118,12 +142,12 @@ document.body.appendChild(menu);
 
 // Toggle Menu Button
 const toggleBtn = document.createElement("button");
-toggleBtn.textContent = "📥 JSON Download";
+toggleBtn.textContent = "📥 Download";
 toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 999999; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer;`;
 toggleBtn.onclick = () => menu.style.display = menu.style.display === "none" ? "block" : "none";
 document.body.appendChild(toggleBtn);
 
-// --- 3. Fetch Chapter Content (Simplified) ---
+// --- 3. Fetch Chapter Content ---
 async function fetchChapterContent(order) {
     const formData = { translate: "ai", language: leaves[novelIndex - 1], raw_id: id, chapter_no: order };
     const res = await fetch("https://wtr-lab.com/api/reader/get", {
@@ -133,15 +157,9 @@ async function fetchChapterContent(order) {
         credentials: "include"
     });
     let json;
-    try {
-        json = await res.json();
-    } catch {
-        throw new Error("Invalid JSON");
-    }
-    if (!json?.data?.data?.body) {
-        throw new Error("Missing body");
-    }
-    // Reconstruct text simply
+    try { json = await res.json(); } catch { throw new Error("Invalid JSON"); }
+    if (!json?.data?.data?.body) { throw new Error("Missing body"); }
+
     const tempDiv = document.createElement("div");
     let imgCounter = 0;
     json.data.data.body.forEach(el => {
@@ -157,7 +175,7 @@ async function fetchChapterContent(order) {
             const wrapper = document.createElement("div");
             wrapper.innerHTML = el;
             pnode.textContent = wrapper.textContent;
-            // Basic glossary replacement (optional, kept minimal)
+            // Basic glossary replacement (kept minimal from original script)
             if (json?.data?.data?.glossary_data?.terms) {
                 for (let i = 0; i < json.data.data.glossary_data.terms.length; i++) {
                     const term = json.data.data.glossary_data.terms[i][0];
@@ -181,13 +199,15 @@ async function fetchChapterContent(order) {
 // --- 4. Download Logic ---
 const toggleBtnEl = document.getElementById("toggleDownloadBtn");
 const progressText = document.getElementById("progressText");
+const metaStatus = document.getElementById("metaStatus");
 
 function updateProgressUI() {
     const count = downloadState.chapters.length;
     const total = downloadState.totalChapters;
-    progressText.textContent = `${count} / ${total} Chapters Saved`;
+    progressText.textContent = `${count} / ${total} Chapters`;
     toggleBtnEl.textContent = isDownloading ? "Pause" : "Start";
     toggleBtnEl.style.background = isDownloading ? "#dc3545" : "#28a745";
+    metaStatus.textContent = downloadState.author ? "Loaded" : "Missing";
 }
 
 function stopDownload() {
@@ -208,13 +228,14 @@ toggleBtnEl.onclick = () => {
 };
 
 document.getElementById("clearBtn").onclick = () => {
-    if(confirm("Clear all saved progress?")) {
+    if(confirm("Clear all saved chapters? (Metadata kept)")) {
         clearState();
         stopDownload();
     }
 };
 
-document.getElementById("downloadJsonBtn").onclick = () => {
+// --- JSON Export ---
+document.getElementById("saveJsonBtn").onclick = () => {
     if (downloadState.chapters.length === 0) {
         alert("No chapters downloaded yet.");
         return;
@@ -222,18 +243,102 @@ document.getElementById("downloadJsonBtn").onclick = () => {
     const blob = new Blob([JSON.stringify(downloadState, null, 2)], { type: 'application/json' });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${downloadState.novelTitle}.json`;
+    a.download = `${downloadState.title}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Optional: Clear storage after download to save space
-    if(confirm("Download complete. Clear local storage to save space?")) {
-        clearState();
-    }
 };
 
+// --- EPUB Creation (With Metadata) ---
+document.getElementById("saveEpubBtn").onclick = async () => {
+    if (downloadState.chapters.length === 0) {
+        alert("No chapters downloaded yet.");
+        return;
+    }
+    await ensureJSZip();
+    const zip = new JSZip();
+    const { title, author, genres, description, coverUrl, chapters: savedChapters } = downloadState;
+
+    // EPUB Structure
+    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+    const metaInf = zip.folder("META-INF");
+    const oebps = zip.folder("OEBPS");
+    const imagesFolder = oebps.folder("images");
+
+    metaInf.file("container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+
+    // Cover Image Handling
+    let coverHref = null;
+    let coverId = "cover-image";
+    if (coverUrl) {
+        try {
+            const resp = await fetch(coverUrl, { credentials: "include" });
+            if (resp.ok) {
+                const buf = await resp.arrayBuffer();
+                const ct = resp.headers.get("content-type") || "";
+                let ext = "jpg";
+                if (ct.includes("png")) ext = "png";
+                else if (ct.includes("webp")) ext = "webp";
+                coverHref = `images/cover.${ext}`;
+                imagesFolder.file(`cover.${ext}`, new Uint8Array(buf));
+            }
+        } catch (e) { console.warn("Cover fetch failed", e); }
+    }
+
+    // Manifest & Spine
+    const chapterOrders = savedChapters.map(c => c.order);
+    const manifestItems = chapterOrders.map(num => `<item id="ch${num}" href="ch${num}.xhtml" media-type="application/xhtml+xml"/>`).join("\n");
+    const spineItems = chapterOrders.map(num => `<itemref idref="ch${num}"/>`).join("\n");
+    
+    // Metadata in OPF
+    const genreTags = genres.map(g => `<dc:subject>${escapeXml(g)}</dc:subject>`).join("\n");
+    const metaCoverTag = coverHref ? `<meta name="cover" content="${coverId}"/>` : "";
+    const descTag = description ? `<dc:description>${escapeXml(description)}</dc:description>` : "";
+
+    const opf = `<?xml version="1.0" encoding="utf-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:title>${escapeXml(title)}</dc:title>
+<dc:creator>${escapeXml(author)}</dc:creator>
+<dc:language>en</dc:language>
+<dc:identifier id="BookId">urn:uuid:${crypto.randomUUID()}</dc:identifier>
+${genreTags}
+${descTag}
+${metaCoverTag}
+</metadata>
+<manifest>
+${manifestItems}
+${coverHref ? `<item id="${coverId}" href="${coverHref}" media-type="image/${coverHref.split('.').pop()}"/>` : ''}
+</manifest>
+<spine>
+${spineItems}
+</spine>
+</package>`;
+
+    oebps.file("content.opf", opf);
+
+    // Chapters
+    savedChapters.forEach((ch, idx) => {
+        const safeHtml = `<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>${escapeXml(ch.title)}</title></head>
+<body><h1>${escapeXml(ch.title)}</h1>${ch.content.replace(/\n/g, "<br/>")}</body>
+</html>`;
+        oebps.file(`ch${ch.order}.xhtml`, safeHtml);
+    });
+
+    // Generate
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${sanitizeFilename(title)}.epub`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
+
+// --- Loop ---
 async function runDownloadLoop() {
-    // Determine start point
     const existingOrders = new Set(downloadState.chapters.map(c => c.order));
     const remaining = chapters.filter(ch => !existingOrders.has(ch.order));
 
@@ -245,16 +350,13 @@ async function runDownloadLoop() {
     }
 
     for (const ch of remaining) {
-        if (stopRequested || !isDownloading) {
-            break;
-        }
+        if (stopRequested || !isDownloading) break;
 
         progressText.textContent = `Fetching ${ch.order}...`;
         try {
             const data = await fetchChapterContent(ch.order);
             downloadState.chapters.push(data);
-            saveState(); // Save after each chapter
-            console.log(`Saved chapter ${ch.order}`);
+            saveState();
         } catch (err) {
             console.error(`Failed chapter ${ch.order}`, err);
             progressText.textContent = `Error at ${ch.order}. Paused.`;
@@ -262,8 +364,6 @@ async function runDownloadLoop() {
             alert(`Failed to download chapter ${ch.order}. Check console.`);
             break;
         }
-
-        // Delay 12 seconds
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
 
@@ -273,6 +373,20 @@ async function runDownloadLoop() {
         updateProgressUI();
     }
 }
+
+// --- Utils ---
+async function ensureJSZip() {
+    if (window.JSZip) return window.JSZip;
+    return new Promise((res, rej) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        s.onload = () => res(window.JSZip);
+        s.onerror = rej;
+        document.head.appendChild(s);
+    });
+}
+function escapeXml(str) { return (str+"").replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'})[c]); }
+function sanitizeFilename(name) { return (name||"book").replace(/[\/\\?%*:|"<>]/g,"-").slice(0,200); }
 
 updateProgressUI();
 })();
