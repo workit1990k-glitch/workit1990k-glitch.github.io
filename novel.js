@@ -361,24 +361,32 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- EPUB Generation (Pure JS, no external libs) ---
+// --- XML Entity Encoder (FIX) ---
+function escapeXml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe.toString()
+        .replace(/&/g, '&amp;')   // MUST be first!
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
+
+// --- EPUB Generation (Corrected) ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
-    // Filter chapters in range
     const chapters = downloadState.chapters
         .filter(c => c.order >= startOrder && c.order <= endOrder)
         .sort((a, b) => a.order - b.order);
     
-    if (chapters.length === 0) {
-        throw new Error("No chapters in selected range");
-    }
+    if (chapters.length === 0) throw new Error("No chapters in selected range");
     
-    // Load JSZip dynamically if not present
+    // Load JSZip if needed
     if (typeof JSZip === 'undefined') {
         await new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
             script.onload = resolve;
-            script.onerror = () => reject(new Error("Failed to load JSZip library"));
+            script.onerror = () => reject(new Error("Failed to load JSZip"));
             document.head.appendChild(script);
         });
     }
@@ -387,10 +395,10 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const timestamp = new Date().toISOString().split('T')[0];
     const uid = `urn:uuid:${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // 1. mimetype (must be first, uncompressed)
+    // 1. mimetype (first, uncompressed)
     zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
     
-    // 2. META-INF/container.xml
+    // 2. container.xml
     zip.file("META-INF/container.xml", `<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
@@ -398,75 +406,78 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
   </rootfiles>
 </container>`);
     
-    // 3. Generate chapter XHTML files
     const oebps = zip.folder("OEBPS");
-    oebps.file("styles.css", `
-        body { font-family: serif; line-height: 1.6; margin: 5%; color: #333; }
-        h1 { text-align: center; color: #2c3e50; }
-        p { margin: 1em 0; text-indent: 1.5em; }
-        img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
-        .chapter-title { text-align: center; margin-bottom: 2em; }
-    `);
+    
+    // 3. CSS
+    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:5%;color:#333}
+h1{text-align:center;color:#2c3e50}p{margin:1em 0;text-indent:1.5em}
+img{max-width:100%;height:auto;display:block;margin:1em auto}
+.chapter-title{text-align:center;margin-bottom:2em}`);
     
     let manifestItems = '';
     let spineItems = '';
     
-    // Cover page
+    // 4. Cover page
+    const coverContent = metadata.cover 
+        ? `<img src="${escapeXml(metadata.cover)}" alt="Cover" style="max-width:100%;max-height:100vh"/>`
+        : `<h1 style="margin-top:40vh">${escapeXml(metadata.title)}</h1>`;
+    
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-    <title>Cover</title>
-    <style>body{margin:0;padding:0;text-align:center}</style>
-</head>
-<body>
-    ${metadata.cover ? `<img src="${metadata.cover}" alt="Cover" style="max-width:100%;max-height:100vh"/>` : '<h1 style="margin-top:40vh">'+metadata.title+'</h1>'}
-</body>
-</html>`);
-    manifestItems += `<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n`;
-    manifestItems += `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n`;
+<head><title>Cover</title><style>body{margin:0;padding:0;text-align:center}</style></head>
+<body>${coverContent}</body></html>`);
     
-    // Chapter files
+    manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n';
+    manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
+    
+    // 5. Chapter files
     for (const ch of chapters) {
-        const safeTitle = ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]));
-        const safeContent = ch.content
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\n/g, '</p><p>');
+        // Escape content for XML: convert newlines to </p><p>, then escape entities
+        const escapedContent = ch.content
+            .split('\n')
+            .map(line => escapeXml(line.trim()))
+            .filter(line => line)
+            .join('</p><p>');
         
         const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
-    <title>${safeTitle}</title>
+    <title>${escapeXml(ch.title)}</title>
     <link rel="stylesheet" type="text/css" href="styles.css"/>
 </head>
 <body>
-    <h1 class="chapter-title">${safeTitle}</h1>
-    <p>${safeContent}</p>
+    <h1 class="chapter-title">${escapeXml(ch.title)}</h1>
+    <p>${escapedContent || ' '}</p>
 </body>
 </html>`;
+        
         const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
         oebps.file(filename, xhtml);
         manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
     }
     
-    // 4. content.opf
-    const tagsXml = metadata.tags.map(tag => `<dc:subject>${tag.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:subject>`).join('\n');
-    const descSafe = (metadata.description || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]));
+    // 6. content.opf (with proper escaping)
+    const safeTitle = escapeXml(metadata.title);
+    const safeAuthor = escapeXml(metadata.author || 'Unknown');
+    const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
+    const tagsXml = metadata.tags
+        .filter(t => t)
+        .map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`)
+        .join('\n    ');
     
     oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uid">${uid}</dc:identifier>
-    <dc:title>${metadata.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:title>
-    <dc:creator>${metadata.author.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</dc:creator>
+    <dc:title>${safeTitle}</dc:title>
+    <dc:creator>${safeAuthor}</dc:creator>
     <dc:language>en</dc:language>
     <dc:date>${timestamp}</dc:date>
-    ${metadata.description ? `<dc:description>${descSafe}</dc:description>` : ''}
-    ${tagsXml}
+    ${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}
+    ${tagsXml ? tagsXml : ''}
     <meta property="rendition:orientation">portrait</meta>
     <meta property="rendition:flow">paginated</meta>
   </metadata>
@@ -481,10 +492,10 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
   </spine>
 </package>`);
     
-    // 5. toc.ncx
-    let navPoints = chapters.map((ch, idx) => `
+    // 7. toc.ncx
+    const navPoints = chapters.map((ch, idx) => `
     <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}">
-      <navLabel><text>${ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></navLabel>
+      <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
       <content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/>
     </navPoint>`).join('');
     
@@ -496,44 +507,38 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     <meta name="dtb:totalPageCount" content="0"/>
     <meta name="dtb:maxPageNumber" content="0"/>
   </head>
-  <docTitle><text>${metadata.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></docTitle>
-  <docAuthor><text>${metadata.author.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</text></docAuthor>
-  <navMap>
-    ${navPoints}
+  <docTitle><text>${safeTitle}</text></docTitle>
+  <docAuthor><text>${safeAuthor}</text></docAuthor>
+  <navMap>${navPoints}
   </navMap>
 </ncx>`);
     
-    // 6. nav.xhtml (EPUB3 navigation)
+    // 8. nav.xhtml
     const navItems = chapters.map(ch => 
-        `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${ch.title.replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[s]))}</a></li>`
+        `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`
     ).join('\n');
     
     oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-    <title>Table of Contents</title>
-</head>
+<head><title>Table of Contents</title></head>
 <body>
-    <nav epub:type="toc">
-        <h1>Chapters</h1>
-        <ol>
-            ${navItems}
-        </ol>
-    </nav>
+  <nav epub:type="toc">
+    <h1>Chapters</h1>
+    <ol>${navItems}
+    </ol>
+  </nav>
 </body>
 </html>`);
     
-    // Generate and download
-    const filename = (startOrder === 1 && endOrder === downloadState.totalChapters) 
-        ? `${metadata.title}.epub` 
-        : `${metadata.title}.epub`;
-    
-    const blob = await zip.generateAsync({ 
-        type: "blob", 
-        mimeType: "application/epub+zip",
-        compression: "DEFLATE"
-    });
+    // Generate & download
+    const filename = `${escapeXml(metadata.title).replace(/[^a-z0-9\-_]/gi, '_')}.epub`;
+const blob = await zip.generateAsync({ 
+    type: "blob", 
+    mimeType: "application/epub+zip", 
+    compression: "DEFLATE",
+    compressionOptions: { level: 9 };  
+});
     
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
