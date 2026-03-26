@@ -537,7 +537,7 @@ const blob = await zip.generateAsync({
     type: "blob", 
     mimeType: "application/epub+zip", 
     compression: "DEFLATE",
-    compressionOptions: { level: 9 };  
+    compressionOptions: { level: 9 }
 });
     
     const a = document.createElement("a");
