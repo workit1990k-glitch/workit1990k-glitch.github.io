@@ -19,8 +19,7 @@
     'Referer': 'https://comix.to/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   };
-  const WSRV_BASE = 'https://wsrv.nl/?url=';
-  const WSRV_PARAMS = '&w=1080&we&q=75&output=webp';
+const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
   const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 200MB per ZIP
   const PARALLEL_IMAGES = 3; // Images per chapter
   const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
@@ -227,7 +226,7 @@
       let downloadedCount = 0;
       
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
-        let url = WSRV_BASE + encodeURIComponent(originalUrl) + WSRV_PARAMS;
+        let url = IMAGE_PROXY + '?url=' + encodeURIComponent(originalUrl);
         const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
 
         try {
