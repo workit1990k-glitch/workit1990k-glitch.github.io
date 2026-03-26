@@ -64,33 +64,7 @@ function clearState() {
     };
     updateProgressUI();
 }
-// --- Fetch Cover Image as Base64 (for EPUB embedding) ---
-async function fetchCoverAsBase64(coverUrl) {
-    if (!coverUrl) return null;
-    
-    try {
-        // Fetch with credentials to pass auth/cookies
-        const response = await fetch(coverUrl, {
-            credentials: 'include',  // ← Critical for wtr-lab API
-            headers: {
-                'Accept': 'image/jpeg, image/png, image/webp, */*'
-            }
-        });
-        
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result); // data:image/jpeg;base64,...
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    } catch (err) {
-        console.warn("Cover fetch failed, using placeholder:", err);
-        return null; // Fallback to text cover
-    }
-}
+
 // --- 1. Chapter Info ---
 const dom = document;
 const leaves = dom.baseURI.split("/");
@@ -178,8 +152,8 @@ document.body.appendChild(toggleBtn);
 // --- EPUB Metadata Modal ---
 const epubModal = document.createElement("div");
 epubModal.style.cssText = `
-position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-background: rgba(0,0,0,0.5); z-index: 100000; display: none; 
+position: absolute; top: 0; right: 0; height: 100%; 
+background: z-index: 100000; display: none; 
 justify-content: center; align-items: center;
 `;
 epubModal.innerHTML = `
@@ -430,38 +404,26 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     
     const oebps = zip.folder("OEBPS");
     
-
+    // 3. CSS
+    oebps.file("styles.css", `body{}`);
+    
+    let manifestItems = '';
+    let spineItems = '';
     
     // 4. Cover
-// Inside generateAndDownloadEpub(), before creating zip files:
-
-// Fetch and embed cover image
-let coverDataUri = null;
-if (metadata.cover) {
-    progressText.textContent = `Fetching cover...`;
-    coverDataUri = await fetchCoverAsBase64(metadata.cover);
-}
-
-// Generate cover.xhtml with embedded image OR fallback text
-const coverContent = coverDataUri 
-    ? `<img src="${coverDataUri}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto;"/>`
-    : `<div style="text-align:center;margin-top:30vh">
-        <h1 style="font-size:1.5em;color:#333">${escapeXml(metadata.title)}</h1>
-        ${metadata.author ? `<p style="color:#666;margin-top:1em">by ${escapeXml(metadata.author)}</p>` : ''}
-       </div>`;
-
-oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
+    const coverContent = metadata.cover 
+        ? `<img src="${escapeXml(metadata.cover)}" alt="Cover" style="max-width:100%;max-height:100vh"/>`
+        : `<h1 style="margin-top:40vh">${escapeXml(metadata.title)}</h1>`;
+    
+    oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-    <title>Cover</title>
-    <style>body{margin:0;padding:0;background:#fff}</style>
-</head>
-<body style="text-align:center">${coverContent}</body>
-</html>`);
-
-// Also add to manifest with proper properties
-manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n';
+<head><title>Cover</title><style>body{margin:0;padding:0;text-align:center}</style></head>
+<body>${coverContent}</body></html>`);
+    
+    manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n';
+    manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
+    
     // 5. Chapters
     for (const ch of chapters) {
         const escapedContent = ch.content
