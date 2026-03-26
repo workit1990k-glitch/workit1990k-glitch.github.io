@@ -153,7 +153,7 @@ document.body.appendChild(toggleBtn);
 const epubModal = document.createElement("div");
 epubModal.style.cssText = `
 position: absolute; top: 0; right: 0; height: 100%; 
-background: z-index: 100000; display: none; 
+background: rgba(0,0,0,0.9); z-index: 100000; display: none; 
 justify-content: center; align-items: center;
 `;
 epubModal.innerHTML = `
