@@ -3,7 +3,7 @@
 
 // --- Configuration ---
 const STORAGE_KEY = 'wtr_json_data';
-const DELAY_MS = 12000; // 12 seconds
+const DELAY_MS = 12000;
 
 // --- State ---
 let isDownloading = false;
@@ -11,10 +11,21 @@ let stopRequested = false;
 let downloadState = {
     novelTitle: '',
     novelId: '',
-    chapters: [], // { order, title, content }
+    chapters: [],
     totalChapters: 0,
     lastUpdated: Date.now()
 };
+
+// --- XML Entity Encoder ---
+function escapeXml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe.toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
 
 // --- Helper: Load/Save State ---
 function loadState() {
@@ -37,7 +48,7 @@ function saveState() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(downloadState));
         updateProgressUI();
     } catch (e) {
-        alert("Storage Full! Please click 'Download JSON' to save and clear space.");
+        alert("Storage Full! Please download and clear space.");
         stopDownload();
     }
 }
@@ -62,7 +73,6 @@ const id = leaves[novelIndex + 1];
 const novelLink = document.querySelector('a[href*="/novel/"]');
 const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"<>]/g, '-') : "Unknown Novel";
 
-// Initialize State ID
 downloadState.novelId = id;
 downloadState.novelTitle = novelTitle;
 loadState();
@@ -103,14 +113,10 @@ display: none; width: 380px; font-family: sans-serif;
 `;
 
 menu.innerHTML = `
-<div id="menuHeader" style="
-position: sticky; top: 0; background: #fff; z-index: 10;
-padding: 12px; border-bottom: 1px solid #ddd;
-">
+<div id="menuHeader" style="position: sticky; top: 0; background: #fff; z-index: 10; padding: 12px; border-bottom: 1px solid #ddd;">
 <h3 style="margin: 0 0 8px 0;">📚 JSON/EPUB Downloader</h3>
 <div style="font-size:12px; color:#666; margin-bottom:10px;" id="progressText">Ready</div>
 
-<!-- Chapter Range Selector -->
 <div style="margin-bottom:10px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
     <label style="font-size:12px; font-weight:500;">Chapters:</label>
     <input type="text" id="rangeInput" placeholder="e.g., 1-100 or 400-700" 
@@ -120,8 +126,8 @@ padding: 12px; border-bottom: 1px solid #ddd;
 
 <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
     <button id="toggleDownloadBtn" style="flex:1; min-width:70px; background:#28a745; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Start</button>
-    <button id="downloadJsonBtn" style="flex:1; min-width:70px; background:#007bff; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Save JSON</button>
-    <button id="downloadEpubBtn" style="flex:1; min-width:70px; background:#6f42c1; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Export EPUB</button>
+    <button id="downloadJsonBtn" style="flex:1; min-width:70px; background:#007bff; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">JSON</button>
+    <button id="downloadEpubBtn" style="flex:1; min-width:70px; background:#6f42c1; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">EPUB</button>
     <button id="clearBtn" style="background:#dc3545; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:12px;">Clear</button>
 </div>
 </div>
@@ -261,7 +267,7 @@ function updateProgressUI() {
     const total = downloadState.totalChapters;
     const range = rangeInput.value.trim();
     const { start, end } = parseChapterRange(range, total);
-    progressText.textContent = `${count} / ${total} Saved | Range: ${start}-${end}`;
+    progressText.textContent = `${count}/${total} | ${start}-${end}`;
     toggleBtnEl.textContent = isDownloading ? "⏸ Pause" : "▶ Start";
     toggleBtnEl.style.background = isDownloading ? "#dc3545" : "#28a745";
 }
@@ -310,7 +316,7 @@ document.getElementById("downloadJsonBtn").onclick = () => {
     a.click();
     document.body.removeChild(a);
     
-    if(confirm("Download complete. Clear local storage to save space?")) {
+    if(confirm("Download complete. Clear local storage?")) {
         clearState();
     }
 };
@@ -318,10 +324,9 @@ document.getElementById("downloadJsonBtn").onclick = () => {
 // EPUB Modal Handlers
 document.getElementById("downloadEpubBtn").onclick = () => {
     if (downloadState.chapters.length === 0) {
-        alert("No chapters downloaded yet. Please download chapters first.");
+        alert("No chapters downloaded yet.");
         return;
     }
-    // Pre-fill title with range if specified
     const range = rangeInput.value.trim();
     if (range) {
         const { start, end } = parseChapterRange(range, downloadState.totalChapters);
@@ -352,7 +357,7 @@ document.getElementById("epubConfirm").onclick = async () => {
     
     try {
         await generateAndDownloadEpub(metadata, start, end);
-        if(confirm("EPUB generated! Clear local storage to save space?")) {
+        if(confirm("EPUB generated! Clear local storage?")) {
             clearState();
         }
     } catch (err) {
@@ -361,26 +366,17 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- XML Entity Encoder (FIX) ---
-function escapeXml(unsafe) {
-    if (!unsafe) return '';
-    return unsafe.toString()
-        .replace(/&/g, '&amp;')   // MUST be first!
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-}
-
-// --- EPUB Generation (Corrected) ---
+// --- EPUB Generation ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const chapters = downloadState.chapters
         .filter(c => c.order >= startOrder && c.order <= endOrder)
         .sort((a, b) => a.order - b.order);
     
-    if (chapters.length === 0) throw new Error("No chapters in selected range");
+    if (chapters.length === 0) {
+        throw new Error("No chapters in selected range");
+    }
     
-    // Load JSZip if needed
+    // Load JSZip dynamically
     if (typeof JSZip === 'undefined') {
         await new Promise((resolve, reject) => {
             const script = document.createElement('script');
@@ -395,7 +391,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const timestamp = new Date().toISOString().split('T')[0];
     const uid = `urn:uuid:${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // 1. mimetype (first, uncompressed)
+    // 1. mimetype
     zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
     
     // 2. container.xml
@@ -411,13 +407,12 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     // 3. CSS
     oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:5%;color:#333}
 h1{text-align:center;color:#2c3e50}p{margin:1em 0;text-indent:1.5em}
-img{max-width:100%;height:auto;display:block;margin:1em auto}
-.chapter-title{text-align:center;margin-bottom:2em}`);
+img{max-width:100%;height:auto;display:block;margin:1em auto}`);
     
     let manifestItems = '';
     let spineItems = '';
     
-    // 4. Cover page
+    // 4. Cover
     const coverContent = metadata.cover 
         ? `<img src="${escapeXml(metadata.cover)}" alt="Cover" style="max-width:100%;max-height:100vh"/>`
         : `<h1 style="margin-top:40vh">${escapeXml(metadata.title)}</h1>`;
@@ -431,9 +426,8 @@ img{max-width:100%;height:auto;display:block;margin:1em auto}
     manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n';
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
     
-    // 5. Chapter files
+    // 5. Chapters
     for (const ch of chapters) {
-        // Escape content for XML: convert newlines to </p><p>, then escape entities
         const escapedContent = ch.content
             .split('\n')
             .map(line => escapeXml(line.trim()))
@@ -459,7 +453,7 @@ img{max-width:100%;height:auto;display:block;margin:1em auto}
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
     }
     
-    // 6. content.opf (with proper escaping)
+    // 6. content.opf
     const safeTitle = escapeXml(metadata.title);
     const safeAuthor = escapeXml(metadata.author || 'Unknown');
     const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
@@ -478,8 +472,6 @@ img{max-width:100%;height:auto;display:block;margin:1em auto}
     <dc:date>${timestamp}</dc:date>
     ${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}
     ${tagsXml ? tagsXml : ''}
-    <meta property="rendition:orientation">portrait</meta>
-    <meta property="rendition:flow">paginated</meta>
   </metadata>
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -503,9 +495,6 @@ img{max-width:100%;height:auto;display:block;margin:1em auto}
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="${uid}"/>
-    <meta name="dtb:depth" content="1"/>
-    <meta name="dtb:totalPageCount" content="0"/>
-    <meta name="dtb:maxPageNumber" content="0"/>
   </head>
   <docTitle><text>${safeTitle}</text></docTitle>
   <docAuthor><text>${safeAuthor}</text></docAuthor>
@@ -531,14 +520,17 @@ img{max-width:100%;height:auto;display:block;margin:1em auto}
 </body>
 </html>`);
     
-    // Generate & download
-    const filename = `${escapeXml(metadata.title).replace(/[^a-z0-9\-_]/gi, '_')}.epub`;
-const blob = await zip.generateAsync({ 
-    type: "blob", 
-    mimeType: "application/epub+zip", 
-    compression: "DEFLATE",
-    compressionOptions: { level: 9 }
-});
+    // 9. Generate with compression level 9
+    const filename = `${metadata.title.replace(/[^a-z0-9\-_]/gi, '_')}.epub`;
+    
+    progressText.textContent = `Compressing EPUB...`;
+    
+    const blob = await zip.generateAsync({ 
+        type: "blob", 
+        mimeType: "application/epub+zip", 
+        compression: "DEFLATE",
+        compressionOptions: { level: 9 }
+    });
     
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -571,17 +563,14 @@ async function runDownloadLoop() {
         progressText.textContent = `Fetching #${ch.order}...`;
         try {
             const data = await fetchChapterContent(ch.order);
-            // Avoid duplicates
             if (!downloadState.chapters.some(c => c.order === data.order)) {
                 downloadState.chapters.push(data);
                 saveState();
-                console.log(`✓ Saved chapter ${ch.order}`);
             }
         } catch (err) {
-            console.error(`✗ Failed chapter ${ch.order}`, err);
-            progressText.textContent = `Error at #${ch.order}. Paused.`;
+            progressText.textContent = `Error at #${ch.order}`;
             stopDownload();
-            alert(`Failed to download chapter ${ch.order}:\n${err.message}`);
+            alert(`Failed chapter ${ch.order}: ${err.message}`);
             break;
         }
 
@@ -589,7 +578,7 @@ async function runDownloadLoop() {
     }
 
     if (isDownloading && !stopRequested) {
-        alert(`✓ Download Complete! ${downloadState.chapters.length} chapters saved.`);
+        alert(`Download Complete! ${downloadState.chapters.length} chapters.`);
         isDownloading = false;
         updateProgressUI();
     }
@@ -598,7 +587,7 @@ async function runDownloadLoop() {
 // Initialize
 updateProgressUI();
 
-// Highlight chapters in range (visual feedback)
+// Range highlight
 rangeInput.addEventListener('input', () => {
     const { start, end } = parseChapterRange(rangeInput.value.trim(), allChapters.length);
     document.querySelectorAll('#chaptersList > div').forEach(div => {
