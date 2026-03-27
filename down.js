@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter)
+// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter + Range Select)
 
 (function() {
   'use strict';
@@ -19,8 +19,8 @@
     'Referer': 'https://comix.to/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   };
-const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
-  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 200MB per ZIP
+  const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
+  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB per ZIP
   const PARALLEL_IMAGES = 3; // Images per chapter
   const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
@@ -393,6 +393,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         .mdx-chap-item.selected { border-color:#e0af68; }
         .mdx-chap-item.fetched { background:#2a303c; }
         .mdx-chap-item.fetching { opacity:0.6; pointer-events:none; }
+        .mdx-chap-item.filtered { border-style: dashed !important; border-color: #7982a9 !important; }
         .mdx-chap-row { display:flex; align-items:center; width:100%; }
         .mdx-chap-check { width:18px; height:18px; margin-right:12px; cursor:pointer; }
         #mdx-chap-info { flex:1; pointer-events: none; }
@@ -527,7 +528,10 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
   };
 
   const selectByScanlator = () => {
-    if (isFetching) return;
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching first to change selection', 'warning');
+      return;
+    }
     selectedChapters.clear();
     
     allChapters.forEach(ch => {
@@ -554,17 +558,18 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       item.className = 'mdx-chap-item' + 
         (isSelected ? ' selected' : '') + 
         (cacheData ? ' fetched' : '') +
-        (isFetching && isSelected ? ' fetching' : '');
+        (isFetching && isSelected && !isPaused ? ' fetching' : '');
       
+      // Visual hint for filtered chapters, but still clickable
       if (!isFiltered) {
-        item.style.opacity = '0.5';
-        item.style.pointerEvents = 'none';
+        item.style.opacity = '0.6';
+        item.classList.add('filtered');
       }
       
       item.dataset.chapterId = ch.chapter_id;
       
       item.addEventListener('click', (e) => {
-        if (isFiltered && e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
+        if (e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
           toggleChapter(ch.chapter_id);
         }
       });
@@ -576,7 +581,8 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
       checkbox.checked = isSelected;
-      checkbox.disabled = isFetching || !isFiltered;
+      // Only disable during active (non-paused) fetch
+      checkbox.disabled = isFetching && !isPaused;
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
       
@@ -649,7 +655,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       }
       
       // Show image progress bar for actively fetching chapters
-      if (isFetching && isSelected && !cacheData && isFiltered) {
+      if (isFetching && isSelected && !cacheData && isFiltered && !isPaused) {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'mdx-image-progress';
         progressDiv.id = `mdx-img-progress-${ch.chapter_id}`;
@@ -673,7 +679,11 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
   };
 
   const toggleChapter = (id) => {
-    if (isFetching) return;
+    // Allow selection when paused or done fetching
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching to modify selection', 'warning');
+      return;
+    }
     
     if (selectedChapters.has(id)) {
       selectedChapters.delete(id);
@@ -685,7 +695,10 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
   };
 
   const selectAll = () => {
-    if (isFetching) return;
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching to modify selection', 'warning');
+      return;
+    }
     allChapters.forEach(ch => {
       if (isChapterFiltered(ch)) {
         selectedChapters.add(ch.chapter_id);
@@ -696,14 +709,20 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
   };
 
   const deselectAll = () => {
-    if (isFetching) return;
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching to modify selection', 'warning');
+      return;
+    }
     selectedChapters.clear();
     renderChapters();
     updateCount();
   };
   
   const selectUnique = () => {
-    if (isFetching) return;
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching to modify selection', 'warning');
+      return;
+    }
     selectedChapters.clear();
     const seen = new Map();
     
@@ -721,6 +740,64 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     
     renderChapters();
     updateCount();
+  };
+
+  // NEW: Select unique integer chapters in a range (e.g., 40-90)
+  const selectUniqueRange = () => {
+    if (isFetching && !isPaused) {
+      log('⚠️ Pause fetching to modify selection', 'warning');
+      return;
+    }
+    
+    const startInput = document.getElementById('mdx-range-start');
+    const endInput = document.getElementById('mdx-range-end');
+    const start = parseFloat(startInput?.value);
+    const end = parseFloat(endInput?.value);
+    
+    if (isNaN(start) || isNaN(end) || start > end || start < 1) {
+      log('❌ Enter valid range (e.g., 40 to 90)', 'error');
+      return;
+    }
+    
+    selectedChapters.clear();
+    const selectedIntegers = new Set();
+    
+    // Sort to ensure consistent "first match" selection
+    const sorted = [...allChapters].sort((a, b) => {
+      const na = parseFloat(a.number), nb = parseFloat(b.number);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+    });
+    
+    sorted.forEach(ch => {
+      // Respect active scanlator filter
+      if (selectedScanlators.size > 0 && !isChapterFiltered(ch)) return;
+      
+      const num = parseFloat(ch.number);
+      if (!isNaN(num)) {
+        const intNum = Math.floor(num);
+        // Only process chapters in range
+        if (intNum >= start && intNum <= end && !selectedIntegers.has(intNum)) {
+          // Prefer exact integer matches (40 over 40.1)
+          const isExact = num === intNum;
+          if (isExact) {
+            selectedIntegers.add(intNum);
+            selectedChapters.add(ch.chapter_id);
+          } else if (!sorted.some(c => {
+            const cn = parseFloat(c.number);
+            return Math.floor(cn) === intNum && cn === intNum;
+          })) {
+            // If no exact match exists, take the decimal version
+            selectedIntegers.add(intNum);
+            selectedChapters.add(ch.chapter_id);
+          }
+        }
+      }
+    });
+    
+    renderChapters();
+    updateCount();
+    log(`✅ Selected ${selectedChapters.size} unique chapters (${start}-${end})`, 'success');
   };
 
   const updateCount = () => {
@@ -754,7 +831,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     }
     
     if (btnFetch) {
-      btnFetch.disabled = selectedChapters.size === 0 || isFetching;
+      btnFetch.disabled = selectedChapters.size === 0 || (isFetching && !isPaused);
       btnFetch.textContent = isFetching ? '⏳ FETCHING...' : `📥 FETCH (${selectedChapters.size} Ch)`;
     }
     
@@ -770,7 +847,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     
     const btnRefetchAll = document.getElementById('mdx-refetch-all-btn');
     if (btnRefetchAll) {
-      btnRefetchAll.disabled = failedCount === 0 || isFetching;
+      btnRefetchAll.disabled = failedCount === 0 || (isFetching && !isPaused);
       btnRefetchAll.textContent = failedCount > 0 ? `🔄 REFETCH ALL FAILED (${failedCount})` : '🔄 REFETCH ALL FAILED';
     }
   };
@@ -937,6 +1014,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     }
     
     updateCount();
+    renderChapters();
   };
 
   // ============ DOWNLOAD ============
@@ -1084,6 +1162,10 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       btnScanlatorSelect.addEventListener('click', selectByScanlator);
     }
 
+    // NEW: Range selector button
+    const btnRange = document.getElementById('mdx-btn-range');
+    if (btnRange) btnRange.addEventListener('click', selectUniqueRange);
+
     const overlay = document.getElementById('mdx-overlay');
     if (overlay) {
       overlay.addEventListener('click', (e) => {
@@ -1158,6 +1240,19 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
               <button id="mdx-btn-scanlator-select" class="mdx-btn mdx-btn-secondary" style="padding:4px 10px;font-size:11px;" title="Select chapters matching chosen scanlators">
                 ✅ Select Filtered
               </button>
+              <!-- NEW: Range Selector -->
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:8px;padding-left:8px;border-left:1px solid #414868;">
+                <span style="font-size:11px;color:#7982a9;">Range:</span>
+                <input type="number" id="mdx-range-start" placeholder="40" min="1" 
+                       style="width:55px;padding:4px 8px;background:#24283b;border:1px solid #414868;border-radius:4px;color:#c0caf5;font-size:11px;text-align:center;">
+                <span style="color:#7982a9;font-size:11px;">to</span>
+                <input type="number" id="mdx-range-end" placeholder="90" min="1" 
+                       style="width:55px;padding:4px 8px;background:#24283b;border:1px solid #414868;border-radius:4px;color:#c0caf5;font-size:11px;text-align:center;">
+                <button id="mdx-btn-range" class="mdx-btn mdx-btn-secondary" 
+                        style="padding:4px 10px;font-size:11px;" title="Select unique integer chapters in range">
+                  ✓ Range
+                </button>
+              </div>
             </div>
           </div>
           <div id="mdx-chap-list"></div>
