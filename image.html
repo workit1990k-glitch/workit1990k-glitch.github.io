@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Resizer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+        
+        input[type="url"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .stats {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .stats.show {
+            display: block;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .stat-item:last-child {
+            border-bottom: none;
+        }
+        
+        .stat-label {
+            color: #666;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .stat-value.decreased {
+            color: #28a745;
+        }
+        
+        .stat-value.increased {
+            color: #dc3545;
+        }
+        
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+        }
+        
+        .message.show {
+            display: block;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖼️ Image Resizer</h1>
+        
+        <div class="input-group">
+            <label for="imageUrl">Image URL:</label>
+            <input 
+                type="url" 
+                id="imageUrl" 
+                placeholder="https://example.com/image.jpg"
+                required
+            >
+        </div>
+        
+        <button id="resizeBtn" onclick="processImage()">Resize Image</button>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processing image...</p>
+        </div>
+        
+        <div class="message" id="message"></div>
+        
+        <div class="stats" id="stats">
+            <h3>📊 Statistics</h3>
+            <div class="stat-item">
+                <span class="stat-label">Original Width:</span>
+                <span class="stat-value" id="originalWidth">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">New Width:</span>
+                <span class="stat-value" id="newWidth">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Original Size:</span>
+                <span class="stat-value" id="originalSize">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">New Size:</span>
+                <span class="stat-value" id="newSize">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Size Reduction:</span>
+                <span class="stat-value" id="sizeReduction">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Width Reduction:</span>
+                <span class="stat-value" id="widthReduction">-</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MAX_WIDTH = 1080;
+        const QUALITY = 0.75;
+        
+        async function processImage() {
+            const imageUrl = document.getElementById('imageUrl').value.trim();
+            const resizeBtn = document.getElementById('resizeBtn');
+            const loading = document.getElementById('loading');
+            const message = document.getElementById('message');
+            const stats = document.getElementById('stats');
+            
+            // Reset UI
+            message.className = 'message';
+            message.style.display = 'none';
+            stats.className = 'stats';
+            
+            // Validate URL
+            if (!imageUrl) {
+                showMessage('Please enter an image URL', 'error');
+                return;
+            }
+            
+            if (!isValidImageUrl(imageUrl)) {
+                showMessage('Please enter a valid image URL', 'error');
+                return;
+            }
+            
+            // Disable button and show loading
+            resizeBtn.disabled = true;
+            loading.className = 'loading show';
+            
+            try {
+                // Fetch the image
+                const response = await fetch(imageUrl);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch image');
+                }
+                
+                const blob = await response.blob();
+                const originalSize = blob.size;
+                
+                // Create image object
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    img.src = URL.createObjectURL(blob);
+                });
+                
+                const originalWidth = img.width;
+                const originalHeight = img.height;
+                
+                // Check if width is already smaller than max
+                if (originalWidth <= MAX_WIDTH) {
+                    showMessage(`Image width (${originalWidth}px) is already smaller than max width (${MAX_WIDTH}px). Skipping resize.`, 'info');
+                    loading.className = 'loading';
+                    resizeBtn.disabled = false;
+                    return;
+                }
+                
+                // Calculate new dimensions
+                const scaleFactor = MAX_WIDTH / originalWidth;
+                const newWidth = MAX_WIDTH;
+                const newHeight = Math.round(originalHeight * scaleFactor);
+                
+                // Create canvas and resize
+                const canvas = document.createElement('canvas');
+                canvas.width = newWidth;
+                canvas.height = newHeight;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                
+                // Convert to WebP
+                const resizedBlob = await new Promise(resolve => {
+                    canvas.toBlob(resolve, 'image/webp', QUALITY);
+                });
+                
+                const newSize = resizedBlob.size;
+                
+                // Check if processed size is larger than original
+                if (newSize > originalSize) {
+                    showMessage(`Processed size (${formatBytes(newSize)}) is larger than original (${formatBytes(originalSize)}). Skipping.`, 'info');
+                    loading.className = 'loading';
+                    resizeBtn.disabled = false;
+                    return;
+                }
+                
+                // Create URL for resized image
+                const resizedUrl = URL.createObjectURL(resizedBlob);
+                
+                // Open resized image in new page
+                window.open(resizedUrl, '_blank');
+                
+                // Calculate statistics
+                const sizeReduction = ((originalSize - newSize) / originalSize * 100).toFixed(2);
+                const widthReduction = ((originalWidth - newWidth) / originalWidth * 100).toFixed(2);
+                
+                // Display statistics
+                document.getElementById('originalWidth').textContent = `${originalWidth}px`;
+                document.getElementById('newWidth').textContent = `${newWidth}px`;
+                document.getElementById('originalSize').textContent = formatBytes(originalSize);
+                document.getElementById('newSize').textContent = formatBytes(newSize);
+                
+                const sizeReductionEl = document.getElementById('sizeReduction');
+                sizeReductionEl.textContent = `${sizeReduction}%`;
+                sizeReductionEl.className = 'stat-value decreased';
+                
+                const widthReductionEl = document.getElementById('widthReduction');
+                widthReductionEl.textContent = `${widthReduction}%`;
+                widthReductionEl.className = 'stat-value decreased';
+                
+                stats.className = 'stats show';
+                showMessage('Image resized successfully! Opened in new tab.', 'success');
+                
+            } catch (error) {
+                console.error(error);
+                showMessage(`Error: ${error.message}. Note: Some images may have CORS restrictions.`, 'error');
+            } finally {
+                loading.className = 'loading';
+                resizeBtn.disabled = false;
+            }
+        }
+        
+        function isValidImageUrl(url) {
+            const imageExtensions = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i;
+            return imageExtensions.test(url) || url.includes('image');
+        }
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function showMessage(text, type) {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = `message show ${type}`;
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('imageUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                processImage();
+            }
+        });
+    </script>
+</body>
+</html>
