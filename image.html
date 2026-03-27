@@ -26,7 +26,7 @@
             border-radius: 20px;
             padding: 40px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 600px;
+            max-width: 700px;
             width: 100%;
         }
 
@@ -99,10 +99,44 @@
             display: none;
         }
 
+        .preview-section {
+            margin-bottom: 30px;
+        }
+
+        .preview-title {
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
         .preview-image {
             max-width: 100%;
             border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
             margin-bottom: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .image-box {
+            text-align: center;
+        }
+
+        .image-box img {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
 
         .stats {
@@ -141,6 +175,10 @@
             color: #e74c3c;
         }
 
+        .stat-value.neutral {
+            color: #667eea;
+        }
+
         .message {
             text-align: center;
             padding: 15px;
@@ -152,6 +190,12 @@
         .message.success {
             background: #d4edda;
             color: #155724;
+            display: block;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
             display: block;
         }
 
@@ -167,6 +211,43 @@
             margin-top: 15px;
             font-size: 0.9rem;
         }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            border: none;
+            width: 100%;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .badge-resized {
+            background: #667eea;
+            color: white;
+        }
+
+        .badge-converted {
+            background: #f39c12;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -181,12 +262,26 @@
         
         <input type="file" id="fileInput" accept="image/*">
         
-        <button class="btn" id="resizeBtn" disabled>Resize Image</button>
+        <button class="btn" id="resizeBtn" disabled>Process Image</button>
         
         <div class="message" id="message"></div>
         
         <div class="preview-container" id="previewContainer">
-            <img class="preview-image" id="previewImage" alt="Preview">
+            <div class="comparison">
+                <div class="image-box">
+                    <div class="preview-title">Original Image</div>
+                    <img class="preview-image" id="originalImage" alt="Original">
+                </div>
+                <div class="image-box">
+                    <div class="preview-title">
+                        Processed Image 
+                        <span class="badge" id="processBadge"></span>
+                    </div>
+                    <img class="preview-image" id="processedImage" alt="Processed">
+                </div>
+            </div>
+            
+            <button class="download-btn" id="downloadBtn">📥 Download Processed Image</button>
             
             <div class="stats">
                 <div class="stat-item">
@@ -194,24 +289,28 @@
                     <span class="stat-value" id="originalSize">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Resized Size:</span>
-                    <span class="stat-value" id="resizedSize">-</span>
+                    <span class="stat-label">Processed Size:</span>
+                    <span class="stat-value" id="processedSize">-</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Size Reduction:</span>
                     <span class="stat-value" id="sizeReduction">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Original Width:</span>
-                    <span class="stat-value" id="originalWidth">-</span>
+                    <span class="stat-label">Original Dimensions:</span>
+                    <span class="stat-value" id="originalDimensions">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Resized Width:</span>
-                    <span class="stat-value" id="resizedWidth">-</span>
+                    <span class="stat-label">Processed Dimensions:</span>
+                    <span class="stat-value" id="processedDimensions">-</span>
                 </div>
                 <div class="stat-item">
-                    <span class="stat-label">Width Reduction:</span>
-                    <span class="stat-value" id="widthReduction">-</span>
+                    <span class="stat-label">Width Change:</span>
+                    <span class="stat-value" id="widthChange">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Format:</span>
+                    <span class="stat-value" id="formatChange">-</span>
                 </div>
             </div>
         </div>
@@ -224,9 +323,13 @@
         const fileName = document.getElementById('fileName');
         const message = document.getElementById('message');
         const previewContainer = document.getElementById('previewContainer');
-        const previewImage = document.getElementById('previewImage');
+        const originalImage = document.getElementById('originalImage');
+        const processedImage = document.getElementById('processedImage');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const processBadge = document.getElementById('processBadge');
 
         let selectedFile = null;
+        let processedBlob = null;
 
         // Upload area click
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -268,41 +371,56 @@
             resizeBtn.disabled = false;
             showMessage('', '');
             previewContainer.style.display = 'none';
+            processedBlob = null;
 
-            // Show preview
+            // Show original preview
             const reader = new FileReader();
             reader.onload = (e) => {
-                previewImage.src = e.target.result;
+                originalImage.src = e.target.result;
             };
             reader.readAsDataURL(file);
         }
 
-        // Resize button click
+        // Process button click
         resizeBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
             try {
-                const imageData = await resizeImage(selectedFile);
+                const imageData = await processImage(selectedFile);
                 
-                if (imageData.skipped) {
-                    showMessage(imageData.message, 'error');
-                    return;
+                // Display processed image
+                const url = URL.createObjectURL(imageData.blob);
+                processedImage.src = url;
+                processedBlob = imageData.blob;
+
+                // Set badge
+                if (imageData.resized) {
+                    processBadge.textContent = 'Resized';
+                    processBadge.className = 'badge badge-resized';
+                } else {
+                    processBadge.textContent = 'Converted';
+                    processBadge.className = 'badge badge-converted';
                 }
 
                 // Display statistics
                 displayStats(imageData);
 
-                // Open resized image in new page
-                openResizedImage(imageData);
+                // Setup download button
+                downloadBtn.onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'processed-image.webp';
+                    a.click();
+                };
 
-                showMessage('Image resized successfully! Opening in new tab...', 'success');
+                showMessage(imageData.message, imageData.resized ? 'success' : 'info');
             } catch (error) {
                 showMessage('Error processing image: ' + error.message, 'error');
             }
         });
 
-        // Resize image function
-        async function resizeImage(file) {
+        // Process image function
+        async function processImage(file) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
                 const reader = new FileReader();
@@ -313,20 +431,21 @@
                         const originalHeight = img.height;
                         const originalSize = file.size;
 
-                        // Check if width is already under max
-                        if (originalWidth <= 1080) {
-                            resolve({
-                                skipped: true,
-                                message: `Image width (${originalWidth}px) is already under 1080px. Skipping resize.`
-                            });
-                            return;
-                        }
+                        let newWidth, newHeight, resized = false;
 
-                        // Calculate new dimensions (maintain aspect ratio)
-                        const maxWidth = 1080;
-                        const scaleFactor = maxWidth / originalWidth;
-                        const newWidth = maxWidth;
-                        const newHeight = Math.round(originalHeight * scaleFactor);
+                        // Check if width is over max
+                        if (originalWidth > 1080) {
+                            // Calculate new dimensions (maintain aspect ratio)
+                            const maxWidth = 1080;
+                            const scaleFactor = maxWidth / originalWidth;
+                            newWidth = maxWidth;
+                            newHeight = Math.round(originalHeight * scaleFactor);
+                            resized = true;
+                        } else {
+                            // Keep original dimensions
+                            newWidth = originalWidth;
+                            newHeight = originalHeight;
+                        }
 
                         // Create canvas
                         const canvas = document.createElement('canvas');
@@ -337,32 +456,33 @@
 
                         // Convert to WebP with 75% quality
                         canvas.toBlob((blob) => {
-                            const resizedSize = blob.size;
-
-                            // Check if processed size > original
-                            if (resizedSize > originalSize) {
-                                resolve({
-                                    skipped: true,
-                                    message: `Processed size (${formatSize(resizedSize)}) is larger than original (${formatSize(originalSize)}). Skipping.`
-                                });
-                                return;
-                            }
+                            const processedSize = blob.size;
 
                             // Calculate statistics
-                            const sizeReduction = ((originalSize - resizedSize) / originalSize * 100).toFixed(2);
-                            const widthReduction = ((originalWidth - newWidth) / originalWidth * 100).toFixed(2);
+                            const sizeReduction = ((originalSize - processedSize) / originalSize * 100).toFixed(2);
+                            const widthChange = originalWidth - newWidth;
+                            const widthChangePercent = ((originalWidth - newWidth) / originalWidth * 100).toFixed(2);
+
+                            let message = '';
+                            if (resized) {
+                                message = `✅ Image resized from ${originalWidth}px to ${newWidth}px width and converted to WebP!`;
+                            } else {
+                                message = `ℹ️ Image width (${originalWidth}px) is under 1080px. Only converted to WebP format!`;
+                            }
 
                             resolve({
-                                skipped: false,
                                 blob: blob,
                                 originalSize: originalSize,
-                                resizedSize: resizedSize,
+                                processedSize: processedSize,
                                 sizeReduction: sizeReduction,
                                 originalWidth: originalWidth,
-                                resizedWidth: newWidth,
-                                widthReduction: widthReduction,
                                 originalHeight: originalHeight,
-                                resizedHeight: newHeight
+                                processedWidth: newWidth,
+                                processedHeight: newHeight,
+                                widthChange: widthChange,
+                                widthChangePercent: widthChangePercent,
+                                resized: resized,
+                                message: message
                             });
                         }, 'image/webp', 0.75);
                     };
@@ -379,63 +499,37 @@
         // Display statistics
         function displayStats(data) {
             document.getElementById('originalSize').textContent = formatSize(data.originalSize);
-            document.getElementById('resizedSize').textContent = formatSize(data.resizedSize);
-            document.getElementById('sizeReduction').textContent = `${data.sizeReduction}%`;
-            document.getElementById('sizeReduction').className = 'stat-value decreased';
+            document.getElementById('processedSize').textContent = formatSize(data.processedSize);
+            
+            const sizeReductionEl = document.getElementById('sizeReduction');
+            sizeReductionEl.textContent = `${data.sizeReduction}%`;
+            if (data.sizeReduction > 0) {
+                sizeReductionEl.className = 'stat-value decreased';
+            } else if (data.sizeReduction < 0) {
+                sizeReductionEl.className = 'stat-value increased';
+            } else {
+                sizeReductionEl.className = 'stat-value neutral';
+            }
 
-            document.getElementById('originalWidth').textContent = `${data.originalWidth}px`;
-            document.getElementById('resizedWidth').textContent = `${data.resizedWidth}px`;
-            document.getElementById('widthReduction').textContent = `${data.widthReduction}%`;
-            document.getElementById('widthReduction').className = 'stat-value decreased';
+            document.getElementById('originalDimensions').textContent = `${data.originalWidth} × ${data.originalHeight}px`;
+            document.getElementById('processedDimensions').textContent = `${data.processedWidth} × ${data.processedHeight}px`;
+            
+            const widthChangeEl = document.getElementById('widthChange');
+            if (data.widthChange > 0) {
+                widthChangeEl.textContent = `-${data.widthChange}px (${data.widthChangePercent}%)`;
+                widthChangeEl.className = 'stat-value decreased';
+            } else if (data.widthChange < 0) {
+                widthChangeEl.textContent = `+${Math.abs(data.widthChange)}px (${Math.abs(data.widthChangePercent)}%)`;
+                widthChangeEl.className = 'stat-value increased';
+            } else {
+                widthChangeEl.textContent = 'No change';
+                widthChangeEl.className = 'stat-value neutral';
+            }
+
+            document.getElementById('formatChange').textContent = '→ WebP (75% quality)';
+            document.getElementById('formatChange').className = 'stat-value neutral';
 
             previewContainer.style.display = 'block';
-        }
-
-        // Open resized image in new page
-        function openResizedImage(data) {
-            const url = URL.createObjectURL(data.blob);
-            const newWindow = window.open();
-            newWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Resized Image</title>
-                    <style>
-                        body {
-                            margin: 0;
-                            padding: 20px;
-                            background: #f5f5f5;
-                            font-family: Arial, sans-serif;
-                            text-align: center;
-                        }
-                        img {
-                            max-width: 100%;
-                            border-radius: 10px;
-                            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-                        }
-                        .download-btn {
-                            display: inline-block;
-                            margin-top: 20px;
-                            padding: 15px 30px;
-                            background: #667eea;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 10px;
-                            font-size: 1.1rem;
-                        }
-                        .download-btn:hover {
-                            background: #764ba2;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <h1>✅ Resized Image</h1>
-                    <img src="${url}" alt="Resized Image">
-                    <br>
-                    <a href="${url}" download="resized-image.webp" class="download-btn">📥 Download Image</a>
-                </body>
-                </html>
-            `);
         }
 
         // Format size
