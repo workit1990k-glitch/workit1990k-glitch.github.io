@@ -1,6 +1,6 @@
-// down.js - Manga Downloader Script (Direct Download + Client-Side Resize)
+// down.js - Manga Downloader Script (Direct Download + Client-Side Resize/Convert)
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20-RESIZE (3-Chapter Parallel + Save ID + Image Progress + Scanlator Filter + Canvas Resize)
+// Version: 2024-03-20-CONVERT (ALL Images WebP + Smart Resize + Save ID + Progress + Scanlator Filter)
 
 (function() {
   'use strict';
@@ -11,7 +11,7 @@
     return;
   }
   window.mdxLoaded = true;
-  console.log('📚 Manga Downloader v2024-03-20-RESIZE initialized');
+  console.log('📚 Manga Downloader v2024-03-20-CONVERT initialized');
 
   // ============ CONFIG ============
   const API_BASE = 'https://comix.to/api/v2';
@@ -20,12 +20,14 @@
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   };
   
-  // ✅ CLIENT-SIDE RESIZE CONFIG (no wsrv)
+  // ✅ CLIENT-SIDE CONVERT CONFIG
+  // ALL images convert to WebP @ 75% quality
+  // Width only reduced if > 1080px
   const RESIZE_CONFIG = {
     maxWidth: 1080,
     quality: 0.75,
     format: 'image/webp',
-    skipIfLarger: true
+    skipIfLarger: true  // Keep original if WebP is bigger (set false to force)
   };
   
   const MAX_ZIP_SIZE = 500 * 1024 * 1024;
@@ -109,7 +111,7 @@
     });
   };
 
-  // ============ IMAGE RESIZER (Canvas + WebP) ============
+  // ============ IMAGE CONVERTER (Canvas + WebP) - ALL IMAGES ============
   const resizeImage = async (imageUrl, originalBlob) => {
     return new Promise(async (resolve) => {
       try {
@@ -121,48 +123,70 @@
           URL.revokeObjectURL(objectUrl);
           const { width, height } = img;
           
-          // Skip resize if already under max width
-          if (width <= RESIZE_CONFIG.maxWidth) {
-            resolve({ blob: originalBlob, resized: false, reason: 'already_small', originalSize: originalBlob.size, newSize: originalBlob.size });
-            return;
-          }
+          // ✅ ALWAYS use canvas for WebP conversion + quality compression
+          // Only resize dimensions if width exceeds maxWidth
+          let drawWidth = width;
+          let drawHeight = height;
           
-          const ratio = RESIZE_CONFIG.maxWidth / width;
-          const newWidth = RESIZE_CONFIG.maxWidth;
-          const newHeight = Math.round(height * ratio);
+          if (width > RESIZE_CONFIG.maxWidth) {
+            const ratio = RESIZE_CONFIG.maxWidth / width;
+            drawWidth = RESIZE_CONFIG.maxWidth;
+            drawHeight = Math.round(height * ratio);
+          }
+          // Else: keep original dimensions, but still convert via canvas
           
           const canvas = document.createElement('canvas');
-          canvas.width = newWidth;
-          canvas.height = newHeight;
+          canvas.width = drawWidth;
+          canvas.height = drawHeight;
           const ctx = canvas.getContext('2d');
           
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, newWidth, newHeight);
+          ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
           
           canvas.toBlob(
-            (resizedBlob) => {
+            (convertedBlob) => {
               canvas.remove();
               img.src = '';
               
-              if (!resizedBlob) {
-                resolve({ blob: originalBlob, resized: false, reason: 'conversion_failed', originalSize: originalBlob.size, newSize: originalBlob.size });
+              if (!convertedBlob) {
+                // Fallback: return original if WebP conversion failed
+                resolve({ 
+                  blob: originalBlob, 
+                  converted: false, 
+                  resized: false, 
+                  reason: 'conversion_failed',
+                  originalSize: originalBlob.size, 
+                  newSize: originalBlob.size 
+                });
                 return;
               }
               
-              // Skip if processed is larger than original (when configured)
-              if (RESIZE_CONFIG.skipIfLarger && resizedBlob.size >= originalBlob.size) {
-                resolve({ blob: originalBlob, resized: false, reason: 'larger_than_original', originalSize: originalBlob.size, newSize: originalBlob.size });
+              const wasResized = width > RESIZE_CONFIG.maxWidth;
+              
+              // Skip if converted is larger than original AND skipIfLarger is enabled
+              if (RESIZE_CONFIG.skipIfLarger && convertedBlob.size >= originalBlob.size) {
+                resolve({ 
+                  blob: originalBlob, 
+                  converted: false, 
+                  resized: wasResized,
+                  reason: 'larger_than_original',
+                  originalSize: originalBlob.size, 
+                  newSize: originalBlob.size 
+                });
                 return;
               }
+              
+              const savings = ((1 - convertedBlob.size / originalBlob.size) * 100).toFixed(1) + '%';
               
               resolve({ 
-                blob: resizedBlob, 
-                resized: true, 
+                blob: convertedBlob, 
+                converted: true, 
+                resized: wasResized,
                 originalSize: originalBlob.size,
-                newSize: resizedBlob.size,
-                savings: ((1 - resizedBlob.size / originalBlob.size) * 100).toFixed(1) + '%',
-                reason: 'resized'
+                newSize: convertedBlob.size,
+                savings: savings,
+                reason: wasResized ? 'resized_and_converted' : 'converted_only'
               });
             },
             RESIZE_CONFIG.format,
@@ -172,14 +196,28 @@
         
         img.onerror = () => {
           URL.revokeObjectURL(objectUrl);
-          resolve({ blob: originalBlob, resized: false, reason: 'load_error', originalSize: originalBlob.size, newSize: originalBlob.size });
+          resolve({ 
+            blob: originalBlob, 
+            converted: false, 
+            resized: false, 
+            reason: 'load_error',
+            originalSize: originalBlob.size, 
+            newSize: originalBlob.size 
+          });
         };
         
         img.src = objectUrl;
         
       } catch (err) {
         console.warn('Resize error:', err);
-        resolve({ blob: originalBlob, resized: false, reason: 'exception', originalSize: originalBlob.size, newSize: originalBlob.size });
+        resolve({ 
+          blob: originalBlob, 
+          converted: false, 
+          resized: false, 
+          reason: 'exception',
+          originalSize: originalBlob.size, 
+          newSize: originalBlob.size 
+        });
       }
     });
   };
@@ -276,9 +314,9 @@
           onProgress(completed, chapters.length);
           
           const mb = (data.size / 1024 / 1024).toFixed(2);
-          const resizeInfo = data.resizedCount > 0 ? ` | ✂️ ${data.resizedCount} resized (${formatBytes(data.savedBytes)} saved)` : '';
+          const convertInfo = data.convertedCount > 0 ? ` | 🎨 ${data.convertedCount} converted (${formatBytes(data.savedBytes)} saved)` : '';
           const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
-          log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB${resizeInfo}`, 
+          log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB${convertInfo}`, 
               data.status === 'success' ? 'success' : 'error');
           
           if (data.failedDetails && data.failedDetails.length > 0) {
@@ -295,7 +333,7 @@
         } catch (err) {
           log(`❌ Chapter ${chapterNum} error: ${err.message}`, 'error');
           chapterDataCache.set(chapter.chapter_id, { 
-            blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], resizedCount: 0, savedBytes: 0 
+            blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], convertedCount: 0, savedBytes: 0 
           });
           results.set(chapter.chapter_id, null);
           completed++;
@@ -330,7 +368,7 @@
       }
 
       if (!imageUrls.length) {
-        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [], resizedCount: 0, savedBytes: 0 };
+        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [], convertedCount: 0, savedBytes: 0 };
       }
 
       let downloadedCount = 0;
@@ -342,19 +380,20 @@
           // 1. Fetch original image directly
           const originalBlob = await fetchImageBlob(originalUrl);
           
-          // 2. Resize if needed
-          const { blob: finalBlob, resized, reason, savings, originalSize, newSize } = await resizeImage(originalUrl, originalBlob);
+          // 2. Convert/Resize if needed
+          const { blob: finalBlob, converted, resized, reason, savings, originalSize, newSize } = await resizeImage(originalUrl, originalBlob);
           
           downloadedCount++;
           
-          // Log image progress with resize info
+          // Log image progress with convert info
           if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
             const imgWord = downloadedCount === 1 ? 'image' : 'images';
-            const resizeNote = resized ? ` ✂️-${savings}` : '';
-            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord}${resizeNote}`, 'image-success');
+            const convertNote = converted ? ` 🎨-${savings}` : '';
+            const resizeNote = resized ? ` ✂️` : '';
+            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord}${convertNote}${resizeNote}`, 'image-success');
           }
           
-          return { fileName, blob: finalBlob, size: finalBlob.size, index, success: true, resized, originalSize, newSize };
+          return { fileName, blob: finalBlob, size: finalBlob.size, index, success: true, converted, resized, originalSize, newSize };
         } catch (e) {
           return { 
             fileName, 
@@ -379,7 +418,7 @@
       
       const blobs = [];
       let totalSize = 0;
-      let resizedCount = 0;
+      let convertedCount = 0;
       let savedBytes = 0;
       const failedDetails = [];
 
@@ -389,10 +428,13 @@
           blobs.push({ fileName: r.fileName, blob: r.blob, size: r.size });
           totalSize += r.size;
           
-          // Track resize statistics
-          if (r.resized) {
-            resizedCount++;
-            savedBytes += (r.originalSize - r.newSize);
+          // ✅ Track ALL converted images (not just resized)
+          if (r.converted) {
+            convertedCount++;
+            // Only count savings if size actually decreased
+            if (r.newSize < r.originalSize) {
+              savedBytes += (r.originalSize - r.newSize);
+            }
           }
         } else {
           const errorResult = result.success ? result.result : result.error;
@@ -415,12 +457,12 @@
         failed: failedCount,
         failedDetails,
         status,
-        resizedCount,
+        convertedCount,
         savedBytes
       };
     } catch (err) {
       console.error('fetchChapterImages error:', err);
-      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], resizedCount: 0, savedBytes: 0 };
+      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], convertedCount: 0, savedBytes: 0 };
     }
   };
 
@@ -720,13 +762,13 @@
         const successCount = cacheData.total - cacheData.failed;
         const successText = `${successCount}/${cacheData.total} images`;
         const failText = cacheData.failed > 0 ? ` (${cacheData.failed} failed)` : '';
-        const resizeText = cacheData.resizedCount > 0 ? ` | ✂️ ${cacheData.resizedCount} (${formatBytes(cacheData.savedBytes)} saved)` : '';
+        const convertText = cacheData.convertedCount > 0 ? ` | 🎨 ${cacheData.convertedCount} (${formatBytes(cacheData.savedBytes)} saved)` : '';
         
         statusDiv.innerHTML = `
           <div class="${statusClass}">
             <strong>✓ ${cacheData.status.toUpperCase()}</strong> 
             | 🏷️ ${ch.scanlation_group?.name || 'Unknown'}
-            | ${sizeText} | ${successText}${failText}${resizeText}
+            | ${sizeText} | ${successText}${failText}${convertText}
           </div>
         `;
         
@@ -927,7 +969,7 @@
     });
 
     log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
-    log(`⚡ ${PARALLEL_IMAGES} parallel images + client-side resize`, 'info');
+    log(`⚡ ${PARALLEL_IMAGES} parallel images + WebP convert @${Math.round(RESIZE_CONFIG.quality*100)}%`, 'info');
 
     try {
       await fetchChaptersParallel(selected, (completed, total) => {
@@ -949,9 +991,9 @@
         return sum + (cacheData ? cacheData.failed : 0);
       }, 0);
       
-      const totalResized = [...selectedChapters].reduce((sum, id) => {
+      const totalConverted = [...selectedChapters].reduce((sum, id) => {
         const cacheData = chapterDataCache.get(id);
-        return sum + (cacheData ? cacheData.resizedCount : 0);
+        return sum + (cacheData ? cacheData.convertedCount : 0);
       }, 0);
       
       const totalSaved = [...selectedChapters].reduce((sum, id) => {
@@ -959,12 +1001,12 @@
         return sum + (cacheData ? cacheData.savedBytes : 0);
       }, 0);
       
-      const resizeNote = totalResized > 0 ? ` | ✂️ ${totalResized} resized (${formatBytes(totalSaved)} saved)` : '';
-      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed${resizeNote}`, 'success');
+      const convertNote = totalConverted > 0 ? ` | 🎨 ${totalConverted} converted (${formatBytes(totalSaved)} saved)` : '';
+      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed${convertNote}`, 'success');
       
       const summary = document.getElementById('mdx-batch-summary');
       if (summary) {
-        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.${resizeNote ? `<br>✨ ${resizeNote.trim()}` : ''}`;
+        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.${convertNote ? `<br>✨ ${convertNote.trim()}` : ''}`;
         summary.classList.add('active');
       }
       
@@ -1033,7 +1075,7 @@
       chapterDataCache.set(chapterId, data);
       
       const mb = (data.size / 1024 / 1024).toFixed(2);
-      const resizeNote = data.resizedCount > 0 ? ` | ✂️ ${data.resizedCount} (${formatBytes(data.savedBytes)} saved)` : '';
+      const convertNote = data.convertedCount > 0 ? ` | 🎨 ${data.convertedCount} (${formatBytes(data.savedBytes)} saved)` : '';
       const statusEmoji = data.status === 'success' ? '✓' : '⚠';
       
       if (data.failedDetails && data.failedDetails.length > 0) {
@@ -1042,7 +1084,7 @@
         });
       }
       
-      log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB${resizeNote}`, 
+      log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB${convertNote}`, 
           data.status === 'success' ? 'success' : 'error');
       
       renderChapters();
@@ -1153,8 +1195,8 @@
         
         currentZipSize += cacheData.size;
         const mb = (cacheData.size / 1024 / 1024).toFixed(1);
-        const resizeNote = cacheData.resizedCount > 0 ? ` | ✂️ ${cacheData.resizedCount}` : '';
-        log(`✓ Added ${cacheData.blobs.length} images (${mb}MB)${resizeNote}`, 'success');
+        const convertNote = cacheData.convertedCount > 0 ? ` | 🎨 ${cacheData.convertedCount}` : '';
+        log(`✓ Added ${cacheData.blobs.length} images (${mb}MB)${convertNote}`, 'success');
         
         updateProgress(i + 1, selected.length);
         
@@ -1227,8 +1269,12 @@
     // Check WebP support
     const supportsWebP = () => {
       const canvas = document.createElement('canvas');
-      return canvas.toBlob && new Promise(resolve => {
-        canvas.toBlob(blob => resolve(!!blob), 'image/webp', 0.75);
+      return new Promise(resolve => {
+        try {
+          canvas.toBlob(blob => resolve(!!blob), 'image/webp', 0.75);
+        } catch (e) {
+          resolve(false);
+        }
       });
     };
     
@@ -1343,7 +1389,7 @@
       consoleEl.innerHTML = `
         <div id="mdx-console-log"></div>
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
-        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images + Canvas resize</div>
+        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images + WebP convert</div>
       `;
       document.body.appendChild(consoleEl);
       
@@ -1356,7 +1402,7 @@
       log(`🆔 Manga ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
       log(`🏷️ Scanlators found: ${availableScanlators.join(', ') || 'Unknown'}`, 'info');
-      log(`🎨 Resize: ${RESIZE_CONFIG.maxWidth}px max, ${Math.round(RESIZE_CONFIG.quality*100)}% ${RESIZE_CONFIG.format.split('/')[1].toUpperCase()}${RESIZE_CONFIG.skipIfLarger ? ', skip if larger' : ''}`, 'info');
+      log(`🎨 Convert: ${RESIZE_CONFIG.maxWidth}px max width, ${Math.round(RESIZE_CONFIG.quality*100)}% ${RESIZE_CONFIG.format.split('/')[1].toUpperCase()}${RESIZE_CONFIG.skipIfLarger ? ', skip if larger' : ''}`, 'info');
       
     } catch (err) {
       console.error('Init error:', err);
