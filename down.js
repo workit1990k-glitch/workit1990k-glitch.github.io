@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter)
+// Version: 2024-03-20-RATELIMIT (3-Chapter Parallel + Save ID + Image Progress + Scanlator Filter + Rate Limit)
 
 (function() {
   'use strict';
@@ -11,7 +11,7 @@
     return;
   }
   window.mdxLoaded = true;
-  console.log('📚 Manga Downloader v2024-03-20 initialized');
+  console.log('📚 Manga Downloader v2024-03-20-RATELIMIT initialized');
 
   // ============ CONFIG ============
   const API_BASE = 'https://comix.to/api/v2';
@@ -19,11 +19,26 @@
     'Referer': 'https://comix.to/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   };
-const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
-  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 200MB per ZIP
+  // ✅ Use Cloudflare Worker proxy instead of direct wsrv.nl
+  const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
+  // Worker applies: ?url=...&w=1080&we&q=75&output=webp internally
+  
+  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB per ZIP
   const PARALLEL_IMAGES = 3; // Images per chapter
   const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
+
+  // ============ RATE LIMIT CONFIG & STATE ============
+  const RATE_LIMIT = {
+    MAX_IMAGES: 2500,           // Hard limit per 10-min window
+    SOFT_LIMIT: 2400,           // Images allowed at full speed
+    WINDOW_MS: 10 * 60 * 1000,  // 10 minutes in milliseconds
+    SLOWDOWN_DELAY_MS: 1000,    // 1 second delay after soft limit
+  };
+
+  let rateLimitWindowStart = null;  // Timestamp when current window started
+  let rateLimitImageCount = 0;      // Images loaded in current window
+  let rateLimitLastLogCount = 0;    // For debounced logging
 
   // ============ STATE ============
   let allChapters = [];
@@ -99,6 +114,100 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
       return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
     });
+  };
+
+  // ============ RATE LIMIT HELPERS ============
+  const checkRateLimit = async () => {
+    const now = Date.now();
+    
+    // Reset window if 10 minutes have passed
+    if (rateLimitWindowStart && (now - rateLimitWindowStart) >= RATE_LIMIT.WINDOW_MS) {
+      log('🔄 Rate limit window reset (10 min elapsed)', 'info');
+      rateLimitWindowStart = null;
+      rateLimitImageCount = 0;
+      rateLimitLastLogCount = 0;
+      updateRateLimitStatus();
+    }
+    
+    // Start new window on first image
+    if (!rateLimitWindowStart) {
+      rateLimitWindowStart = now;
+      log(`⏱️ Rate limit window started: ${RATE_LIMIT.MAX_IMAGES} images / 10 min`, 'info');
+    }
+    
+    // Allow first SOFT_LIMIT images instantly
+    if (rateLimitImageCount < RATE_LIMIT.SOFT_LIMIT) {
+      rateLimitImageCount++;
+      updateRateLimitStatus();
+      return; // No delay
+    }
+    
+    // Images 2401-2500: apply 1-second delay each
+    if (rateLimitImageCount < RATE_LIMIT.MAX_IMAGES) {
+      rateLimitImageCount++;
+      
+      // Log progress every 10 slow images to avoid spam
+      if (rateLimitImageCount - rateLimitLastLogCount >= 10 || rateLimitImageCount === RATE_LIMIT.MAX_IMAGES) {
+        const remaining = RATE_LIMIT.MAX_IMAGES - rateLimitImageCount;
+        const windowRemaining = Math.ceil((RATE_LIMIT.WINDOW_MS - (now - rateLimitWindowStart)) / 1000);
+        log(`⚠️ Rate limit: slowing to 1 img/sec (${remaining} remaining, window resets in ${windowRemaining}s)`, 'info');
+        rateLimitLastLogCount = rateLimitImageCount;
+      }
+      
+      updateRateLimitStatus();
+      await new Promise(resolve => setTimeout(resolve, RATE_LIMIT.SLOWDOWN_DELAY_MS));
+      return;
+    }
+    
+    // Hard limit reached: wait for window reset
+    const waitMs = RATE_LIMIT.WINDOW_MS - (now - rateLimitWindowStart);
+    log(`🛑 Rate limit reached! Waiting ${Math.ceil(waitMs/1000)}s for window reset...`, 'warning');
+    updateRateLimitStatus();
+    
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+    
+    // Reset and retry
+    rateLimitWindowStart = null;
+    rateLimitImageCount = 0;
+    rateLimitLastLogCount = 0;
+    log('✅ Window reset, resuming downloads', 'success');
+    updateRateLimitStatus();
+  };
+
+  const withRateLimit = async (task) => {
+    await checkRateLimit();
+    return await task();
+  };
+
+  const updateRateLimitStatus = () => {
+    const statusEl = document.getElementById('mdx-rate-status');
+    if (!statusEl) return;
+    
+    const now = Date.now();
+    const windowActive = rateLimitWindowStart && (now - rateLimitWindowStart) < RATE_LIMIT.WINDOW_MS;
+    
+    if (!windowActive) {
+      statusEl.textContent = '🟢 Rate limit: ready';
+      statusEl.className = 'mdx-rate-status ready';
+      return;
+    }
+    
+    const used = rateLimitImageCount;
+    const remaining = RATE_LIMIT.MAX_IMAGES - used;
+    const windowElapsed = now - rateLimitWindowStart;
+    const windowRemaining = Math.ceil((RATE_LIMIT.WINDOW_MS - windowElapsed) / 1000);
+    
+    if (used < RATE_LIMIT.SOFT_LIMIT) {
+      const fastRemaining = RATE_LIMIT.SOFT_LIMIT - used;
+      statusEl.textContent = `🟢 ${used}/2400 fast | ${fastRemaining} left`;
+      statusEl.className = 'mdx-rate-status fast';
+    } else if (used < RATE_LIMIT.MAX_IMAGES) {
+      statusEl.textContent = `🟡 ${used}/2500 | ⏱ ${remaining} slow + ${windowRemaining}s`;
+      statusEl.className = 'mdx-rate-status slow';
+    } else {
+      statusEl.textContent = `🔴 Limit reached! Reset in ${windowRemaining}s`;
+      statusEl.className = 'mdx-rate-status blocked';
+    }
   };
 
   // ============ PARALLEL DOWNLOADER (Images) ============
@@ -225,37 +334,41 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
 
       let downloadedCount = 0;
       
+      // ✅ Wrap each image task with rate limiting
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
-        let url = IMAGE_PROXY + '?url=' + encodeURIComponent(originalUrl);
-        const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
+        return await withRateLimit(async () => {
+          // ✅ Route through Cloudflare Worker proxy
+          let url = IMAGE_PROXY + '?url=' + encodeURIComponent(originalUrl);
+          const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
 
-        try {
-          const res = await fetch(url, {
-            headers: {
-              'Referer': 'https://comix.to/',
-              'Origin': 'https://comix.to'
+          try {
+            const res = await fetch(url, {
+              headers: {
+                'Referer': 'https://comix.to/',
+                'Origin': 'https://comix.to'
+              }
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const blob = await res.blob();
+            
+            downloadedCount++;
+            // Log image progress: every 5 images or on completion
+            if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
+              const imgWord = downloadedCount === 1 ? 'image' : 'images';
+              log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord} downloaded`, 'image-success');
             }
-          });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const blob = await res.blob();
-          
-          downloadedCount++;
-          // Log image progress: every 5 images or on completion
-          if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
-            const imgWord = downloadedCount === 1 ? 'image' : 'images';
-            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord} downloaded`, 'image-success');
+            
+            return { fileName, blob, size: blob.size, index, success: true };
+          } catch (e) {
+            return { 
+              fileName, 
+              index, 
+              success: false, 
+              error: e.message,
+              originalUrl: originalUrl.substring(0, 100)
+            };
           }
-          
-          return { fileName, blob, size: blob.size, index, success: true };
-        } catch (e) {
-          return { 
-            fileName, 
-            index, 
-            success: false, 
-            error: e.message,
-            originalUrl: originalUrl.substring(0, 100)
-          };
-        }
+        });
       });
 
       const results = await downloadWithConcurrency(
@@ -452,6 +565,13 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         .mdx-image-progress { font-size:10px; color:#7982a9; margin-top:6px; display:flex; align-items:center; gap:6px; }
         .mdx-image-bar { flex:1; height:4px; background:#1a1b26; border-radius:2px; overflow:hidden; }
         .mdx-image-fill { height:100%; background:#7aa2f7; transition:width 0.2s; }
+        /* ✅ Rate limit status styles */
+        .mdx-rate-status { font-size:11px; padding:4px 10px; border-radius:6px; font-weight:500; }
+        .mdx-rate-status.fast { color:#9ece6a; background:rgba(158,206,106,.12); border:1px solid rgba(158,206,106,.3); }
+        .mdx-rate-status.slow { color:#e0af68; background:rgba(224,175,104,.12); border:1px solid rgba(224,175,104,.3); }
+        .mdx-rate-status.blocked { color:#f7768e; background:rgba(247,118,142,.12); border:1px solid rgba(247,118,142,.3); animation: pulse 2s infinite; }
+        .mdx-rate-status.ready { color:#7982a9; background:#1a1b26; border:1px solid #414868; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
       </style>
     `;
     
@@ -773,6 +893,9 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       btnRefetchAll.disabled = failedCount === 0 || isFetching;
       btnRefetchAll.textContent = failedCount > 0 ? `🔄 REFETCH ALL FAILED (${failedCount})` : '🔄 REFETCH ALL FAILED';
     }
+    
+    // ✅ Update rate limit status on count changes
+    updateRateLimitStatus();
   };
 
   const log = (msg, type = 'info') => {
@@ -811,6 +934,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
 
     log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
     log(`⚡ ${PARALLEL_IMAGES} parallel images per chapter`, 'info');
+    log(`🚦 Rate limit: ${RATE_LIMIT.SOFT_LIMIT} fast + ${RATE_LIMIT.MAX_IMAGES - RATE_LIMIT.SOFT_LIMIT} slow / 10min`, 'info');
 
     try {
       await fetchChaptersParallel(selected, (completed, total) => {
@@ -1171,6 +1295,8 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <div id="mdx-count"><strong id="mdx-selected-count">0</strong> selected</div>
             <div id="mdx-total-size"></div>
+            <!-- ✅ Rate limit status indicator -->
+            <div id="mdx-rate-status" class="mdx-rate-status ready">🟢 Rate limit: ready</div>
             <button id="mdx-save-btn" class="mdx-btn mdx-btn-save" title="Save manga ID to list">
               💾 SAVE ID
             </button>
@@ -1206,11 +1332,13 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       renderScanlatorFilters();
       renderChapters();
       updateCount();
+      updateRateLimitStatus(); // ✅ Initialize rate status
       
       log(`📚 Loaded: ${mangaTitle}`, 'info');
       log(`🆔 Manga ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
       log(`🏷️ Scanlators found: ${availableScanlators.join(', ') || 'Unknown'}`, 'info');
+      log(`🚦 Rate limit: ${RATE_LIMIT.SOFT_LIMIT} fast + ${RATE_LIMIT.MAX_IMAGES - RATE_LIMIT.SOFT_LIMIT} slow / 10min`, 'info');
       
     } catch (err) {
       console.error('Init error:', err);
