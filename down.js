@@ -1,6 +1,6 @@
-// down.js - Manga Downloader Script
+// down.js - Manga Downloader Script (Direct Download + Client-Side Resize)
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter)
+// Version: 2024-03-20-RESIZE (3-Chapter Parallel + Save ID + Image Progress + Scanlator Filter + Canvas Resize)
 
 (function() {
   'use strict';
@@ -11,7 +11,7 @@
     return;
   }
   window.mdxLoaded = true;
-  console.log('📚 Manga Downloader v2024-03-20 initialized');
+  console.log('📚 Manga Downloader v2024-03-20-RESIZE initialized');
 
   // ============ CONFIG ============
   const API_BASE = 'https://comix.to/api/v2';
@@ -19,10 +19,18 @@
     'Referer': 'https://comix.to/',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
   };
-const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
-  const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 200MB per ZIP
-  const PARALLEL_IMAGES = 3; // Images per chapter
-  const PARALLEL_CHAPTERS = 3; // Chapters simultaneously
+  
+  // ✅ CLIENT-SIDE RESIZE CONFIG (no wsrv)
+  const RESIZE_CONFIG = {
+    maxWidth: 1080,
+    quality: 0.75,
+    format: 'image/webp',
+    skipIfLarger: true
+  };
+  
+  const MAX_ZIP_SIZE = 500 * 1024 * 1024;
+  const PARALLEL_IMAGES = 3;
+  const PARALLEL_CHAPTERS = 3;
   const WORKER_SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
   // ============ STATE ============
@@ -101,6 +109,107 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     });
   };
 
+  // ============ IMAGE RESIZER (Canvas + WebP) ============
+  const resizeImage = async (imageUrl, originalBlob) => {
+    return new Promise(async (resolve) => {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const objectUrl = URL.createObjectURL(originalBlob);
+        
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const { width, height } = img;
+          
+          // Skip resize if already under max width
+          if (width <= RESIZE_CONFIG.maxWidth) {
+            resolve({ blob: originalBlob, resized: false, reason: 'already_small', originalSize: originalBlob.size, newSize: originalBlob.size });
+            return;
+          }
+          
+          const ratio = RESIZE_CONFIG.maxWidth / width;
+          const newWidth = RESIZE_CONFIG.maxWidth;
+          const newHeight = Math.round(height * ratio);
+          
+          const canvas = document.createElement('canvas');
+          canvas.width = newWidth;
+          canvas.height = newHeight;
+          const ctx = canvas.getContext('2d');
+          
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, newWidth, newHeight);
+          
+          canvas.toBlob(
+            (resizedBlob) => {
+              canvas.remove();
+              img.src = '';
+              
+              if (!resizedBlob) {
+                resolve({ blob: originalBlob, resized: false, reason: 'conversion_failed', originalSize: originalBlob.size, newSize: originalBlob.size });
+                return;
+              }
+              
+              // Skip if processed is larger than original (when configured)
+              if (RESIZE_CONFIG.skipIfLarger && resizedBlob.size >= originalBlob.size) {
+                resolve({ blob: originalBlob, resized: false, reason: 'larger_than_original', originalSize: originalBlob.size, newSize: originalBlob.size });
+                return;
+              }
+              
+              resolve({ 
+                blob: resizedBlob, 
+                resized: true, 
+                originalSize: originalBlob.size,
+                newSize: resizedBlob.size,
+                savings: ((1 - resizedBlob.size / originalBlob.size) * 100).toFixed(1) + '%',
+                reason: 'resized'
+              });
+            },
+            RESIZE_CONFIG.format,
+            RESIZE_CONFIG.quality
+          );
+        };
+        
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve({ blob: originalBlob, resized: false, reason: 'load_error', originalSize: originalBlob.size, newSize: originalBlob.size });
+        };
+        
+        img.src = objectUrl;
+        
+      } catch (err) {
+        console.warn('Resize error:', err);
+        resolve({ blob: originalBlob, resized: false, reason: 'exception', originalSize: originalBlob.size, newSize: originalBlob.size });
+      }
+    });
+  };
+
+  // Fetch image as blob (direct, with CORS fallback)
+  const fetchImageBlob = async (url) => {
+    try {
+      // Try with CORS headers first
+      const response = await fetch(url, {
+        headers: {
+          'Referer': 'https://comix.to/',
+          'Origin': 'https://comix.to'
+        },
+        mode: 'cors'
+      });
+      
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return await response.blob();
+    } catch (e) {
+      // Fallback: try without special headers
+      try {
+        const retry = await fetch(url);
+        if (!retry.ok) throw new Error('HTTP ' + retry.status);
+        return await retry.blob();
+      } catch (e2) {
+        throw new Error(`Fetch failed: ${e2.message}`);
+      }
+    }
+  };
+
   // ============ PARALLEL DOWNLOADER (Images) ============
   const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
     const results = [];
@@ -167,8 +276,9 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
           onProgress(completed, chapters.length);
           
           const mb = (data.size / 1024 / 1024).toFixed(2);
+          const resizeInfo = data.resizedCount > 0 ? ` | ✂️ ${data.resizedCount} resized (${formatBytes(data.savedBytes)} saved)` : '';
           const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
-          log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
+          log(`${statusEmoji} Chapter ${chapterNum}: ${data.total - data.failed}/${data.total} images, ${mb}MB${resizeInfo}`, 
               data.status === 'success' ? 'success' : 'error');
           
           if (data.failedDetails && data.failedDetails.length > 0) {
@@ -185,7 +295,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         } catch (err) {
           log(`❌ Chapter ${chapterNum} error: ${err.message}`, 'error');
           chapterDataCache.set(chapter.chapter_id, { 
-            blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [] 
+            blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], resizedCount: 0, savedBytes: 0 
           });
           results.set(chapter.chapter_id, null);
           completed++;
@@ -220,33 +330,31 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       }
 
       if (!imageUrls.length) {
-        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [] };
+        return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [], resizedCount: 0, savedBytes: 0 };
       }
 
       let downloadedCount = 0;
       
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
-        let url = IMAGE_PROXY + '?url=' + encodeURIComponent(originalUrl);
         const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
-
+        
         try {
-          const res = await fetch(url, {
-            headers: {
-              'Referer': 'https://comix.to/',
-              'Origin': 'https://comix.to'
-            }
-          });
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const blob = await res.blob();
+          // 1. Fetch original image directly
+          const originalBlob = await fetchImageBlob(originalUrl);
+          
+          // 2. Resize if needed
+          const { blob: finalBlob, resized, reason, savings, originalSize, newSize } = await resizeImage(originalUrl, originalBlob);
           
           downloadedCount++;
-          // Log image progress: every 5 images or on completion
+          
+          // Log image progress with resize info
           if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
             const imgWord = downloadedCount === 1 ? 'image' : 'images';
-            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord} downloaded`, 'image-success');
+            const resizeNote = resized ? ` ✂️-${savings}` : '';
+            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord}${resizeNote}`, 'image-success');
           }
           
-          return { fileName, blob, size: blob.size, index, success: true };
+          return { fileName, blob: finalBlob, size: finalBlob.size, index, success: true, resized, originalSize, newSize };
         } catch (e) {
           return { 
             fileName, 
@@ -262,7 +370,6 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         downloadTasks, 
         PARALLEL_IMAGES,
         (completed, total) => {
-          // Optional: Update visual progress bar per chapter
           if (showLog && completed % 10 === 0 && completed < total) {
             const imgWord = completed === 1 ? 'image' : 'images';
             log(`⏳ Chapter ${chapterNum}: ${completed}/${total} ${imgWord}...`, 'info');
@@ -272,6 +379,8 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       
       const blobs = [];
       let totalSize = 0;
+      let resizedCount = 0;
+      let savedBytes = 0;
       const failedDetails = [];
 
       results.forEach(result => {
@@ -279,6 +388,12 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
           const r = result.result;
           blobs.push({ fileName: r.fileName, blob: r.blob, size: r.size });
           totalSize += r.size;
+          
+          // Track resize statistics
+          if (r.resized) {
+            resizedCount++;
+            savedBytes += (r.originalSize - r.newSize);
+          }
         } else {
           const errorResult = result.success ? result.result : result.error;
           failedDetails.push({
@@ -299,11 +414,13 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         total: imageUrls.length, 
         failed: failedCount,
         failedDetails,
-        status 
+        status,
+        resizedCount,
+        savedBytes
       };
     } catch (err) {
       console.error('fetchChapterImages error:', err);
-      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [] };
+      return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], resizedCount: 0, savedBytes: 0 };
     }
   };
 
@@ -603,12 +720,13 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         const successCount = cacheData.total - cacheData.failed;
         const successText = `${successCount}/${cacheData.total} images`;
         const failText = cacheData.failed > 0 ? ` (${cacheData.failed} failed)` : '';
+        const resizeText = cacheData.resizedCount > 0 ? ` | ✂️ ${cacheData.resizedCount} (${formatBytes(cacheData.savedBytes)} saved)` : '';
         
         statusDiv.innerHTML = `
           <div class="${statusClass}">
             <strong>✓ ${cacheData.status.toUpperCase()}</strong> 
             | 🏷️ ${ch.scanlation_group?.name || 'Unknown'}
-            | ${sizeText} | ${successText}${failText}
+            | ${sizeText} | ${successText}${failText}${resizeText}
           </div>
         `;
         
@@ -648,7 +766,6 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         item.appendChild(statusDiv);
       }
       
-      // Show image progress bar for actively fetching chapters
       if (isFetching && isSelected && !cacheData && isFiltered) {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'mdx-image-progress';
@@ -810,7 +927,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
     });
 
     log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
-    log(`⚡ ${PARALLEL_IMAGES} parallel images per chapter`, 'info');
+    log(`⚡ ${PARALLEL_IMAGES} parallel images + client-side resize`, 'info');
 
     try {
       await fetchChaptersParallel(selected, (completed, total) => {
@@ -832,11 +949,22 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         return sum + (cacheData ? cacheData.failed : 0);
       }, 0);
       
-      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed`, 'success');
+      const totalResized = [...selectedChapters].reduce((sum, id) => {
+        const cacheData = chapterDataCache.get(id);
+        return sum + (cacheData ? cacheData.resizedCount : 0);
+      }, 0);
+      
+      const totalSaved = [...selectedChapters].reduce((sum, id) => {
+        const cacheData = chapterDataCache.get(id);
+        return sum + (cacheData ? cacheData.savedBytes : 0);
+      }, 0);
+      
+      const resizeNote = totalResized > 0 ? ` | ✂️ ${totalResized} resized (${formatBytes(totalSaved)} saved)` : '';
+      log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed${resizeNote}`, 'success');
       
       const summary = document.getElementById('mdx-batch-summary');
       if (summary) {
-        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.`;
+        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.${resizeNote ? `<br>✨ ${resizeNote.trim()}` : ''}`;
         summary.classList.add('active');
       }
       
@@ -905,6 +1033,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       chapterDataCache.set(chapterId, data);
       
       const mb = (data.size / 1024 / 1024).toFixed(2);
+      const resizeNote = data.resizedCount > 0 ? ` | ✂️ ${data.resizedCount} (${formatBytes(data.savedBytes)} saved)` : '';
       const statusEmoji = data.status === 'success' ? '✓' : '⚠';
       
       if (data.failedDetails && data.failedDetails.length > 0) {
@@ -913,7 +1042,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         });
       }
       
-      log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB`, 
+      log(`${statusEmoji} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB${resizeNote}`, 
           data.status === 'success' ? 'success' : 'error');
       
       renderChapters();
@@ -1024,7 +1153,8 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
         
         currentZipSize += cacheData.size;
         const mb = (cacheData.size / 1024 / 1024).toFixed(1);
-        log(`✓ Added ${cacheData.blobs.length} images (${mb}MB)`, 'success');
+        const resizeNote = cacheData.resizedCount > 0 ? ` | ✂️ ${cacheData.resizedCount}` : '';
+        log(`✓ Added ${cacheData.blobs.length} images (${mb}MB)${resizeNote}`, 'success');
         
         updateProgress(i + 1, selected.length);
         
@@ -1094,6 +1224,21 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
 
   // ============ MAIN ============
   const init = async () => {
+    // Check WebP support
+    const supportsWebP = () => {
+      const canvas = document.createElement('canvas');
+      return canvas.toBlob && new Promise(resolve => {
+        canvas.toBlob(blob => resolve(!!blob), 'image/webp', 0.75);
+      });
+    };
+    
+    const webpSupported = await supportsWebP();
+    if (!webpSupported) {
+      console.warn('⚠️ WebP export not fully supported, falling back to PNG');
+      RESIZE_CONFIG.format = 'image/png';
+      RESIZE_CONFIG.quality = 0.92;
+    }
+    
     if (typeof JSZip === 'undefined') {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
@@ -1198,7 +1343,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       consoleEl.innerHTML = `
         <div id="mdx-console-log"></div>
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
-        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images</div>
+        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images + Canvas resize</div>
       `;
       document.body.appendChild(consoleEl);
       
@@ -1211,6 +1356,7 @@ const IMAGE_PROXY = 'https://plain-night-1447-opt.yuush.workers.dev';
       log(`🆔 Manga ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
       log(`🏷️ Scanlators found: ${availableScanlators.join(', ') || 'Unknown'}`, 'info');
+      log(`🎨 Resize: ${RESIZE_CONFIG.maxWidth}px max, ${Math.round(RESIZE_CONFIG.quality*100)}% ${RESIZE_CONFIG.format.split('/')[1].toUpperCase()}${RESIZE_CONFIG.skipIfLarger ? ', skip if larger' : ''}`, 'info');
       
     } catch (err) {
       console.error('Init error:', err);
