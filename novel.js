@@ -431,7 +431,7 @@ function getImageExtension(url, mimeType) {
 
 // --- Helper: Sanitize filename - dashes only, NO underscores ---
 function sanitizeFilename(str) {
-    return str.replace(/[^a-z0-9\-]/gi, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100) || 'novel';
+    return str.replace(/[^a-z0-9\-]/gi, ' ').replace(/-+/g, ' ').replace(/^-+|-+$/g, '').slice(0, 100) || 'novel';
 }
 
 // --- EPUB Generation ---
@@ -456,7 +456,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
     
     const oebps = zip.folder("OEBPS");
-    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:1em}h1.chapter-title{text-align:center;margin:2em 0 1em}img{max-width:100%;height:auto}`);
+    oebps.file("styles.css", `body{}`);
     
     let manifestItems = '', spineItems = '';
     let coverFilename = null;
