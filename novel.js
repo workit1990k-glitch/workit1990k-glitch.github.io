@@ -2,7 +2,7 @@
 "use strict";
 
 // --- Configuration ---
-const STORAGE_KEY = 'wtr_json_data';
+// localStorage persistence REMOVED - state is now in-memory only
 const DELAY_MS = 12000;
 
 // --- State ---
@@ -27,34 +27,32 @@ function escapeXml(unsafe) {
         .replace(/'/g, '&apos;');
 }
 
-// --- Helper: Load/Save State ---
-function loadState() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed.novelId === downloadState.novelId) {
-                downloadState = parsed;
-            }
-        }
-    } catch (e) {
-        console.error("Failed to load state", e);
+// --- Helper: In-memory state only (localStorage REMOVED) ---
+// loadState(), saveState(), clearState() functions removed
+// State resets on page refresh (by design)
+
+function updateProgressUI() {
+    const count = downloadState.chapters.length;
+    const total = downloadState.totalChapters;
+    const range = rangeInput?.value?.trim() || '';
+    const { start, end } = parseChapterRange(range, total);
+    if (progressText) {
+        progressText.textContent = `${count}/${total} | ${start}-${end}`;
+    }
+    if (toggleBtnEl) {
+        toggleBtnEl.textContent = isDownloading ? "⏸ Pause" : "▶ Start";
+        toggleBtnEl.style.background = isDownloading ? "#dc3545" : "#28a745";
     }
 }
 
-function saveState() {
-    try {
-        downloadState.lastUpdated = Date.now();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(downloadState));
-        updateProgressUI();
-    } catch (e) {
-        alert("Storage Full! Please download and clear space.");
-        stopDownload();
-    }
+function stopDownload() {
+    isDownloading = false;
+    stopRequested = true;
+    updateProgressUI();
 }
 
 function clearState() {
-    localStorage.removeItem(STORAGE_KEY);
+    // In-memory clear only
     downloadState = {
         novelTitle: '',
         novelId: '',
@@ -75,7 +73,7 @@ const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"
 
 downloadState.novelId = id;
 downloadState.novelTitle = novelTitle;
-loadState();
+// loadState() REMOVED
 
 // Fetch Chapter List
 const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { credentials: "include" });
@@ -152,8 +150,8 @@ document.body.appendChild(toggleBtn);
 // --- EPUB Metadata Modal ---
 const epubModal = document.createElement("div");
 epubModal.style.cssText = `
-position: absolute; top: 0; right: 0; height: 100%; 
-background: z-index: 100000; display: none; 
+position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+background: rgba(0,0,0,0.5); z-index: 100000; display: none; 
 justify-content: center; align-items: center;
 `;
 epubModal.innerHTML = `
@@ -164,6 +162,7 @@ epubModal.innerHTML = `
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL</label>
         <input type="url" id="epubCover" placeholder="https://example.com/cover.jpg" 
                style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+        <small style="color:#666;font-size:11px;">Image will be embedded in EPUB (JPG/PNG)</small>
     </div>
     
     <div style="margin-bottom:12px;">
@@ -262,22 +261,6 @@ const toggleBtnEl = document.getElementById("toggleDownloadBtn");
 const progressText = document.getElementById("progressText");
 const rangeInput = document.getElementById("rangeInput");
 
-function updateProgressUI() {
-    const count = downloadState.chapters.length;
-    const total = downloadState.totalChapters;
-    const range = rangeInput.value.trim();
-    const { start, end } = parseChapterRange(range, total);
-    progressText.textContent = `${count}/${total} | ${start}-${end}`;
-    toggleBtnEl.textContent = isDownloading ? "⏸ Pause" : "▶ Start";
-    toggleBtnEl.style.background = isDownloading ? "#dc3545" : "#28a745";
-}
-
-function stopDownload() {
-    isDownloading = false;
-    stopRequested = true;
-    updateProgressUI();
-}
-
 toggleBtnEl.onclick = () => {
     if (isDownloading) {
         stopDownload();
@@ -290,7 +273,7 @@ toggleBtnEl.onclick = () => {
 };
 
 document.getElementById("clearBtn").onclick = () => {
-    if(confirm("Clear all saved progress?")) {
+    if(confirm("Clear all downloaded chapters (in-memory)?")) {
         clearState();
         stopDownload();
     }
@@ -316,7 +299,7 @@ document.getElementById("downloadJsonBtn").onclick = () => {
     a.click();
     document.body.removeChild(a);
     
-    if(confirm("Download complete. Clear local storage?")) {
+    if(confirm("Download complete. Clear downloaded chapters?")) {
         clearState();
     }
 };
@@ -357,7 +340,7 @@ document.getElementById("epubConfirm").onclick = async () => {
     
     try {
         await generateAndDownloadEpub(metadata, start, end);
-        if(confirm("EPUB generated! Clear local storage?")) {
+        if(confirm("EPUB generated! Clear downloaded chapters?")) {
             clearState();
         }
     } catch (err) {
@@ -365,6 +348,46 @@ document.getElementById("epubConfirm").onclick = async () => {
         alert("Failed to generate EPUB: " + err.message);
     }
 };
+
+// --- Helper: Fetch image as Blob ---
+async function fetchImageAsBlob(url) {
+    try {
+        const response = await fetch(url, { mode: 'cors' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        // Validate it's an image
+        if (!blob.type.startsWith('image/')) {
+            throw new Error(`Not an image: ${blob.type}`);
+        }
+        return blob;
+    } catch (err) {
+        console.warn("Cover fetch failed, using placeholder:", err);
+        return null;
+    }
+}
+
+// --- Helper: Get file extension from URL or MIME type ---
+function getImageExtension(url, mimeType) {
+    if (mimeType) {
+        const extMap = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp'
+        };
+        if (extMap[mimeType.toLowerCase()]) return extMap[mimeType.toLowerCase()];
+    }
+    // Fallback to URL parsing
+    try {
+        const pathname = new URL(url).pathname.toLowerCase();
+        if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'jpg';
+        if (pathname.endsWith('.png')) return 'png';
+        if (pathname.endsWith('.gif')) return 'gif';
+        if (pathname.endsWith('.webp')) return 'webp';
+    } catch {}
+    return 'jpg'; // default fallback
+}
 
 // --- EPUB Generation ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
@@ -391,7 +414,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const timestamp = new Date().toISOString().split('T')[0];
     const uid = `urn:uuid:${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // 1. mimetype
+    // 1. mimetype (must be first, uncompressed)
     zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
     
     // 2. container.xml
@@ -405,24 +428,46 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const oebps = zip.folder("OEBPS");
     
     // 3. CSS
-    oebps.file("styles.css", `body{}`);
+    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:1em}h1.chapter-title{text-align:center;margin:2em 0 1em}img{max-width:100%;height:auto}`);
     
     let manifestItems = '';
     let spineItems = '';
     
-    // 4. Cover
-    const coverContent = metadata.cover 
-        ? `<img src="${escapeXml(metadata.cover)}" alt="Cover" style="max-width:100%;max-height:100vh"/>`
-        : `<h1 style="margin-top:40vh">${escapeXml(metadata.title)}</h1>`;
+    // 4. Cover Image Handling (FIXED: embed image instead of hotlinking)
+    let coverFilename = null;
+    let coverMediaType = 'image/jpeg';
+    
+    if (metadata.cover) {
+        progressText.textContent = `Fetching cover image...`;
+        const coverBlob = await fetchImageAsBlob(metadata.cover);
+        
+        if (coverBlob) {
+            coverMediaType = coverBlob.type || 'image/jpeg';
+            const ext = getImageExtension(metadata.cover, coverMediaType);
+            coverFilename = `cover.${ext}`;
+            
+            // Add image to EPUB
+            oebps.file(coverFilename, coverBlob, { binary: true });
+            
+            // Add to manifest with cover-image property
+            manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverMediaType}" properties="cover-image"/>\n`;
+        }
+    }
+    
+    // Cover page XHTML
+    const coverContent = coverFilename 
+        ? `<img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/>`
+        : `<div style="margin-top:40vh;text-align:center"><h1>${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="margin-top:1em">by ${escapeXml(metadata.author)}</p>` : ''}</div>`;
     
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head><title>Cover</title><style>body{margin:0;padding:0;text-align:center}</style></head>
+<head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff}</style></head>
 <body>${coverContent}</body></html>`);
     
-    manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/>\n';
+    manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
+    spineItems += '<itemref idref="cover"/>\n';
     
     // 5. Chapters
     for (const ch of chapters) {
@@ -441,7 +486,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 </head>
 <body>
     <h1 class="chapter-title">${escapeXml(ch.title)}</h1>
-    <p>${escapedContent || ' '}</p>
+    <p>${escapedContent || ' '}</p>
 </body>
 </html>`;
         
@@ -477,7 +522,6 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     ${manifestItems}
   </manifest>
   <spine toc="ncx">
-    <itemref idref="cover"/>
     ${spineItems}
   </spine>
 </package>`);
@@ -518,7 +562,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 </body>
 </html>`);
     
-    // 9. Generate with compression level 9
+    // 9. Generate EPUB
     const filename = `${metadata.title.replace(/[^a-z0-9\-_]/gi, '_')}.epub`;
     
     progressText.textContent = `Compressing EPUB...`;
@@ -537,6 +581,8 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+    
+    progressText.textContent = `EPUB ready!`;
 }
 
 // --- Main Download Loop ---
@@ -558,15 +604,16 @@ async function runDownloadLoop() {
             break;
         }
 
-        progressText.textContent = `Fetching #${ch.order}...`;
+        if (progressText) progressText.textContent = `Fetching #${ch.order}...`;
         try {
             const data = await fetchChapterContent(ch.order);
             if (!downloadState.chapters.some(c => c.order === data.order)) {
                 downloadState.chapters.push(data);
-                saveState();
+                // saveState() REMOVED - in-memory only
+                updateProgressUI();
             }
         } catch (err) {
-            progressText.textContent = `Error at #${ch.order}`;
+            if (progressText) progressText.textContent = `Error at #${ch.order}`;
             stopDownload();
             alert(`Failed chapter ${ch.order}: ${err.message}`);
             break;
@@ -586,13 +633,15 @@ async function runDownloadLoop() {
 updateProgressUI();
 
 // Range highlight
-rangeInput.addEventListener('input', () => {
-    const { start, end } = parseChapterRange(rangeInput.value.trim(), allChapters.length);
-    document.querySelectorAll('#chaptersList > div').forEach(div => {
-        const order = parseInt(div.dataset.order, 10);
-        div.style.background = (order >= start && order <= end) ? '#e8f4fd' : 'transparent';
+if (rangeInput) {
+    rangeInput.addEventListener('input', () => {
+        const { start, end } = parseChapterRange(rangeInput.value.trim(), allChapters.length);
+        document.querySelectorAll('#chaptersList > div').forEach(div => {
+            const order = parseInt(div.dataset.order, 10);
+            div.style.background = (order >= start && order <= end) ? '#e8f4fd' : 'transparent';
+        });
+        updateProgressUI();
     });
-    updateProgressUI();
-});
+}
 
 })();
