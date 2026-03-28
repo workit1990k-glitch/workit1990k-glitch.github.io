@@ -2,7 +2,6 @@
 "use strict";
 
 // --- Configuration ---
-// localStorage persistence REMOVED - state is now in-memory only
 const DELAY_MS = 12000;
 
 // --- State ---
@@ -157,7 +156,7 @@ epubModal.innerHTML = `
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL</label>
         <input type="url" id="epubCover" placeholder="https://example.com/cover.jpg" 
                style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
-        <small style="color:#666;font-size:11px;">Image will be embedded in EPUB (JPG/PNG)</small>
+        <small style="color:#666;font-size:11px;">Embedded in EPUB (CORS-friendly URLs work best)</small>
     </div>
     
     <div style="margin-bottom:12px;">
@@ -344,86 +343,88 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- Helper: Fetch image as Blob with WTR-Lab headers & fallbacks ---
+// --- Helper: Fetch image as Blob with CORS fallback ---
 async function fetchImageAsBlob(url) {
     if (!url) return null;
     
-    const fetchWithConfig = async (config) => {
-        const resp = await fetch(url, config);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        if (!blob.type?.startsWith('image/') || blob.size === 0) {
-            throw new Error(`Invalid image: ${blob.type || 'empty'}`);
-        }
-        return blob;
-    };
-    
-    // Strategy 1: Full headers + credentials (primary)
+    // Strategy 1: no-cors mode (opaque but works for embedding)
+    // This bypasses CORS checks - we can't read response metadata but CAN use the blob
     try {
-        return await fetchWithConfig({
-            credentials: 'include',
-            headers: {
-                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                'Referer': 'https://wtr-lab.com/',
-                'Origin': 'https://wtr-lab.com'
-            },
-            mode: 'cors'
-        });
-    } catch (e1) {
-        console.debug("Primary cover fetch failed:", e1.message);
-    }
-    
-    // Strategy 2: no-cors mode (opaque response, but may work)
-    try {
-        const resp = await fetch(url, { mode: 'no-cors', credentials: 'include' });
+        const resp = await fetch(url, { mode: 'no-cors' });
         const blob = await resp.blob();
-        if (blob.size > 100) {
-            console.log("Cover fetched via no-cors");
+        if (blob && blob.size > 100) {
+            console.log("✓ Cover fetched via no-cors (opaque response)");
             return blob;
         }
-    } catch (e2) {
-        console.debug("No-cors fallback failed:", e2.message);
+    } catch (e1) {
+        console.debug("no-cors fetch failed:", e1.message);
     }
     
-    // Strategy 3: Simple GET without credentials (for public CDNs)
+    // Strategy 2: Simple CORS fetch (for public CDNs that allow it)
     try {
-        return await fetchWithConfig({ mode: 'cors' });
-    } catch (e3) {
-        console.debug("Simple fetch failed:", e3.message);
+        const resp = await fetch(url, { mode: 'cors' });
+        if (resp.ok) {
+            const blob = await resp.blob();
+            if (blob.type?.startsWith('image/') && blob.size > 0) {
+                console.log("✓ Cover fetched via CORS");
+                return blob;
+            }
+        }
+    } catch (e2) {
+        console.debug("CORS fetch failed:", e2.message);
     }
     
+    // Strategy 3: With credentials (for auth-protected images)
+    try {
+        const resp = await fetch(url, { 
+            mode: 'cors',
+            credentials: 'include',
+            headers: {
+                'Referer': 'https://wtr-lab.com/',
+                'Origin': 'https://wtr-lab.com'
+            }
+        });
+        if (resp.ok) {
+            const blob = await resp.blob();
+            if (blob.type?.startsWith('image/') && blob.size > 0) {
+                console.log("✓ Cover fetched with credentials");
+                return blob;
+            }
+        }
+    } catch (e3) {
+        console.debug("Credentials fetch failed:", e3.message);
+    }
+    
+    console.warn("⚠ All cover fetch strategies failed - using text fallback");
     return null;
 }
 
-// --- Helper: Get file extension from URL or MIME type ---
+// --- Helper: Get file extension from URL or guess ---
 function getImageExtension(url, mimeType) {
-    if (mimeType) {
+    if (mimeType && mimeType.startsWith('image/')) {
         const extMap = {
-            'image/jpeg': 'jpg',
-            'image/jpg': 'jpg',
-            'image/png': 'png',
-            'image/gif': 'gif',
-            'image/webp': 'webp'
+            'image/jpeg': 'jpg', 'image/jpg': 'jpg',
+            'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp'
         };
-        if (extMap[mimeType.toLowerCase()]) return extMap[mimeType.toLowerCase()];
+        if (extMap[mimeType]) return extMap[mimeType];
     }
     try {
-        const pathname = new URL(url).pathname.toLowerCase();
-        if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'jpg';
-        if (pathname.endsWith('.png')) return 'png';
-        if (pathname.endsWith('.gif')) return 'gif';
-        if (pathname.endsWith('.webp')) return 'webp';
+        const p = new URL(url).pathname.toLowerCase();
+        if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'jpg';
+        if (p.endsWith('.png')) return 'png';
+        if (p.endsWith('.gif')) return 'gif';
+        if (p.endsWith('.webp')) return 'webp';
     } catch {}
-    return 'jpg';
+    return 'jpg'; // default
 }
 
-// --- Helper: Sanitize filename - NO underscores, use dashes ---
+// --- Helper: Sanitize filename - dashes only, NO underscores ---
 function sanitizeFilename(str) {
     return str
-        .replace(/[^a-z0-9\-]/gi, ' ')  // Replace non-alphanumeric/non-dash with dash (NO underscores)
-        .replace(/-+/g, ' ')             // Collapse multiple dashes
-        .replace(/^-+|-+$/g, '')         // Trim leading/trailing dashes
-        .slice(0, 100);                  // Limit length
+        .replace(/[^a-z0-9\-]/gi, ' ')
+        .replace(/-+/g, ' ')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 100) || 'novel';
 }
 
 // --- EPUB Generation ---
@@ -463,33 +464,30 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 </container>`);
     
     const oebps = zip.folder("OEBPS");
-    
-    // 3. CSS
     oebps.file("styles.css", `body{}`);
     
     let manifestItems = '';
     let spineItems = '';
     
-    // 4. Cover Image Handling (FIXED: embed image instead of hotlinking)
+    // 4. Cover Image Handling
     let coverFilename = null;
     let coverMediaType = 'image/jpeg';
     
     if (metadata.cover) {
-        if (progressText) progressText.textContent = `Fetching cover image...`;
+        if (progressText) progressText.textContent = `Fetching cover...`;
         const coverBlob = await fetchImageAsBlob(metadata.cover);
         
         if (coverBlob) {
+            // Opaque responses have empty type, so guess from URL
             coverMediaType = coverBlob.type || 'image/jpeg';
-            const ext = getImageExtension(metadata.cover, coverMediaType);
+            const ext = getImageExtension(metadata.cover, coverBlob.type);
             coverFilename = `cover.${ext}`;
             
-            // Add image to EPUB
             oebps.file(coverFilename, coverBlob, { binary: true, compression: 'DEFLATE' });
-            
-            // Add to manifest with cover-image property
             manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverMediaType}" properties="cover-image"/>\n`;
+            console.log(`✓ Cover embedded: ${coverFilename}`);
         } else {
-            console.warn("Cover image could not be fetched, using text fallback");
+            console.warn("Cover not embedded (CORS/Network issue)");
         }
     }
     
@@ -539,10 +537,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const safeTitle = escapeXml(metadata.title);
     const safeAuthor = escapeXml(metadata.author || 'Unknown');
     const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
-    const tagsXml = metadata.tags
-        .filter(t => t)
-        .map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`)
-        .join('\n    ');
+    const tagsXml = metadata.tags.filter(t => t).map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`).join('\n    ');
     
     oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
@@ -553,7 +548,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     <dc:language>en</dc:language>
     <dc:date>${timestamp}</dc:date>
     ${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}
-    ${tagsXml ? tagsXml : ''}
+    ${tagsXml || ''}
   </metadata>
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -574,9 +569,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     
     oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-  <head>
-    <meta name="dtb:uid" content="${uid}"/>
-  </head>
+  <head><meta name="dtb:uid" content="${uid}"/></head>
   <docTitle><text>${safeTitle}</text></docTitle>
   <docAuthor><text>${safeAuthor}</text></docAuthor>
   <navMap>${navPoints}
@@ -593,15 +586,11 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head><title>Table of Contents</title></head>
 <body>
-  <nav epub:type="toc">
-    <h1>Chapters</h1>
-    <ol>${navItems}
-    </ol>
-  </nav>
+  <nav epub:type="toc"><h1>Chapters</h1><ol>${navItems}</ol></nav>
 </body>
 </html>`);
     
-    // 9. Generate EPUB - FIXED: NO underscores in filename
+    // 9. Generate EPUB - NO underscores in filename
     const safeFilename = sanitizeFilename(metadata.title);
     const filename = `${safeFilename}.epub`;
     
@@ -622,7 +611,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
     
-    if (progressText) progressText.textContent = `EPUB ready!`;
+    if (progressText) progressText.textContent = `✓ EPUB ready!`;
 }
 
 // --- Main Download Loop ---
@@ -640,9 +629,7 @@ async function runDownloadLoop() {
     }
 
     for (const ch of remaining) {
-        if (stopRequested || !isDownloading) {
-            break;
-        }
+        if (stopRequested || !isDownloading) break;
 
         if (progressText) progressText.textContent = `Fetching #${ch.order}...`;
         try {
@@ -657,7 +644,6 @@ async function runDownloadLoop() {
             alert(`Failed chapter ${ch.order}: ${err.message}`);
             break;
         }
-
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
 
