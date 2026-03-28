@@ -3,7 +3,7 @@
 
 const DELAY_MS = 12000;
 
-// --- State ---
+// --- State (in-memory only, no localStorage) ---
 let isDownloading = false;
 let stopRequested = false;
 let downloadState = {
@@ -25,7 +25,7 @@ function escapeXml(unsafe) {
         .replace(/'/g, '&apos;');
 }
 
-// --- Helper: In-memory state only ---
+// --- UI Helpers ---
 function updateProgressUI() {
     const count = downloadState.chapters.length;
     const total = downloadState.totalChapters;
@@ -124,8 +124,8 @@ epubModal.innerHTML = `
     <h3 style="margin:0 0 15px 0; border-bottom:1px solid #eee; padding-bottom:10px;">📖 EPUB Export Settings</h3>
     <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL</label>
-        <input type="url" id="epubCover" placeholder="Leave blank to auto-detect from page" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
-        <small style="color:#666;font-size:11px;">Auto-detect uses the cover already loaded on this page</small>
+        <input type="url" id="epubCover" placeholder="Auto-filled from page" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+        <small style="color:#666;font-size:11px;">Extracted from page data (no CORS fetch needed)</small>
     </div>
     <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Book Title</label>
@@ -228,12 +228,12 @@ document.getElementById("downloadEpubBtn").onclick = () => {
         if (start !== 1 || end !== downloadState.totalChapters)
             document.getElementById("epubTitle").value = `${downloadState.novelTitle} ${start}-${end}`;
     }
-    // Auto-detect cover from page if input is empty
+    // Auto-fill cover from __NEXT_DATA__ (parser approach)
     if (!document.getElementById("epubCover").value.trim()) {
-        const autoCover = findCoverImageOnPage();
+        const autoCover = getCoverFromNextData();
         if (autoCover) {
             document.getElementById("epubCover").value = autoCover;
-            console.log("✓ Auto-detected cover:", autoCover);
+            console.log("✓ Auto-filled cover from __NEXT_DATA__:", autoCover);
         }
     }
     epubModal.style.display = "flex";
@@ -261,92 +261,56 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- 🎨 COVER EXTRACTION: wtr-lab.com specific ---
-function findCoverImageOnPage() {
-    // wtr-lab.com specific: cover is in .image-section .image-wrap img
-    // src is like: /api/v2/img?src=s3%3A%2F%2Fwtrimg%2Fseries%2F...jpg&w=344
-    const coverImg = document.querySelector('.image-section .image-wrap img, .image-wrap img[src*="/api/v2/img"]');
-    if (coverImg && coverImg.src && coverImg.complete && coverImg.naturalWidth > 0) {
-        // Return absolute URL for consistency
-        return new URL(coverImg.src, window.location.origin).href;
+// --- 🎨 COVER: Extract from __NEXT_DATA__ (like WebToEpub parser) ---
+function getCoverFromNextData() {
+    try {
+        const script = document.querySelector('script#__NEXT_DATA__');
+        if (!script?.textContent) return null;
+        const json = JSON.parse(script.textContent);
+        // Path matches WtrlabParser.loadEpubMetaInfo()
+        const cover = json?.props?.pageProps?.serie?.serie_data?.data?.image;
+        return cover || null;
+    } catch (e) {
+        console.debug("Failed to parse __NEXT_DATA__:", e.message);
+        return null;
     }
-    return null;
 }
 
-async function extractCoverBlobFromPage(imgUrl) {
-    if (!imgUrl) return null;
+// --- 🖼️ Embed cover via no-cors fetch (opaque blob works in ZIP) ---
+async function embedCoverBlob(url) {
+    if (!url) return null;
+    console.log("🔍 Embedding cover via no-cors:", url);
     
-    // Find the img element - handle both absolute and relative URLs
-    let imgEl = null;
-    const targetSrc = imgUrl.split('?')[0]; // Compare base path
-    
-    const imgs = document.querySelectorAll('img');
-    for (const img of imgs) {
-        const imgBase = img.src?.split('?')[0];
-        if (imgBase && targetSrc && imgBase.includes(targetSrc.split('/').pop())) {
-            if (img.complete && img.naturalWidth > 0) {
-                imgEl = img;
-                break;
-            }
-        }
-    }
-    
-    // If not found, try direct query
-    if (!imgEl && imgUrl.includes('/api/v2/img')) {
-        imgEl = document.querySelector(`img[src*="${imgUrl.split('?')[1]?.split('&')[0]}"]`);
-    }
-    
-    if (!imgEl) {
-        // Last resort: create new img (might hit CORS but worth trying)
-        imgEl = new Image();
-        imgEl.crossOrigin = 'anonymous';
-        imgEl.src = imgUrl;
-        try {
-            await new Promise((resolve, reject) => {
-                imgEl.onload = resolve;
-                imgEl.onerror = reject;
-                setTimeout(() => reject(new Error('Timeout')), 5000);
-            });
-        } catch {
-            console.debug("Could not load cover image");
-            return null;
-        }
-    }
-    
-    // Draw to canvas - this works for same-origin images!
     try {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = imgEl.naturalWidth || imgEl.width || 344;
-        canvas.height = imgEl.naturalHeight || imgEl.height || 500;
-        
-        // This will throw if CORS-tainted, but wtr-lab.com images are same-origin via /api/v2/img
-        ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-        
-        const blob = await new Promise(resolve => 
-            canvas.toBlob(resolve, 'image/jpeg', 0.9)
-        );
-        
-        if (blob && blob.size > 100) {
-            console.log("✓ Cover extracted via canvas (same-origin)");
-            return blob;
-        }
-    } catch (e) {
-        console.debug("Canvas extraction failed:", e.message);
-    }
-    
-    // Fallback: no-cors fetch
-    try {
-        const resp = await fetch(imgUrl, { mode: 'no-cors' });
+        // no-cors mode returns opaque response but blob is still usable in ZIP
+        const resp = await fetch(url, { mode: 'no-cors', credentials: 'include' });
         const blob = await resp.blob();
+        
+        // Opaque responses have empty type, but size check confirms we got data
         if (blob && blob.size > 100) {
-            console.log("✓ Cover fetched via no-cors");
+            console.log(`✓ Cover embedded (opaque blob, ${blob.size} bytes)`);
             return blob;
         }
+        console.warn("⚠ Blob too small or empty:", blob?.size);
     } catch (e) {
         console.debug("no-cors fetch failed:", e.message);
     }
     
+    // Fallback: try simple cors fetch (for public CDNs)
+    try {
+        const resp = await fetch(url, { mode: 'cors' });
+        if (resp.ok) {
+            const blob = await resp.blob();
+            if (blob.type?.startsWith('image/') && blob.size > 100) {
+                console.log(`✓ Cover fetched via CORS: ${blob.type}`);
+                return blob;
+            }
+        }
+    } catch (e) {
+        console.debug("CORS fetch failed:", e.message);
+    }
+    
+    console.warn("❌ Cover embedding failed - using text fallback");
     return null;
 }
 
@@ -368,19 +332,28 @@ function getImageExtension(url, mimeType) {
 
 // --- Helper: Sanitize filename - dashes only, NO underscores ---
 function sanitizeFilename(str) {
-    return str.replace(/[^a-z0-9\-]/gi, ' ').replace(/-+/g, ' ').replace(/^-+|-+$/g, '').slice(0, 100) || 'novel';
+    return str
+        .replace(/[^a-z0-9\-]/gi, '-')  // Only allow letters, numbers, dashes
+        .replace(/-+/g, '-')             // Collapse multiple dashes
+        .replace(/^-+|-+$/g, '')         // Trim edges
+        .slice(0, 100) || 'novel';       // Limit length
 }
 
 // --- EPUB Generation ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
-    const chapters = downloadState.chapters.filter(c => c.order >= startOrder && c.order <= endOrder).sort((a,b)=>a.order-b.order);
-    if (chapters.length === 0) throw new Error("No chapters in range");
+    const chapters = downloadState.chapters
+        .filter(c => c.order >= startOrder && c.order <= endOrder)
+        .sort((a,b) => a.order - b.order);
     
+    if (chapters.length === 0) throw new Error("No chapters in selected range");
+    
+    // Load JSZip dynamically
     if (typeof JSZip === 'undefined') {
         await new Promise((resolve, reject) => {
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-            script.onload = resolve; script.onerror = () => reject(new Error("JSZip load failed"));
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("Failed to load JSZip"));
             document.head.appendChild(script);
         });
     }
@@ -389,36 +362,43 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const timestamp = new Date().toISOString().split('T')[0];
     const uid = `urn:uuid:${Date.now()}-${Math.random().toString(36).substr(2,9)}`;
     
+    // 1. mimetype (must be first, uncompressed)
     zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+    
+    // 2. container.xml
     zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
     
     const oebps = zip.folder("OEBPS");
-    oebps.file("styles.css", `body{}`);
+    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:1em}h1.chapter-title{text-align:center;margin:2em 0 1em}img{max-width:100%;height:auto}`);
     
     let manifestItems = '', spineItems = '';
     
-    // Cover handling: extract from page via canvas (CORS-free for same-origin)
+    // 4. Cover handling: extract URL from __NEXT_DATA__, embed via no-cors
     let coverFilename = null, coverMediaType = 'image/jpeg';
     
     if (metadata.cover) {
-        if (progressText) progressText.textContent = `Extracting cover...`;
-        const coverBlob = await extractCoverBlobFromPage(metadata.cover);
+        if (progressText) progressText.textContent = `Embedding cover...`;
+        const coverBlob = await embedCoverBlob(metadata.cover);
         
         if (coverBlob) {
+            // Opaque responses have empty type, guess from URL
             coverMediaType = coverBlob.type || 'image/jpeg';
             const ext = getImageExtension(metadata.cover, coverBlob.type);
             coverFilename = `cover.${ext}`;
+            
+            // Add to ZIP - opaque blobs work fine here
             oebps.file(coverFilename, coverBlob, { binary: true, compression: 'DEFLATE' });
             manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverMediaType}" properties="cover-image"/>\n`;
             console.log(`✓ Cover embedded: ${coverFilename}`);
         } else {
-            console.warn("⚠ Cover extraction failed - using text fallback");
+            console.warn("⚠ Cover not embedded - using text fallback");
         }
     }
     
+    // Cover page XHTML
     const coverContent = coverFilename 
         ? `<div style="margin:0;padding:0;text-align:center;background:#fff"><img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/></div>`
-        : `<div style="margin-top:40vh;text-align:center"><h1>${escapeXml(metadata.title)}</h1>${metadata.author?`<p style="margin-top:1em">by ${escapeXml(metadata.author)}</p>`:''}</div>`;
+        : `<div style="margin-top:40vh;text-align:center"><h1>${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="margin-top:1em">by ${escapeXml(metadata.author)}</p>` : ''}</div>`;
     
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff}</style></head><body>${coverContent}</body></html>`);
     
@@ -426,40 +406,68 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
     spineItems += '<itemref idref="cover"/>\n';
     
-    // Chapters
+    // 5. Chapters
     for (const ch of chapters) {
-        const escapedContent = ch.content.split('\n').map(l=>escapeXml(l.trim())).filter(l=>l).join('</p><p>');
-        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(ch.title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(ch.title)}</h1><p>${escapedContent||' '}</p></body></html>`;
-        const fname = `chapter_${String(ch.order).padStart(4,'0')}.xhtml`;
-        oebps.file(fname, xhtml);
-        manifestItems += `<item id="ch${ch.order}" href="${fname}" media-type="application/xhtml+xml"/>\n`;
+        const escapedContent = ch.content
+            .split('\n')
+            .map(line => escapeXml(line.trim()))
+            .filter(line => line)
+            .join('</p><p>');
+        
+        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(ch.title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(ch.title)}</h1><p>${escapedContent || ' '}</p></body></html>`;
+        
+        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
+        oebps.file(filename, xhtml);
+        manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
     }
     
-    // content.opf
-    const safeTitle = escapeXml(metadata.title), safeAuthor = escapeXml(metadata.author||'Unknown');
+    // 6. content.opf
+    const safeTitle = escapeXml(metadata.title);
+    const safeAuthor = escapeXml(metadata.author || 'Unknown');
     const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
-    const tagsXml = metadata.tags.filter(t=>t).map(t=>`<dc:subject>${escapeXml(t)}</dc:subject>`).join('\n    ');
+    const tagsXml = metadata.tags.filter(t => t).map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`).join('\n    ');
     
-    oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">${uid}</dc:identifier><dc:title>${safeTitle}</dc:title><dc:creator>${safeAuthor}</dc:creator><dc:language>en</dc:language><dc:date>${timestamp}</dc:date>${safeDesc?`<dc:description>${safeDesc}</dc:description>`:''}${tagsXml?'\n    '+tagsXml:''}</metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="styles.css" media-type="text/css"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
+    oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">${uid}</dc:identifier><dc:title>${safeTitle}</dc:title><dc:creator>${safeAuthor}</dc:creator><dc:language>en</dc:language><dc:date>${timestamp}</dc:date>${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}${tagsXml ? '\n    ' + tagsXml : ''}</metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="styles.css" media-type="text/css"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
     
-    // toc.ncx
-    const navPoints = chapters.map((ch,idx)=>`\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(ch.title)}</text></navLabel><content src="chapter_${String(ch.order).padStart(4,'0')}.xhtml"/></navPoint>`).join('');
-    oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uid}"/></head><docTitle><text>${safeTitle}</text></docTitle><docAuthor><text>${safeAuthor}</text></docAuthor><navMap>${navPoints}\n  </navMap></ncx>`);
+    // 7. toc.ncx
+    const navPoints = chapters.map((ch, idx) => `
+    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}">
+      <navLabel><text>${escapeXml(ch.title)}</text></navLabel>
+      <content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/>
+    </navPoint>`).join('');
     
-    // nav.xhtml
-    const navItems = chapters.map(ch=>`<li><a href="chapter_${String(ch.order).padStart(4,'0')}.xhtml">${escapeXml(ch.title)}</a></li>`).join('\n');
+    oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uid}"/></head><docTitle><text>${safeTitle}</text></docTitle><docAuthor><text>${safeAuthor}</text></docAuthor><navMap>${navPoints}
+  </navMap></ncx>`);
+    
+    // 8. nav.xhtml
+    const navItems = chapters.map(ch => 
+        `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`
+    ).join('\n');
+    
     oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title></head><body><nav epub:type="toc"><h1>Chapters</h1><ol>${navItems}</ol></nav></body></html>`);
     
-    // Generate - NO underscores in filename
+    // 9. Generate EPUB - NO underscores in filename
     const safeFilename = sanitizeFilename(metadata.title);
     const filename = `${safeFilename}.epub`;
     
     if (progressText) progressText.textContent = `Compressing EPUB...`;
-    const blob = await zip.generateAsync({ type:"blob", mimeType:"application/epub+zip", compression:"DEFLATE", compressionOptions:{level:9} });
     
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    const blob = await zip.generateAsync({ 
+        type: "blob", 
+        mimeType: "application/epub+zip", 
+        compression: "DEFLATE",
+        compressionOptions: { level: 9 }
+    });
+    
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    
     if (progressText) progressText.textContent = `✓ EPUB ready!`;
 }
 
@@ -470,7 +478,12 @@ async function runDownloadLoop() {
     const existingOrders = new Set(downloadState.chapters.map(c => c.order));
     const remaining = chaptersToDownload.filter(ch => !existingOrders.has(ch.order));
 
-    if (remaining.length === 0) { alert("All chapters in range already downloaded!"); isDownloading = false; updateProgressUI(); return; }
+    if (remaining.length === 0) {
+        alert("All chapters in range already downloaded!");
+        isDownloading = false;
+        updateProgressUI();
+        return;
+    }
 
     for (const ch of remaining) {
         if (stopRequested || !isDownloading) break;
@@ -483,15 +496,24 @@ async function runDownloadLoop() {
             }
         } catch (err) {
             if (progressText) progressText.textContent = `Error at #${ch.order}`;
-            stopDownload(); alert(`Failed chapter ${ch.order}: ${err.message}`); break;
+            stopDownload();
+            alert(`Failed chapter ${ch.order}: ${err.message}`);
+            break;
         }
         await new Promise(r => setTimeout(r, DELAY_MS));
     }
-    if (isDownloading && !stopRequested) { alert(`Download Complete! ${downloadState.chapters.length} chapters.`); isDownloading = false; updateProgressUI(); }
+
+    if (isDownloading && !stopRequested) {
+        alert(`Download Complete! ${downloadState.chapters.length} chapters.`);
+        isDownloading = false;
+        updateProgressUI();
+    }
 }
 
 // Initialize
 updateProgressUI();
+
+// Range highlight
 if (rangeInput) {
     rangeInput.addEventListener('input', () => {
         const { start, end } = parseChapterRange(rangeInput.value.trim(), allChapters.length);
@@ -503,10 +525,13 @@ if (rangeInput) {
     });
 }
 
-// Debug: Log cover detection on load
-console.log("🔍 Looking for cover in: .image-section .image-wrap img");
-const testCover = findCoverImageOnPage();
-if (testCover) console.log("✓ Found cover:", testCover);
-else console.log("⚠ No cover found - check page structure");
+// Debug: Log cover detection
+console.log("🔍 WTR Downloader loaded");
+const testCover = getCoverFromNextData();
+if (testCover) {
+    console.log("✓ Found cover in __NEXT_DATA__:", testCover);
+} else {
+    console.log("⚠ No cover found in __NEXT_DATA__ - check page structure");
+}
 
 })();
