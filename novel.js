@@ -27,10 +27,7 @@ function escapeXml(unsafe) {
         .replace(/'/g, '&apos;');
 }
 
-// --- Helper: In-memory state only (localStorage REMOVED) ---
-// loadState(), saveState(), clearState() functions removed
-// State resets on page refresh (by design)
-
+// --- Helper: In-memory state only ---
 function updateProgressUI() {
     const count = downloadState.chapters.length;
     const total = downloadState.totalChapters;
@@ -52,7 +49,6 @@ function stopDownload() {
 }
 
 function clearState() {
-    // In-memory clear only
     downloadState = {
         novelTitle: '',
         novelId: '',
@@ -73,7 +69,6 @@ const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"
 
 downloadState.novelId = id;
 downloadState.novelTitle = novelTitle;
-// loadState() REMOVED
 
 // Fetch Chapter List
 const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { credentials: "include" });
@@ -349,21 +344,55 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- Helper: Fetch image as Blob ---
+// --- Helper: Fetch image as Blob with WTR-Lab headers & fallbacks ---
 async function fetchImageAsBlob(url) {
-    try {
-        const response = await fetch(url, { mode: 'cors' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        // Validate it's an image
-        if (!blob.type.startsWith('image/')) {
-            throw new Error(`Not an image: ${blob.type}`);
+    if (!url) return null;
+    
+    const fetchWithConfig = async (config) => {
+        const resp = await fetch(url, config);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        if (!blob.type?.startsWith('image/') || blob.size === 0) {
+            throw new Error(`Invalid image: ${blob.type || 'empty'}`);
         }
         return blob;
-    } catch (err) {
-        console.warn("Cover fetch failed, using placeholder:", err);
-        return null;
+    };
+    
+    // Strategy 1: Full headers + credentials (primary)
+    try {
+        return await fetchWithConfig({
+            credentials: 'include',
+            headers: {
+                'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                'Referer': 'https://wtr-lab.com/',
+                'Origin': 'https://wtr-lab.com'
+            },
+            mode: 'cors'
+        });
+    } catch (e1) {
+        console.debug("Primary cover fetch failed:", e1.message);
     }
+    
+    // Strategy 2: no-cors mode (opaque response, but may work)
+    try {
+        const resp = await fetch(url, { mode: 'no-cors', credentials: 'include' });
+        const blob = await resp.blob();
+        if (blob.size > 100) {
+            console.log("Cover fetched via no-cors");
+            return blob;
+        }
+    } catch (e2) {
+        console.debug("No-cors fallback failed:", e2.message);
+    }
+    
+    // Strategy 3: Simple GET without credentials (for public CDNs)
+    try {
+        return await fetchWithConfig({ mode: 'cors' });
+    } catch (e3) {
+        console.debug("Simple fetch failed:", e3.message);
+    }
+    
+    return null;
 }
 
 // --- Helper: Get file extension from URL or MIME type ---
@@ -378,7 +407,6 @@ function getImageExtension(url, mimeType) {
         };
         if (extMap[mimeType.toLowerCase()]) return extMap[mimeType.toLowerCase()];
     }
-    // Fallback to URL parsing
     try {
         const pathname = new URL(url).pathname.toLowerCase();
         if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'jpg';
@@ -386,7 +414,16 @@ function getImageExtension(url, mimeType) {
         if (pathname.endsWith('.gif')) return 'gif';
         if (pathname.endsWith('.webp')) return 'webp';
     } catch {}
-    return 'jpg'; // default fallback
+    return 'jpg';
+}
+
+// --- Helper: Sanitize filename - NO underscores, use dashes ---
+function sanitizeFilename(str) {
+    return str
+        .replace(/[^a-z0-9\-]/gi, ' ')  // Replace non-alphanumeric/non-dash with dash (NO underscores)
+        .replace(/-+/g, ' ')             // Collapse multiple dashes
+        .replace(/^-+|-+$/g, '')         // Trim leading/trailing dashes
+        .slice(0, 100);                  // Limit length
 }
 
 // --- EPUB Generation ---
@@ -428,7 +465,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const oebps = zip.folder("OEBPS");
     
     // 3. CSS
-    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:1em}h1.chapter-title{text-align:center;margin:2em 0 1em}img{max-width:100%;height:auto}`);
+    oebps.file("styles.css", `body{}`);
     
     let manifestItems = '';
     let spineItems = '';
@@ -438,7 +475,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     let coverMediaType = 'image/jpeg';
     
     if (metadata.cover) {
-        progressText.textContent = `Fetching cover image...`;
+        if (progressText) progressText.textContent = `Fetching cover image...`;
         const coverBlob = await fetchImageAsBlob(metadata.cover);
         
         if (coverBlob) {
@@ -447,16 +484,18 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
             coverFilename = `cover.${ext}`;
             
             // Add image to EPUB
-            oebps.file(coverFilename, coverBlob, { binary: true });
+            oebps.file(coverFilename, coverBlob, { binary: true, compression: 'DEFLATE' });
             
             // Add to manifest with cover-image property
             manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverMediaType}" properties="cover-image"/>\n`;
+        } else {
+            console.warn("Cover image could not be fetched, using text fallback");
         }
     }
     
     // Cover page XHTML
     const coverContent = coverFilename 
-        ? `<img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/>`
+        ? `<div style="margin:0;padding:0;text-align:center;background:#fff"><img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/></div>`
         : `<div style="margin-top:40vh;text-align:center"><h1>${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="margin-top:1em">by ${escapeXml(metadata.author)}</p>` : ''}</div>`;
     
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?>
@@ -562,10 +601,11 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 </body>
 </html>`);
     
-    // 9. Generate EPUB
-    const filename = `${metadata.title.replace(/[^a-z0-9\-_]/gi, '_')}.epub`;
+    // 9. Generate EPUB - FIXED: NO underscores in filename
+    const safeFilename = sanitizeFilename(metadata.title);
+    const filename = `${safeFilename}.epub`;
     
-    progressText.textContent = `Compressing EPUB...`;
+    if (progressText) progressText.textContent = `Compressing EPUB...`;
     
     const blob = await zip.generateAsync({ 
         type: "blob", 
@@ -582,7 +622,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
     
-    progressText.textContent = `EPUB ready!`;
+    if (progressText) progressText.textContent = `EPUB ready!`;
 }
 
 // --- Main Download Loop ---
@@ -609,7 +649,6 @@ async function runDownloadLoop() {
             const data = await fetchChapterContent(ch.order);
             if (!downloadState.chapters.some(c => c.order === data.order)) {
                 downloadState.chapters.push(data);
-                // saveState() REMOVED - in-memory only
                 updateProgressUI();
             }
         } catch (err) {
