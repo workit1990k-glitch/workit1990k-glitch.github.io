@@ -3,7 +3,7 @@
 
 const DELAY_MS = 12000;
 
-// --- State (in-memory only, no localStorage) ---
+// --- State (in-memory only) ---
 let isDownloading = false;
 let stopRequested = false;
 let downloadState = {
@@ -85,8 +85,9 @@ function getChaptersInRange(rangeStr) {
 
 // --- 2. Menu UI ---
 const menu = document.createElement("div");
+menu.id = "wtrDownloaderMenu";
 menu.style.cssText = `position: fixed; top: 60px; right: 20px; background: #fff; border-radius: 12px;
-padding: 0; max-height: 80vh; overflow-y: auto; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+padding: 0; max-height: 80vh; overflow-y: auto; z-index: 4000; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 display: none; width: 380px; font-family: sans-serif;`;
 
 menu.innerHTML = `
@@ -110,45 +111,78 @@ ${allChapters.map(ch => `<div style="padding:4px 0; border-bottom:1px solid #eee
 </div>`;
 document.body.appendChild(menu);
 
+// Toggle Menu Button - higher z-index so always clickable
 const toggleBtn = document.createElement("button");
 toggleBtn.textContent = "📥 Download";
-toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 999999; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size:13px;`;
-toggleBtn.onclick = () => menu.style.display = menu.style.display === "none" ? "block" : "none";
+toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 6000; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size:13px;`;
+toggleBtn.onclick = () => {
+    menu.style.display = menu.style.display === "none" ? "block" : "none";
+    // Hide modal when toggling menu
+    if (epubModal) epubModal.style.display = "none";
+};
 document.body.appendChild(toggleBtn);
 
-// --- EPUB Modal ---
+// --- EPUB Modal - FIXED: Proper centering, lower z-index, overlay allows text selection ---
 const epubModal = document.createElement("div");
-epubModal.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100000; display: none; justify-content: center; align-items: center;`;
+epubModal.style.cssText = `
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.4);
+    z-index: 5000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;  /* Allows clicking through overlay to select page text */
+`;
 epubModal.innerHTML = `
-<div style="background:#fff; border-radius:12px; padding:20px; width:90%; max-width:500px; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+<div style="
+    background:#fff; border-radius:12px; padding:20px; width:90%; max-width:500px; 
+    box-shadow:0 8px 32px rgba(0,0,0,0.3);
+    pointer-events: auto;  /* Modal content is interactive */
+    max-height: 90vh; overflow-y: auto;
+">
     <h3 style="margin:0 0 15px 0; border-bottom:1px solid #eee; padding-bottom:10px;">📖 EPUB Export Settings</h3>
+    
     <div style="margin-bottom:12px;">
-        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL</label>
-        <input type="url" id="epubCover" placeholder="Auto-filled from page" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
-        <small style="color:#666;font-size:11px;">Extracted from page data (no CORS fetch needed)</small>
+        <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Cover Image URL (Optional)</label>
+        <input type="url" id="epubCover" placeholder="https://example.com/cover.jpg or leave blank" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
+        <small style="color:#666;font-size:11px;">Will be proxied via wsrv.nl to bypass CORS. Leave blank for text cover.</small>
     </div>
+    
     <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Book Title</label>
         <input type="text" id="epubTitle" value="${novelTitle}" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
     </div>
+    
     <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Author</label>
         <input type="text" id="epubAuthor" placeholder="Author name" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
     </div>
+    
     <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Description</label>
         <textarea id="epubDesc" rows="3" placeholder="Brief description..." style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px; resize:vertical;"></textarea>
     </div>
+    
     <div style="margin-bottom:15px;">
         <label style="display:block; font-size:13px; font-weight:500; margin-bottom:4px;">Tags (comma-separated)</label>
         <input type="text" id="epubTags" placeholder="fantasy, romance, cultivation" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box; font-size:13px;">
     </div>
+    
     <div style="display:flex; gap:10px; justify-content:flex-end;">
         <button id="epubCancel" style="padding:8px 20px; background:#6c757d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Cancel</button>
         <button id="epubConfirm" style="padding:8px 20px; background:#6f42c1; color:#fff; border:none; border-radius:4px; cursor:pointer;">Generate EPUB</button>
     </div>
 </div>`;
 document.body.appendChild(epubModal);
+
+// Close modal when clicking overlay (but not modal content)
+epubModal.addEventListener('click', (e) => {
+    if (e.target === epubModal) {
+        epubModal.style.display = "none";
+    }
+});
 
 // --- 3. Fetch Chapter Content ---
 async function fetchChapterContent(order) {
@@ -228,12 +262,12 @@ document.getElementById("downloadEpubBtn").onclick = () => {
         if (start !== 1 || end !== downloadState.totalChapters)
             document.getElementById("epubTitle").value = `${downloadState.novelTitle} ${start}-${end}`;
     }
-    // Auto-fill cover from __NEXT_DATA__ (parser approach)
-    if (!document.getElementById("epubCover").value.trim()) {
+    // Auto-fill cover from __NEXT_DATA__ (optional, user can override)
+    const currentCover = document.getElementById("epubCover").value.trim();
+    if (!currentCover) {
         const autoCover = getCoverFromNextData();
         if (autoCover) {
             document.getElementById("epubCover").value = autoCover;
-            console.log("✓ Auto-filled cover from __NEXT_DATA__:", autoCover);
         }
     }
     epubModal.style.display = "flex";
@@ -243,15 +277,20 @@ document.getElementById("epubCancel").onclick = () => epubModal.style.display = 
 
 document.getElementById("epubConfirm").onclick = async () => {
     epubModal.style.display = "none";
+    
+    // Get user cover URL and wrap with wsrv.nl proxy if provided
+    const userCover = document.getElementById("epubCover").value.trim();
     const metadata = {
-        cover: document.getElementById("epubCover").value.trim(),
+        cover: userCover ? getProxyCoverUrl(userCover) : null,
         title: document.getElementById("epubTitle").value.trim() || downloadState.novelTitle,
         author: document.getElementById("epubAuthor").value.trim() || "Unknown",
         description: document.getElementById("epubDesc").value.trim(),
         tags: document.getElementById("epubTags").value.trim().split(',').map(t => t.trim()).filter(t => t)
     };
+    
     const range = rangeInput.value.trim();
     const { start, end } = parseChapterRange(range, downloadState.totalChapters);
+    
     try {
         await generateAndDownloadEpub(metadata, start, end);
         if(confirm("EPUB generated! Clear chapters?")) clearState();
@@ -261,57 +300,46 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- 🎨 COVER: Extract from __NEXT_DATA__ (like WebToEpub parser) ---
+// --- 🎨 Cover: Extract from __NEXT_DATA__ (optional) ---
 function getCoverFromNextData() {
     try {
         const script = document.querySelector('script#__NEXT_DATA__');
         if (!script?.textContent) return null;
         const json = JSON.parse(script.textContent);
-        // Path matches WtrlabParser.loadEpubMetaInfo()
-        const cover = json?.props?.pageProps?.serie?.serie_data?.data?.image;
-        return cover || null;
-    } catch (e) {
-        console.debug("Failed to parse __NEXT_DATA__:", e.message);
+        return json?.props?.pageProps?.serie?.serie_data?.data?.image || null;
+    } catch {
         return null;
     }
 }
 
-// --- 🖼️ Embed cover via no-cors fetch (opaque blob works in ZIP) ---
-async function embedCoverBlob(url) {
-    if (!url) return null;
-    console.log("🔍 Embedding cover via no-cors:", url);
+// --- 🔗 wsrv.nl CORS Proxy Wrapper ---
+function getProxyCoverUrl(userUrl) {
+    if (!userUrl) return null;
+    // wsrv.nl proxy: https://wsrv.nl/?url=ENCODED_URL&output=jpg
+    // Adds: CORS headers, auto-convert to JPG, resize if needed
+    return `https://wsrv.nl/?url=${encodeURIComponent(userUrl)}&output=jpg&maxage=1d`;
+}
+
+// --- 🖼️ Fetch cover via proxy (CORS-friendly) ---
+async function tryEmbedCover(proxyUrl) {
+    if (!proxyUrl) return null;
     
     try {
-        // no-cors mode returns opaque response but blob is still usable in ZIP
-        const resp = await fetch(url, { mode: 'no-cors', credentials: 'include' });
-        const blob = await resp.blob();
+        // wsrv.nl sends CORS headers, so regular fetch works
+        const resp = await fetch(proxyUrl, { mode: 'cors', cache: 'force-cache' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         
-        // Opaque responses have empty type, but size check confirms we got data
-        if (blob && blob.size > 100) {
-            console.log(`✓ Cover embedded (opaque blob, ${blob.size} bytes)`);
+        const blob = await resp.blob();
+        // wsrv.nl returns image/jpeg, verify we got data
+        if (blob?.type?.startsWith('image/') && blob.size > 500) {
+            console.log(`✓ Cover fetched via wsrv.nl: ${blob.type}, ${blob.size} bytes`);
             return blob;
         }
-        console.warn("⚠ Blob too small or empty:", blob?.size);
     } catch (e) {
-        console.debug("no-cors fetch failed:", e.message);
+        console.debug("wsrv.nl fetch failed:", e.message);
     }
     
-    // Fallback: try simple cors fetch (for public CDNs)
-    try {
-        const resp = await fetch(url, { mode: 'cors' });
-        if (resp.ok) {
-            const blob = await resp.blob();
-            if (blob.type?.startsWith('image/') && blob.size > 100) {
-                console.log(`✓ Cover fetched via CORS: ${blob.type}`);
-                return blob;
-            }
-        }
-    } catch (e) {
-        console.debug("CORS fetch failed:", e.message);
-    }
-    
-    console.warn("❌ Cover embedding failed - using text fallback");
-    return null;
+    return null; // Fail gracefully - text cover fallback
 }
 
 // --- Helper: Get file extension ---
@@ -333,10 +361,10 @@ function getImageExtension(url, mimeType) {
 // --- Helper: Sanitize filename - dashes only, NO underscores ---
 function sanitizeFilename(str) {
     return str
-        .replace(/[^a-z0-9\-]/gi, '-')  // Only allow letters, numbers, dashes
-        .replace(/-+/g, '-')             // Collapse multiple dashes
-        .replace(/^-+|-+$/g, '')         // Trim edges
-        .slice(0, 100) || 'novel';       // Limit length
+        .replace(/[^a-z0-9\-]/gi, ' ')
+        .replace(/-+/g, ' ')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 100) || 'novel';
 }
 
 // --- EPUB Generation ---
@@ -369,38 +397,32 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
     
     const oebps = zip.folder("OEBPS");
-    oebps.file("styles.css", `body{font-family:serif;line-height:1.6;margin:1em}h1.chapter-title{text-align:center;margin:2em 0 1em}img{max-width:100%;height:auto}`);
+    oebps.file("styles.css", `body{}`);
     
     let manifestItems = '', spineItems = '';
     
-    // 4. Cover handling: extract URL from __NEXT_DATA__, embed via no-cors
-    let coverFilename = null, coverMediaType = 'image/jpeg';
+    // 4. Cover handling: OPTIONAL - wsrv.nl proxy, fails gracefully
+    let coverFilename = null;
     
     if (metadata.cover) {
-        if (progressText) progressText.textContent = `Embedding cover...`;
-        const coverBlob = await embedCoverBlob(metadata.cover);
+        if (progressText) progressText.textContent = `Fetching cover via proxy...`;
+        const coverBlob = await tryEmbedCover(metadata.cover);
         
         if (coverBlob) {
-            // Opaque responses have empty type, guess from URL
-            coverMediaType = coverBlob.type || 'image/jpeg';
             const ext = getImageExtension(metadata.cover, coverBlob.type);
             coverFilename = `cover.${ext}`;
-            
-            // Add to ZIP - opaque blobs work fine here
             oebps.file(coverFilename, coverBlob, { binary: true, compression: 'DEFLATE' });
-            manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverMediaType}" properties="cover-image"/>\n`;
-            console.log(`✓ Cover embedded: ${coverFilename}`);
-        } else {
-            console.warn("⚠ Cover not embedded - using text fallback");
+            manifestItems += `<item id="cover-img" href="${coverFilename}" media-type="${coverBlob.type||'image/jpeg'}" properties="cover-image"/>\n`;
         }
+        // If coverBlob is null, skip embedding - text fallback used
     }
     
-    // Cover page XHTML
+    // Cover page XHTML (works with or without image)
     const coverContent = coverFilename 
         ? `<div style="margin:0;padding:0;text-align:center;background:#fff"><img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/></div>`
-        : `<div style="margin-top:40vh;text-align:center"><h1>${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="margin-top:1em">by ${escapeXml(metadata.author)}</p>` : ''}</div>`;
+        : `<div style="margin-top:35vh;text-align:center;padding:20px"><h1 style="font-size:1.8em;margin-bottom:0.5em">${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="font-size:1.2em;color:#555">by ${escapeXml(metadata.author)}</p>` : ''}${metadata.description ? `<p style="margin-top:1.5em;font-style:italic;color:#666">${escapeXml(metadata.description.slice(0,200))}${metadata.description.length>200?'...':''}</p>`:''}</div>`;
     
-    oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff}</style></head><body>${coverContent}</body></html>`);
+    oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff;font-family:serif}</style></head><body>${coverContent}</body></html>`);
     
     manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
@@ -525,13 +547,6 @@ if (rangeInput) {
     });
 }
 
-// Debug: Log cover detection
-console.log("🔍 WTR Downloader loaded");
-const testCover = getCoverFromNextData();
-if (testCover) {
-    console.log("✓ Found cover in __NEXT_DATA__:", testCover);
-} else {
-    console.log("⚠ No cover found in __NEXT_DATA__ - check page structure");
-}
+console.log("🔍 WTR Downloader loaded - Cover via wsrv.nl proxy, modal fixed");
 
 })();
