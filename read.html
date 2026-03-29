@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Comic Reader</title>
+    <!-- Load JSZip library from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #e0e0e0;
+            --accent-color: #bb86fc;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: sans-serif;
+            overflow: hidden; /* Prevent scrolling */
+        }
+
+        /* --- Upload Screen --- */
+        #upload-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        .file-drop-area {
+            border: 2px dashed var(--accent-color);
+            padding: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .file-drop-area:hover {
+            background: rgba(187, 134, 252, 0.1);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        /* --- Viewer Screen --- */
+        #viewer-screen {
+            display: none; /* Hidden by default */
+            width: 100%;
+            height: 100%;
+            position: relative;
+            user-select: none;
+        }
+
+        #comic-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Ensures full image is visible */
+            display: block;
+        }
+
+        /* Navigation Zones (Invisible click areas) */
+        .nav-zone {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 20%;
+            z-index: 10;
+            cursor: pointer;
+            /* Optional: Debug borders to see click zones */
+            /* border: 1px solid rgba(255,255,255,0.1); */
+        }
+
+        #prev-zone { left: 0; }
+        #next-zone { right: 0; }
+
+        /* Controls Overlay */
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            z-index: 20;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none; /* Let clicks pass through to zones */
+        }
+
+        #viewer-screen:hover #controls {
+            opacity: 1;
+        }
+
+        #page-counter {
+            font-size: 14px;
+        }
+
+        #filename-display {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .loading {
+            color: var(--accent-color);
+            font-weight: bold;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Screen 1: Upload -->
+    <div id="upload-screen">
+        <h1>Comic Reader</h1>
+        <label for="zip-input" class="file-drop-area">
+            <span>Click to select or drop ZIP file here</span>
+        </label>
+        <input type="file" id="zip-input" accept=".zip,.cbz">
+        <div id="status-msg"></div>
+    </div>
+
+    <!-- Screen 2: Viewer -->
+    <div id="viewer-screen">
+        <!-- Left Click Zone (Previous) -->
+        <div id="prev-zone" class="nav-zone"></div>
+        
+        <!-- The Image -->
+        <img id="comic-image" src="" alt="Comic Page">
+        
+        <!-- Right Click Zone (Next) -->
+        <div id="next-zone" class="nav-zone"></div>
+
+        <!-- Overlay Controls -->
+        <div id="controls">
+            <div id="page-counter">Page 0 / 0</div>
+            <div id="filename-display">filename.jpg</div>
+        </div>
+    </div>
+
+    <script>
+        const zipInput = document.getElementById('zip-input');
+        const uploadScreen = document.getElementById('upload-screen');
+        const viewerScreen = document.getElementById('viewer-screen');
+        const comicImage = document.getElementById('comic-image');
+        const pageCounter = document.getElementById('page-counter');
+        const filenameDisplay = document.getElementById('filename-display');
+        const statusMsg = document.getElementById('status-msg');
+
+        let pages = []; // Array of Blob URLs
+        let currentPageIndex = 0;
+
+        // --- 1. Handle File Upload ---
+        zipInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusMsg.textContent = "Unzipping... please wait.";
+            
+            try {
+                const zip = new JSZip();
+                const contents = await zip.loadAsync(file);
+                
+                pages = [];
+                
+                // Filter and Sort files
+                const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'];
+                
+                const filePromises = [];
+
+                contents.forEach((relativePath, zipEntry) => {
+                    // Check if it's an image
+                    const isImage = imageExtensions.some(ext => relativePath.toLowerCase().endsWith(ext));
+                    
+                    if (isImage && !zipEntry.dir) {
+                        filePromises.push({
+                            name: relativePath,
+                            promise: zipEntry.async('blob')
+                        });
+                    }
+                });
+
+                // Wait for all blobs to load
+                const loadedFiles = await Promise.all(filePromises.map(p => p.promise.then(blob => ({
+                    name: p.name,
+                    blob: blob
+                }))));
+
+                // Sort naturally (so page 1, 2, 10 comes out right)
+                loadedFiles.sort((a, b) => {
+                    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+                });
+
+                // Create Blob URLs
+                pages = loadedFiles.map(item => ({
+                    url: URL.createObjectURL(item.blob),
+                    name: item.name
+                }));
+
+                if (pages.length === 0) {
+                    alert("No images found in this zip file!");
+                    statusMsg.textContent = "Error: No images found.";
+                    return;
+                }
+
+                // Switch to Viewer
+                startViewer();
+
+            } catch (err) {
+                console.error(err);
+                statusMsg.textContent = "Error reading zip file.";
+            }
+        });
+
+        // --- 2. Viewer Logic ---
+        function startViewer() {
+            uploadScreen.style.display = 'none';
+            viewerScreen.style.display = 'block';
+            currentPageIndex = 0;
+            renderPage();
+        }
+
+        function renderPage() {
+            if (pages.length === 0) return;
+            
+            // Update Image
+            comicImage.src = pages[currentPageIndex].url;
+            
+            // Update Text
+            pageCounter.textContent = `Page ${currentPageIndex + 1} / ${pages.length}`;
+            filenameDisplay.textContent = pages[currentPageIndex].name;
+
+            // Set document title
+            document.title = `${pages[currentPageIndex].name} - Comic Reader`;
+        }
+
+        function nextPage() {
+            if (currentPageIndex < pages.length - 1) {
+                currentPageIndex++;
+                renderPage();
+            }
+        }
+
+        function prevPage() {
+            if (currentPageIndex > 0) {
+                currentPageIndex--;
+                renderPage();
+            }
+        }
+
+        // --- 3. Navigation Events ---
+
+        // Keyboard Navigation (A / D / Arrows)
+        document.addEventListener('keydown', (e) => {
+            // Only listen if viewer is active
+            if (viewerScreen.style.display === 'none') return;
+
+            switch(e.key.toLowerCase()) {
+                case 'arrowright':
+                case 'd':
+                case ' ': // Spacebar
+                    nextPage();
+                    break;
+                case 'arrowleft':
+                case 'a':
+                    prevPage();
+                    break;
+                case 'f':
+                    toggleFullScreen();
+                    break;
+            }
+        });
+
+        // Click Navigation (Left side / Right side)
+        document.getElementById('next-zone').addEventListener('click', nextPage);
+        document.getElementById('prev-zone').addEventListener('click', prevPage);
+
+        // Double click to toggle Fullscreen
+        viewerScreen.addEventListener('dblclick', toggleFullScreen);
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.log(`Error attempting to enable full-screen mode: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // Cleanup Blob URLs when page unloads to free memory
+        window.addEventListener('beforeunload', () => {
+            pages.forEach(p => URL.revokeObjectURL(p.url));
+        });
+
+    </script>
+</body>
+</html>
