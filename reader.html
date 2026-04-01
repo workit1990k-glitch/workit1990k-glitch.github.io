@@ -10,13 +10,17 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #reader img {
   display: block;
   margin: 0 auto;
-  width: initial;
-  transition: transform 0.2s ease;
+  width: 100%;
+  height: auto;
+  transition: width 0.2s ease;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
-  transform-origin: top center;
 }
 #reader .chapter-marker {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 #tools {
   position: fixed; top: 10px; right: 10px; background: #222;
@@ -139,7 +143,7 @@ const readerEl = document.getElementById("reader");
 // Default filter values
 const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, grayscale: false };
 
-/* ---------- FILTERS (FIXED: Direct transform for Windows 7 compatibility) ---------- */
+/* ---------- FILTERS (FIXED: Direct width for Windows 7 + proper height) ---------- */
 function updateFilters() {
   const zoomVal = zoom.value;
   const contrastVal = contrast.value / 100;
@@ -150,11 +154,10 @@ function updateFilters() {
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
   
-  // FIX: Apply zoom directly via transform on images (better Windows 7/browser compatibility)
-  const zoomScale = zoomVal / 100;
+  // FIX: Set width directly on images (works on all browsers including Win 7)
   const images = readerEl.querySelectorAll('img');
   images.forEach(img => {
-    img.style.transform = `scale(${zoomScale})`;
+    img.style.width = zoomVal + '%';
   });
   
   // CSS variables for other filters
@@ -389,8 +392,9 @@ async function loadAllImages() {
     const path = allPaths[i];
     const folder = path.includes("/") ? path.split("/")[0] : "";
     
+    // FIX: Store reference to actual image element for chapter jumping
     if (folder && !chapterStartIndex[folder]) {
-      chapterStartIndex[folder] = i;
+      chapterStartIndex[folder] = { index: i, element: null };
     }
     
     try {
@@ -402,30 +406,22 @@ async function loadAllImages() {
       img.alt = path;
       img.dataset.path = path;
       img.dataset.folder = folder;
+      img.id = `img-${i}`;
+      
+      // Store element reference for chapter jumping
+      if (folder && chapterStartIndex[folder].element === null) {
+        chapterStartIndex[folder].element = img;
+      }
+      
       readerEl.appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
   
-  // Add hidden chapter markers for click-to-jump functionality
-  addChapterMarkers();
+  // Apply current zoom to newly loaded images
+  updateFilters();
 }
 
-function addChapterMarkers() {
-  document.querySelectorAll('.chapter-marker').forEach(el => el.remove());
-  
-  for (const [folder, index] of Object.entries(chapterStartIndex)) {
-    const img = readerEl.children[index];
-    if (img) {
-      const marker = document.createElement("div");
-      marker.className = "chapter-marker";
-      marker.textContent = `📑 ${folder}`;
-      marker.onclick = (e) => { e.stopPropagation(); scrollToChapter(folder); };
-      img.parentNode.insertBefore(marker, img);
-    }
-  }
-}
-
-/* ---------- CHAPTER NAVIGATION: SCROLL TO CHAPTER ---------- */
+/* ---------- CHAPTER NAVIGATION: SCROLL TO FIRST IMAGE OF CHAPTER ---------- */
 function scrollToChapter(folder) {
   if (!folder) {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -433,20 +429,10 @@ function scrollToChapter(folder) {
     return;
   }
   
-  const startIndex = chapterStartIndex[folder];
-  if (startIndex !== undefined) {
-    const children = readerEl.children;
-    let target = children[startIndex];
-    if (startIndex > 0) {
-      const prev = children[startIndex - 1];
-      if (prev?.classList?.contains('chapter-marker')) {
-        target = prev;
-      }
-    }
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      showChapterInfo(`📑 Jumped to: ${folder}`);
-    }
+  const chapterData = chapterStartIndex[folder];
+  if (chapterData && chapterData.element) {
+    chapterData.element.scrollIntoView({ behavior: "smooth", block: "start" });
+    showChapterInfo(`📑 Jumped to: ${folder}`);
   }
 }
 
