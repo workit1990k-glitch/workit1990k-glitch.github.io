@@ -10,16 +10,15 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #reader img {
   display: block;
   margin: 0 auto;
-  width: calc(100% * var(--zoom-factor, 1));
-  max-width: 100%;
-  transition: width 0.2s ease;
-  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0)) var(--sharpenFilter);
+  width: initial;
+  max-width: calc(100vw * var(--zoom-factor, 1));
+  transition: max-width 0.2s ease;
+  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
 }
 #reader .chapter-marker {
   text-align: center; padding: 12px 20px; margin: 20px auto;
   background: #2a2a4a; color: #aaa; font-size: 12px;
-  border-radius: 8px; width: calc(100% * var(--zoom-factor, 1));
-  max-width: 100%;
+  border-radius: 8px; max-width: calc(100vw * var(--zoom-factor, 1));
   border: 1px solid #3a3a6a; cursor: pointer;
 }
 #reader .chapter-marker:hover { background: #3a3a6a; color: white; }
@@ -88,12 +87,6 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 </head>
 <body>
 
-<svg width="0" height="0">
-  <filter id="sharpenFilter">
-    <feConvolveMatrix id="kernel" kernelMatrix="0 -0.1 0 -0.1 1.2 -0.1 0 -0.1 0" divisor="1"/>
-  </filter>
-</svg>
-
 <input type="file" id="fileInput" accept=".zip,.cbz">
 <input type="file" id="libraryInput" accept=".zip,.cbz" multiple>
 
@@ -116,10 +109,6 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
     <label class="filter-label">Brightness <span id="brightnessValue">1.00</span></label>
     <input type="range" id="brightness" min="80" max="150" value="100">
   </div>
-  <div class="slider-row">
-    <label class="filter-label">Sharpness <span id="sharpnessValue">0</span></label>
-    <input type="range" id="sharpness" min="0" max="5" value="0">
-  </div>
   <label><input type="checkbox" id="grayscale"> Grayscale (100%)</label>
   
   <button id="saveFiltersBtn">💾 Save Settings</button>
@@ -133,7 +122,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 
 <script>
 let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
-const root = document.documentElement, kernel = document.getElementById("kernel");
+const root = document.documentElement;
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
 const chapterInfo = document.getElementById("chapterInfo");
@@ -141,57 +130,43 @@ const thumbURLs = [];
 
 // Filter elements
 const zoom = document.getElementById("zoom"), contrast = document.getElementById("contrast");
-const brightness = document.getElementById("brightness"), sharpness = document.getElementById("sharpness");
+const brightness = document.getElementById("brightness");
 const grayscaleToggle = document.getElementById("grayscale");
 const zoomValue = document.getElementById("zoomValue");
 const contrastValue = document.getElementById("contrastValue");
 const brightnessValue = document.getElementById("brightnessValue");
-const sharpnessValue = document.getElementById("sharpnessValue");
 const saveFiltersBtn = document.getElementById("saveFiltersBtn");
 const resetFiltersBtn = document.getElementById("resetFiltersBtn");
 const folderSelect = document.getElementById("folderSelect");
 
 // Default filter values
-const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, sharpness: 0, grayscale: false };
+const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, grayscale: false };
 
-/* ---------- FILTERS (FIXED: WORK WITHOUT SHARPEN) ---------- */
+/* ---------- FILTERS ---------- */
 function updateFilters() {
   const zoomVal = zoom.value;
   const contrastVal = contrast.value / 100;
   const brightnessVal = brightness.value / 100;
-  const sharpnessVal = parseInt(sharpness.value);
   const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
   
   zoomValue.textContent = zoomVal + '%';
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
-  sharpnessValue.textContent = sharpnessVal;
   
-  // FIX: Use zoom-factor for proper scaling (100% = natural size)
   root.style.setProperty('--zoom-factor', zoomVal / 100);
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
-  
-  // FIX: Sharpen filter is appended at end, other filters work independently
-  if (sharpnessVal === 0) { 
-    root.style.setProperty('--sharpenFilter', 'none'); 
-  } else {
-    const surround = (-0.03 * sharpnessVal).toFixed(2), 
-          center = (1 + 0.12 * sharpnessVal).toFixed(2);
-    kernel.setAttribute("kernelMatrix", `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`);
-    root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
-  }
 }
 
-[zoom, contrast, brightness, sharpness].forEach(el => el.oninput = updateFilters);
+[zoom, contrast, brightness].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
 /* ---------- SAVE/LOAD/RESET FILTERS ---------- */
 function saveFilters() {
   const settings = {
     zoom: zoom.value, contrast: contrast.value, brightness: brightness.value,
-    sharpness: sharpness.value, grayscale: grayscaleToggle.checked
+    grayscale: grayscaleToggle.checked
   };
   localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
   saveFiltersBtn.textContent = '✓ Saved!';
@@ -206,7 +181,6 @@ function loadFilters() {
     if (settings.zoom) zoom.value = settings.zoom;
     if (settings.contrast) contrast.value = settings.contrast;
     if (settings.brightness) brightness.value = settings.brightness;
-    if (settings.sharpness) sharpness.value = settings.sharpness;
     if (settings.grayscale !== undefined) grayscaleToggle.checked = settings.grayscale;
     updateFilters();
   } catch(e) { console.warn('Failed to load filters:', e); }
@@ -216,7 +190,6 @@ function resetFilters() {
   zoom.value = DEFAULTS.zoom;
   contrast.value = DEFAULTS.contrast;
   brightness.value = DEFAULTS.brightness;
-  sharpness.value = DEFAULTS.sharpness;
   grayscaleToggle.checked = DEFAULTS.grayscale;
   updateFilters();
   resetFiltersBtn.textContent = '✓ Reset!';
@@ -226,7 +199,7 @@ function resetFilters() {
 saveFiltersBtn.onclick = saveFilters;
 resetFiltersBtn.onclick = resetFilters;
 
-/* ---------- UI TOGGLE ON CLICK ONLY (NO AUTO-HIDE) ---------- */
+/* ---------- UI TOGGLE ON CLICK ONLY ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
   if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, .chapter-marker')) return;
