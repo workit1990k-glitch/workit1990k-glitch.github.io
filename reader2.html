@@ -4,315 +4,342 @@
 <meta charset="UTF-8">
 <title>Manga Reader</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body { margin: 0; background: #111; color: white; font-family: sans-serif; }
+
 #reader { padding-bottom: 100px; }
+
 #reader img {
-  display: block; margin: 0 auto; width: var(--zoom, 100%);
-  max-width: 1000px; transition: width 0.2s ease;
-  filter: var(--sharpenFilter) contrast(var(--contrast, 1)) brightness(var(--brightness, 1));
+  display: block;
+  margin: 0 auto;
+  width: var(--zoom, 100%);
+  max-width: 1000px;
+  transition: width 0.2s ease;
+  filter: var(--sharpenFilter)
+          contrast(var(--contrast, 1))
+          brightness(var(--brightness, 1))
+          grayscale(var(--grayscale, 0));
 }
+
 #tools {
-  position: fixed; top: 10px; right: 10px; background: #222;
-  padding: 12px; border-radius: 12px; display: none;
-  width: 220px; z-index: 10;
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: #222;
+  padding: 12px;
+  border-radius: 12px;
+  display: none;
+  width: 220px;
+  z-index: 10;
 }
+
 #tools label { font-size: 12px; display: block; }
-#tools input, #tools select { width: 100%; margin-bottom: 10px; }
-#toggleTools, #prevChapter, #nextChapter, #openLibrary, #backToLibrary {
-  position: fixed; bottom: 20px; background: #444; border: none;
-  padding: 10px 14px; color: white; cursor: pointer; border-radius: 8px; z-index: 20;
+
+#tools input { width: 100%; margin-bottom: 10px; }
+
+button {
+  position: fixed;
+  bottom: 20px;
+  background: #444;
+  border: none;
+  padding: 10px 14px;
+  color: white;
+  cursor: pointer;
+  border-radius: 8px;
+  z-index: 20;
 }
+
 #toggleTools { right: 20px; }
 #prevChapter { left: 20px; }
 #nextChapter { left: 90px; }
-#openLibrary { left: 180px; }
+#openLibrary { left: 160px; }
+#openSingle { left: 270px; }
 #backToLibrary { left: 20px; display: none; }
 #backToLibrary.visible { display: block; }
-#fileInput, #libraryInput { display: none; }
+
+#fileInput, #libraryInput, #singleInput { display: none; }
+
 #library {
-  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: #111; padding: 20px; overflow-y: auto; z-index: 30;
-  grid-template-columns: repeat(auto-fill, 160px); gap: 16px;
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #111;
+  padding: 20px;
+  overflow-y: auto;
+  z-index: 30;
+  grid-template-columns: repeat(auto-fill, 160px);
+  gap: 16px;
 }
+
 #library.active { display: grid; }
+
 .book {
-  cursor: pointer; background: #222; padding: 8px; border-radius: 12px;
-  text-align: center; transition: transform 0.1s, background 0.2s;
+  cursor: pointer;
+  background: #222;
+  padding: 8px;
+  border-radius: 12px;
+  text-align: center;
 }
-.book:hover { background: #333; transform: translateY(-2px); }
+
 .book img {
-  width: 100%; height: 220px; object-fit: cover; border-radius: 8px;
-  background: #1a1a1a;
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
 }
-.book span {
-  font-size: 12px; display: block; margin-top: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #888;
 }
-.loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
+
 .progress-bar {
-  position: fixed; top: 0; left: 0; height: 3px; background: #444; z-index: 40;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: #444;
+  width: 100%;
 }
+
 .progress-fill {
-  height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s;
+  height: 100%;
+  background: #00a8ff;
+  width: 0%;
 }
 </style>
 </head>
+
 <body>
 
 <svg width="0" height="0">
   <filter id="sharpenFilter">
-    <feConvolveMatrix id="kernel" kernelMatrix="0 -0.1 0 -0.1 1.2 -0.1 0 -0.1 0" divisor="1"/>
+    <feConvolveMatrix id="kernel" kernelMatrix="0 -0.1 0 -0.1 1.2 -0.1 0 -0.1 0"/>
   </filter>
 </svg>
 
-<input type="file" id="fileInput" accept=".zip,.cbz">
-<input type="file" id="libraryInput" accept=".zip,.cbz" multiple>
+<input type="file" id="libraryInput" multiple accept=".zip,.cbz">
+<input type="file" id="singleInput" accept=".zip,.cbz">
 
 <div id="library"></div>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
 <div id="tools">
-  <label>Folder <select id="folderSelect"></select></label>
-  <label>Zoom <input type="range" id="zoom" min="100" max="200" value="100"></label>
-  <label>Contrast <input type="range" id="contrast" min="80" max="150" value="100"></label>
-  <label>Brightness <input type="range" id="brightness" min="80" max="150" value="100"></label>
-  <label>Sharpness <input type="range" id="sharpness" min="0" max="5" value="0"></label>
+
+<label>Zoom <span id="zoomVal"></span>
+<input type="range" id="zoom" min="100" max="200" value="100"></label>
+
+<label>Contrast <span id="contrastVal"></span>
+<input type="range" id="contrast" min="80" max="150" value="100"></label>
+
+<label>Brightness <span id="brightnessVal"></span>
+<input type="range" id="brightness" min="80" max="150" value="100"></label>
+
+<label>Sharpness <span id="sharpnessVal"></span>
+<input type="range" id="sharpness" min="0" max="5" value="0"></label>
+
+<label>
+Grayscale
+<input type="checkbox" id="grayscale">
+</label>
+
+<button id="saveFilters" style="position:static;width:100%;">💾 Save</button>
+
 </div>
 
 <button id="toggleTools">Tools</button>
 <button id="prevChapter">Prev</button>
 <button id="nextChapter">Next</button>
 <button id="openLibrary">📚 Library</button>
+<button id="openSingle">📖 Open</button>
 <button id="backToLibrary">← Library</button>
+
 <div id="reader"></div>
 
 <script>
-let zip, currentFolder = "", foldersList = [], currentZipName = "";
-const root = document.documentElement, kernel = document.getElementById("kernel");
-const libraryEl = document.getElementById("library"), backToLibraryBtn = document.getElementById("backToLibrary");
+
+let zip, currentFolder = "", foldersList = [];
+const root = document.documentElement;
+const kernel = document.getElementById("kernel");
+const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
-const thumbURLs = [];
 
 /* ---------- FILTERS ---------- */
 function updateFilters() {
-  root.style.setProperty('--zoom', zoom.value + '%');
-  root.style.setProperty('--contrast', contrast.value / 100);
-  root.style.setProperty('--brightness', brightness.value / 100);
+  const z = zoom.value;
+  const c = contrast.value / 100;
+  const b = brightness.value / 100;
   const s = parseInt(sharpness.value);
-  if (s === 0) { root.style.setProperty('--sharpenFilter', ''); return; }
-  const surround = (-0.03 * s).toFixed(2), center = (1 + 0.12 * s).toFixed(2);
-  kernel.setAttribute("kernelMatrix", `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`);
+
+  zoomVal.textContent = z + "%";
+  contrastVal.textContent = c.toFixed(2);
+  brightnessVal.textContent = b.toFixed(2);
+  sharpnessVal.textContent = s;
+
+  root.style.setProperty('--zoom', z + '%');
+  root.style.setProperty('--contrast', c);
+  root.style.setProperty('--brightness', b);
+  root.style.setProperty('--grayscale', grayscale.checked ? '1' : '0');
+
+  if (s === 0) {
+    root.style.setProperty('--sharpenFilter', '');
+    return;
+  }
+
+  const surround = (-0.03 * s).toFixed(2);
+  const center = (1 + 0.12 * s).toFixed(2);
+  kernel.setAttribute("kernelMatrix",
+    `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`
+  );
   root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
 }
+
 [zoom, contrast, brightness, sharpness].forEach(el => el.oninput = updateFilters);
+grayscale.onchange = updateFilters;
 
-/* ---------- UI ---------- */
-toggleTools.onclick = () => tools.style.display = tools.style.display === "none" ? "block" : "none";
-
-openLibrary.onclick = async () => {
-  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files...</div>';
-  libraryEl.classList.add('active');
-  backToLibraryBtn.classList.remove('visible');
-  progressFill.style.width = '0%';
-  cleanupThumbnails();
-  libraryInput.click();
+/* ---------- SAVE / LOAD ---------- */
+saveFilters.onclick = () => {
+  localStorage.setItem("filters", JSON.stringify({
+    zoom: zoom.value,
+    contrast: contrast.value,
+    brightness: brightness.value,
+    sharpness: sharpness.value,
+    grayscale: grayscale.checked
+  }));
 };
 
-backToLibraryBtn.onclick = () => {
-  libraryEl.classList.remove('active');
-  if (zip) backToLibraryBtn.classList.add('visible');
-};
+(function loadSaved() {
+  const s = JSON.parse(localStorage.getItem("filters"));
+  if (!s) return;
+  zoom.value = s.zoom;
+  contrast.value = s.contrast;
+  brightness.value = s.brightness;
+  sharpness.value = s.sharpness;
+  grayscale.checked = s.grayscale;
+  updateFilters();
+})();
 
-function cleanupThumbnails() {
-  thumbURLs.forEach(URL.revokeObjectURL);
-  thumbURLs.length = 0;
-}
-
-/* ---------- THUMBNAIL EXTRACTION ---------- */
-async function extractFirstImageThumbnail(file) {
-  const zipTemp = await JSZip.loadAsync(file);
-  const imagePath = Object.keys(zipTemp.files)
-    .filter(p => !p.endsWith('/') && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0];
-  
-  if (!imagePath) return null;
-  const blob = await zipTemp.files[imagePath].async("blob");
-  const url = URL.createObjectURL(blob);
-  thumbURLs.push(url);
-  return url;
-}
-
-/* ---------- FIXED PARALLEL PROCESSING POOL ---------- */
+/* ---------- PARALLEL ---------- */
 async function processWithConcurrency(items, processor, concurrency = 3) {
   const results = new Array(items.length);
-  const executing = [];
-  let completed = 0;
-  
-  for (let i = 0; i < items.length; i++) {
-    const index = i;
-    const item = items[i];
-    
-    const promise = processor(item, index).then(result => {
-      results[index] = result;
-      executing.splice(executing.indexOf(promise), 1); // Remove from pool
+  let index = 0, completed = 0;
+
+  async function worker() {
+    while (index < items.length) {
+      const i = index++;
+      try {
+        results[i] = await processor(items[i], i);
+      } catch {
+        results[i] = null;
+      }
       completed++;
-      progressFill.style.width = `${Math.round((completed / items.length) * 100)}%`;
-      return result;
-    });
-    
-    executing.push(promise);
-    
-    // When pool is full, wait for one to finish before continuing
-    if (executing.length >= concurrency) {
-      await Promise.race(executing);
+      progressFill.style.width = `${(completed/items.length)*100}%`;
     }
   }
-  
-  // Wait for all remaining promises
-  await Promise.all(executing);
+
+  await Promise.all(Array.from({length:concurrency}, worker));
   return results;
 }
 
-/* ---------- LIBRARY LOADING ---------- */
-libraryInput.onchange = async (e) => {
-  const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
-  if (files.length === 0) {
-    libraryEl.innerHTML = '<div class="loading">No ZIP/CBZ files selected</div>';
-    return;
-  }
-
-  libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files...</div>`;
-  
-  const books = await processWithConcurrency(files, async (file, index) => {
-    libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
-    
-    try {
-      const thumbURL = await extractFirstImageThumbnail(file);
-      return {
-        file: file,
-        name: file.name.replace(/\.(zip|cbz)$/i, ''),
-        thumb: thumbURL
-      };
-    } catch (err) {
-      console.warn('Skip:', file.name, err);
-      return null;
-    }
-  }, 3);
-  
-  progressFill.style.width = '100%';
-  setTimeout(() => progressFill.style.width = '0%', 300);
-  
-  renderLibrary(books.filter(b => b !== null));
+/* ---------- LIBRARY ---------- */
+openLibrary.onclick = () => {
+  libraryEl.classList.add('active');
+  libraryEl.innerHTML = '<div class="loading">Loading...</div>';
+  libraryInput.click();
 };
 
-function renderLibrary(books) {
+libraryInput.onchange = async e => {
+  const files = [...e.target.files];
+
+  const books = await processWithConcurrency(files, async file => {
+    const zipTemp = await JSZip.loadAsync(file);
+    const imgPath = Object.keys(zipTemp.files)
+      .find(p => /\.(jpg|png|jpeg|webp)$/i.test(p));
+    if (!imgPath) return null;
+
+    const blob = await zipTemp.files[imgPath].async("blob");
+    return {
+      file,
+      name: file.name,
+      thumb: URL.createObjectURL(blob)
+    };
+  });
+
   libraryEl.innerHTML = '';
-  if (books.length === 0) {
-    libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
-    return;
-  }
-  
-  const placeholder = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
-  
-  books.forEach(book => {
+
+  books.filter(Boolean).forEach(b => {
     const div = document.createElement("div");
     div.className = "book";
-    div.innerHTML = `<img src="${book.thumb || placeholder}" loading="lazy"><span title="${book.name}">${book.name}</span>`;
+    div.innerHTML = `<img src="${b.thumb}"><span>${b.name}</span>`;
     div.onclick = async () => {
-      await loadZipFile(book.file);
+      await loadZipFile(b.file);
       libraryEl.classList.remove('active');
-      backToLibraryBtn.classList.add('visible');
     };
     libraryEl.appendChild(div);
   });
-}
+};
 
-/* ---------- LOAD ZIP FOR READING ---------- */
+/* ---------- SINGLE ---------- */
+openSingle.onclick = () => singleInput.click();
+
+singleInput.onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  await loadZipFile(file);
+};
+
+/* ---------- LOAD ZIP ---------- */
 async function loadZipFile(file) {
-  currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
   zip = await JSZip.loadAsync(file);
-  
+
   const folders = new Set();
-  Object.keys(zip.files).forEach(path => {
-    const parts = path.split("/").filter(p => p);
+  Object.keys(zip.files).forEach(p => {
+    const parts = p.split("/");
     if (parts.length > 1) folders.add(parts[0]);
   });
-  
-  folderSelect.innerHTML = "";
-  foldersList = folders.size > 0 
-    ? Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true })) 
-    : [""];
-  
-  foldersList.forEach(f => {
-    const opt = document.createElement("option");
-    opt.value = f; opt.textContent = f || "(root)";
-    folderSelect.appendChild(opt);
-  });
-  
-  currentFolder = folderSelect.value;
+
+  foldersList = folders.size ? [...folders] : [""];
+  currentFolder = foldersList[0];
   loadFolder();
-  window.scrollTo(0, 0);
 }
 
-/* ---------- NAVIGATION ---------- */
-function changeChapter(direction) {
-  const index = foldersList.indexOf(currentFolder) + direction;
-  if (index < 0 || index >= foldersList.length) return;
-  currentFolder = foldersList[index];
-  folderSelect.value = currentFolder;
-  loadFolder();
-  window.scrollTo(0, 0);
-}
-prevChapter.onclick = () => changeChapter(-1);
-nextChapter.onclick = () => changeChapter(1);
-folderSelect.onchange = () => { currentFolder = folderSelect.value; loadFolder(); };
-
+/* ---------- LOAD FOLDER ---------- */
 async function loadFolder() {
   reader.innerHTML = "";
+
   const prefix = currentFolder ? currentFolder + "/" : "";
+
   const files = Object.keys(zip.files)
-    .filter(p => p.startsWith(prefix) && !p.endsWith("/") && !p.includes('__MACOSX'))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  
+    .filter(p => p.startsWith(prefix))
+    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+
   for (const path of files) {
-    if (!/\.(jpg|jpeg|png|webp)$/i.test(path)) continue;
-    try {
-      const blob = await zip.files[path].async("blob");
-      const url = URL.createObjectURL(blob);
-      const img = document.createElement("img");
-      img.src = url; img.loading = "lazy"; img.alt = path;
-      reader.appendChild(img);
-    } catch(e) { console.warn('Image load fail:', path, e); }
+    if (!/\.(jpg|png|jpeg|webp)$/i.test(path)) continue;
+
+    const blob = await zip.files[path].async("blob");
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(blob);
+    reader.appendChild(img);
   }
 }
 
-/* ---------- AUTO-SCROLL & KEYBOARD ---------- */
-let scrollCooldown = false;
-window.addEventListener("scroll", () => {
-  if (scrollCooldown || !zip) return;
-  const { scrollY, innerHeight } = window, docH = document.body.offsetHeight;
-  if (scrollY + innerHeight >= docH - 10) {
-    scrollCooldown = true; changeChapter(1);
-    setTimeout(() => scrollCooldown = false, 800);
-  }
-  if (scrollY <= 0) {
-    scrollCooldown = true; changeChapter(-1);
-    setTimeout(() => scrollCooldown = false, 800);
-  }
-});
+/* ---------- NAV ---------- */
+prevChapter.onclick = () => change(-1);
+nextChapter.onclick = () => change(1);
 
-document.addEventListener("keydown", (e) => {
-  if (libraryEl.classList.contains('active')) return;
-  if (e.key === "d" || e.key === "ArrowRight") changeChapter(1);
-  if (e.key === "a" || e.key === "ArrowLeft") changeChapter(-1);
-  if (e.key === "t") toggleTools.click();
-  if (e.key === "l") openLibrary.click();
-});
+function change(d) {
+  const i = foldersList.indexOf(currentFolder) + d;
+  if (i < 0 || i >= foldersList.length) return;
+  currentFolder = foldersList[i];
+  loadFolder();
+}
 
-/* ---------- INIT ---------- */
-backToLibraryBtn.classList.remove('visible');
-window.addEventListener('beforeunload', cleanupThumbnails);
+/* ---------- TOOLS ---------- */
+toggleTools.onclick = () => {
+  tools.style.display = tools.style.display === "none" ? "block" : "none";
+};
+
 </script>
 </body>
 </html>
