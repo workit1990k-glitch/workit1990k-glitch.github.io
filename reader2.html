@@ -129,7 +129,7 @@ function cleanupThumbnails() {
   thumbURLs.length = 0;
 }
 
-/* ---------- STREAMLINED THUMBNAIL EXTRACTION ---------- */
+/* ---------- THUMBNAIL EXTRACTION ---------- */
 async function extractFirstImageThumbnail(file) {
   const zipTemp = await JSZip.loadAsync(file);
   const imagePath = Object.keys(zipTemp.files)
@@ -143,38 +143,38 @@ async function extractFirstImageThumbnail(file) {
   return url;
 }
 
-/* ---------- PARALLEL PROCESSING POOL (3 concurrent) ---------- */
+/* ---------- FIXED PARALLEL PROCESSING POOL ---------- */
 async function processWithConcurrency(items, processor, concurrency = 3) {
-  const results = [];
+  const results = new Array(items.length);
   const executing = [];
+  let completed = 0;
   
   for (let i = 0; i < items.length; i++) {
-    const item = items[i];
     const index = i;
+    const item = items[i];
     
-    // Start the async operation
     const promise = processor(item, index).then(result => {
-      executing.splice(executing.indexOf(promise), 1);
-      return { index, result };
+      results[index] = result;
+      executing.splice(executing.indexOf(promise), 1); // Remove from pool
+      completed++;
+      progressFill.style.width = `${Math.round((completed / items.length) * 100)}%`;
+      return result;
     });
     
     executing.push(promise);
     
-    // If we've hit concurrency limit, wait for one to finish
+    // When pool is full, wait for one to finish before continuing
     if (executing.length >= concurrency) {
-      const { index, result } = await Promise.race(executing);
-      results[index] = result;
+      await Promise.race(executing);
     }
   }
   
-  // Wait for remaining operations
-  const remaining = await Promise.all(executing);
-  remaining.forEach(({ index, result }) => { results[index] = result; });
-  
-  return results.filter(r => r !== undefined);
+  // Wait for all remaining promises
+  await Promise.all(executing);
+  return results;
 }
 
-/* ---------- LIBRARY LOADING WITH PARALLEL THUMBNAILS ---------- */
+/* ---------- LIBRARY LOADING ---------- */
 libraryInput.onchange = async (e) => {
   const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (files.length === 0) {
@@ -184,11 +184,7 @@ libraryInput.onchange = async (e) => {
 
   libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files...</div>`;
   
-  // Process with 3 parallel operations
   const books = await processWithConcurrency(files, async (file, index) => {
-    // Update progress bar
-    const progress = Math.round(((index + 1) / files.length) * 100);
-    progressFill.style.width = `${progress}%`;
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
     
     try {
@@ -202,7 +198,7 @@ libraryInput.onchange = async (e) => {
       console.warn('Skip:', file.name, err);
       return null;
     }
-  }, 3); // ← 3 parallel operations
+  }, 3);
   
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
@@ -259,7 +255,7 @@ async function loadZipFile(file) {
   window.scrollTo(0, 0);
 }
 
-/* ---------- NAVIGATION & RENDERING ---------- */
+/* ---------- NAVIGATION ---------- */
 function changeChapter(direction) {
   const index = foldersList.indexOf(currentFolder) + direction;
   if (index < 0 || index >= foldersList.length) return;
