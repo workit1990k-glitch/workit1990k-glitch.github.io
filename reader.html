@@ -8,16 +8,18 @@
 body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
-  display: block; margin: 0 auto;
-  width: auto;
-  max-width: calc(1000px * var(--zoom-factor, 1));
-  transition: max-width 0.2s ease;
-  filter: var(--sharpenFilter) contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
+  display: block;
+  margin: 0 auto;
+  width: calc(100% * var(--zoom-factor, 1));
+  max-width: 100%;
+  transition: width 0.2s ease;
+  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0)) var(--sharpenFilter);
 }
 #reader .chapter-marker {
   text-align: center; padding: 12px 20px; margin: 20px auto;
   background: #2a2a4a; color: #aaa; font-size: 12px;
-  border-radius: 8px; max-width: calc(1000px * var(--zoom-factor, 1));
+  border-radius: 8px; width: calc(100% * var(--zoom-factor, 1));
+  max-width: 100%;
   border: 1px solid #3a3a6a; cursor: pointer;
 }
 #reader .chapter-marker:hover { background: #3a3a6a; color: white; }
@@ -152,7 +154,7 @@ const folderSelect = document.getElementById("folderSelect");
 // Default filter values
 const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, sharpness: 0, grayscale: false };
 
-/* ---------- FILTERS ---------- */
+/* ---------- FILTERS (FIXED: WORK WITHOUT SHARPEN) ---------- */
 function updateFilters() {
   const zoomVal = zoom.value;
   const contrastVal = contrast.value / 100;
@@ -165,14 +167,15 @@ function updateFilters() {
   brightnessValue.textContent = brightnessVal.toFixed(2);
   sharpnessValue.textContent = sharpnessVal;
   
-  // FIX: Use zoom-factor for proper scaling from natural image size
+  // FIX: Use zoom-factor for proper scaling (100% = natural size)
   root.style.setProperty('--zoom-factor', zoomVal / 100);
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
   
+  // FIX: Sharpen filter is appended at end, other filters work independently
   if (sharpnessVal === 0) { 
-    root.style.setProperty('--sharpenFilter', ''); 
+    root.style.setProperty('--sharpenFilter', 'none'); 
   } else {
     const surround = (-0.03 * sharpnessVal).toFixed(2), 
           center = (1 + 0.12 * sharpnessVal).toFixed(2);
@@ -223,7 +226,7 @@ function resetFilters() {
 saveFiltersBtn.onclick = saveFilters;
 resetFiltersBtn.onclick = resetFilters;
 
-/* ---------- UI TOGGLE ON CLICK ---------- */
+/* ---------- UI TOGGLE ON CLICK ONLY (NO AUTO-HIDE) ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
   if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, .chapter-marker')) return;
@@ -366,12 +369,11 @@ function renderLibrary(books) {
   });
 }
 
-/* ---------- LOAD ZIP & SHOW ALL IMAGES (FIXED) ---------- */
+/* ---------- LOAD ZIP & SHOW ALL IMAGES ---------- */
 async function loadZipFile(file) {
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
   zip = await JSZip.loadAsync(file);
   
-  // Build folder list for chapter navigation
   const folders = new Set();
   Object.keys(zip.files).forEach(path => {
     const parts = path.split("/").filter(p => p);
@@ -389,7 +391,7 @@ async function loadZipFile(file) {
   
   currentFolder = "";
   folderSelect.value = "";
-  await loadAllImages(); // Always show ALL images
+  await loadAllImages();
   showChapterInfo("📖 " + currentZipName);
   window.scrollTo(0, 0);
 }
@@ -399,7 +401,6 @@ async function loadAllImages() {
   const reader = document.getElementById("reader");
   reader.innerHTML = '<div class="loading">Loading all pages...</div>';
   
-  // Get ALL images from zip, sorted naturally
   const allPaths = Object.keys(zip.files)
     .filter(p => !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -412,7 +413,6 @@ async function loadAllImages() {
     const path = allPaths[i];
     const folder = path.includes("/") ? path.split("/")[0] : "";
     
-    // Track first image index for each chapter (for scrolling)
     if (folder && !chapterStartIndex[folder]) {
       chapterStartIndex[folder] = i;
     }
@@ -430,7 +430,6 @@ async function loadAllImages() {
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
   
-  // Add clickable chapter markers for easy navigation
   addChapterMarkers();
 }
 
@@ -449,7 +448,7 @@ function addChapterMarkers() {
   }
 }
 
-/* ---------- CHAPTER NAVIGATION: SCROLL TO CHAPTER (NOT FILTER) ---------- */
+/* ---------- CHAPTER NAVIGATION: SCROLL TO CHAPTER ---------- */
 function scrollToChapter(folder) {
   if (!folder) {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -460,9 +459,7 @@ function scrollToChapter(folder) {
   const startIndex = chapterStartIndex[folder];
   if (startIndex !== undefined) {
     const children = document.getElementById("reader").children;
-    // Find the marker or image at this index
     let target = children[startIndex];
-    // If there's a marker before the image, scroll to marker
     if (startIndex > 0) {
       const prev = children[startIndex - 1];
       if (prev?.classList?.contains('chapter-marker')) {
@@ -476,7 +473,6 @@ function scrollToChapter(folder) {
   }
 }
 
-// Dropdown now scrolls to chapter instead of filtering
 folderSelect.onchange = () => scrollToChapter(folderSelect.value);
 
 function showChapterInfo(text) {
@@ -489,7 +485,6 @@ function showChapterInfo(text) {
 document.addEventListener("keydown", (e) => {
   if (libraryEl.classList.contains('active')) return;
   
-  // Chapter navigation via dropdown: use A/D to cycle chapters
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
     const nextIdx = Math.min(idx + 1, foldersList.length - 1);
@@ -528,26 +523,6 @@ document.addEventListener("keydown", (e) => {
 /* ---------- INIT ---------- */
 window.addEventListener('beforeunload', cleanupThumbnails);
 loadFilters();
-
-// Auto-hide controls after inactivity
-let hideTimeout = setTimeout(() => {
-  controlsVisible = false;
-  document.body.classList.add('controls-hidden');
-}, 3000);
-
-['mousemove', 'touchstart', 'keydown', 'click'].forEach(evt => {
-  document.addEventListener(evt, () => {
-    clearTimeout(hideTimeout);
-    if (!controlsVisible) {
-      controlsVisible = true;
-      document.body.classList.remove('controls-hidden');
-    }
-    hideTimeout = setTimeout(() => {
-      controlsVisible = false;
-      document.body.classList.add('controls-hidden');
-    }, 3000);
-  });
-});
 </script>
 </body>
 </html>
