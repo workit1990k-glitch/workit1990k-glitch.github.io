@@ -13,7 +13,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   width: initial;
   height: auto;
   max-width: 100%;
-  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
+  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
 }
 #reader .chapter-marker {
   position: absolute;
@@ -26,6 +26,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   position: fixed; top: 10px; right: 10px; background: #222;
   padding: 12px; border-radius: 12px; display: none;
   width: 240px; z-index: 10;
+  max-height: 80vh; overflow-y: auto;
 }
 #tools label { font-size: 12px; display: block; margin-bottom: 8px; }
 #tools .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
@@ -83,6 +84,24 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   font-size: 12px; z-index: 15; display: none;
 }
 #chapterInfo.visible { display: block; }
+#pageInfo {
+  position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
+  font-size: 12px; z-index: 15; display: none;
+}
+#pageInfo.visible { display: block; }
+#shortcutsHelp {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: rgba(34,34,34,0.95); padding: 20px; border-radius: 12px;
+  z-index: 50; display: none; max-width: 400px;
+}
+#shortcutsHelp.active { display: block; }
+#shortcutsHelp h3 { margin: 0 0 15px 0; font-size: 16px; }
+#shortcutsHelp table { width: 100%; font-size: 12px; }
+#shortcutsHelp td { padding: 4px 0; }
+#shortcutsHelp kbd { 
+  background: #444; padding: 2px 6px; border-radius: 4px; font-family: monospace; 
+}
 </style>
 </head>
 <body>
@@ -93,6 +112,23 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <div id="library"></div>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 <div id="chapterInfo"></div>
+<div id="pageInfo"></div>
+
+<div id="shortcutsHelp">
+  <h3>⌨️ Keyboard Shortcuts</h3>
+  <table>
+    <tr><td><kbd>A</kbd> / <kbd>←</kbd></td><td>Previous chapter</td></tr>
+    <tr><td><kbd>D</kbd> / <kbd>→</kbd></td><td>Next chapter</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Toggle Tools</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Open Library</td></tr>
+    <tr><td><kbd>O</kbd></td><td>Open File</td></tr>
+    <tr><td><kbd>Space</kbd> / <kbd>C</kbd></td><td>Hide/Show Controls</td></tr>
+    <tr><td><kbd>Ctrl+R</kbd></td><td>Reset Filters</td></tr>
+    <tr><td><kbd>?</kbd></td><td>This Help</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Close Help/Library</td></tr>
+  </table>
+  <p style="text-align:center;margin-top:15px;color:#888;">Click outside or press Esc to close</p>
+</div>
 
 <div id="tools">
   <label>Jump to Chapter <select id="folderSelect"></select></label>
@@ -104,6 +140,10 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   <div class="slider-row">
     <label class="filter-label">Brightness <span id="brightnessValue">1.00</span></label>
     <input type="range" id="brightness" min="80" max="150" value="100">
+  </div>
+  <div class="slider-row">
+    <label class="filter-label">Saturate <span id="saturateValue">1.00</span></label>
+    <input type="range" id="saturate" min="0" max="200" value="100">
   </div>
   <label><input type="checkbox" id="grayscale"> Grayscale (100%)</label>
   
@@ -118,41 +158,49 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 
 <script>
 let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
+let currentBlobURLs = []; // Track URLs for cleanup
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
 const chapterInfo = document.getElementById("chapterInfo");
+const pageInfo = document.getElementById("pageInfo");
+const shortcutsHelp = document.getElementById("shortcutsHelp");
 const thumbURLs = [];
 
 // Filter elements
 const contrast = document.getElementById("contrast");
 const brightness = document.getElementById("brightness");
+const saturate = document.getElementById("saturate");
 const grayscaleToggle = document.getElementById("grayscale");
 const contrastValue = document.getElementById("contrastValue");
 const brightnessValue = document.getElementById("brightnessValue");
+const saturateValue = document.getElementById("saturateValue");
 const saveFiltersBtn = document.getElementById("saveFiltersBtn");
 const resetFiltersBtn = document.getElementById("resetFiltersBtn");
 const folderSelect = document.getElementById("folderSelect");
 const readerEl = document.getElementById("reader");
 
 // Default filter values
-const DEFAULTS = { contrast: 100, brightness: 100, grayscale: false };
+const DEFAULTS = { contrast: 100, brightness: 100, saturate: 100, grayscale: false };
 
 /* ---------- FILTERS ---------- */
 function updateFilters() {
   const contrastVal = contrast.value / 100;
   const brightnessVal = brightness.value / 100;
+  const saturateVal = saturate.value / 100;
   const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
   
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
+  saturateValue.textContent = saturateVal.toFixed(2);
   
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
+  root.style.setProperty('--saturate', saturateVal);
   root.style.setProperty('--grayscale', grayscaleVal);
 }
 
-[contrast, brightness].forEach(el => el.oninput = updateFilters);
+[contrast, brightness, saturate].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
 /* ---------- SAVE/LOAD/RESET FILTERS ---------- */
@@ -160,6 +208,7 @@ function saveFilters() {
   const settings = {
     contrast: contrast.value,
     brightness: brightness.value,
+    saturate: saturate.value,
     grayscale: grayscaleToggle.checked
   };
   localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
@@ -174,6 +223,7 @@ function loadFilters() {
     const settings = JSON.parse(saved);
     if (settings.contrast) contrast.value = settings.contrast;
     if (settings.brightness) brightness.value = settings.brightness;
+    if (settings.saturate) saturate.value = settings.saturate;
     if (settings.grayscale !== undefined) grayscaleToggle.checked = settings.grayscale;
     updateFilters();
   } catch(e) { console.warn('Failed to load filters:', e); }
@@ -182,6 +232,7 @@ function loadFilters() {
 function resetFilters() {
   contrast.value = DEFAULTS.contrast;
   brightness.value = DEFAULTS.brightness;
+  saturate.value = DEFAULTS.saturate;
   grayscaleToggle.checked = DEFAULTS.grayscale;
   updateFilters();
   resetFiltersBtn.textContent = '✓ Reset!';
@@ -191,10 +242,25 @@ function resetFilters() {
 saveFiltersBtn.onclick = saveFilters;
 resetFiltersBtn.onclick = resetFilters;
 
+/* ---------- MEMORY CLEANUP (BUG FIX) ---------- */
+function cleanupBlobURLs() {
+  currentBlobURLs.forEach(url => {
+    try { URL.revokeObjectURL(url); } catch(e) {}
+  });
+  currentBlobURLs = [];
+}
+
+function cleanupThumbnails() {
+  thumbURLs.forEach(url => {
+    try { URL.revokeObjectURL(url); } catch(e) {}
+  });
+  thumbURLs.length = 0;
+}
+
 /* ---------- UI TOGGLE ON CLICK ONLY ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library')) return;
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp')) return;
   
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
@@ -220,6 +286,7 @@ document.getElementById("openLibrary").onclick = (e) => {
 
 document.getElementById("singleFileBtn").onclick = (e) => {
   e.stopPropagation();
+  cleanupBlobURLs();
   cleanupThumbnails();
   document.getElementById("fileInput").click();
 };
@@ -241,11 +308,6 @@ document.getElementById("fileInput").onchange = async (e) => {
   progressFill.style.width = '0%';
   e.target.value = '';
 };
-
-function cleanupThumbnails() {
-  thumbURLs.forEach(URL.revokeObjectURL);
-  thumbURLs.length = 0;
-}
 
 /* ---------- THUMBNAIL EXTRACTION ---------- */
 async function extractFirstImageThumbnail(file) {
@@ -327,6 +389,7 @@ function renderLibrary(books) {
     div.className = "book";
     div.innerHTML = `<img src="${book.thumb || placeholder}" loading="lazy"><span title="${book.name}">${book.name}</span>`;
     div.onclick = async () => {
+      cleanupBlobURLs();
       await loadZipFile(book.file);
       libraryEl.classList.remove('active');
     };
@@ -336,6 +399,8 @@ function renderLibrary(books) {
 
 /* ---------- LOAD ZIP & SHOW ALL IMAGES ---------- */
 async function loadZipFile(file) {
+  cleanupBlobURLs(); // FIX: Clean up old URLs before loading new
+  
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
   zip = await JSZip.loadAsync(file);
   
@@ -361,7 +426,7 @@ async function loadZipFile(file) {
   window.scrollTo(0, 0);
 }
 
-/* ---------- LOAD ALL IMAGES WITH HIDDEN CHAPTER MARKERS ---------- */
+/* ---------- LOAD ALL IMAGES WITH PAGE COUNTER ---------- */
 async function loadAllImages() {
   readerEl.innerHTML = '<div class="loading">Loading all pages...</div>';
   
@@ -384,12 +449,18 @@ async function loadAllImages() {
     try {
       const blob = await zip.files[path].async("blob");
       const url = URL.createObjectURL(blob);
+      currentBlobURLs.push(url); // Track for cleanup
+      
       const img = document.createElement("img");
       img.src = url; 
       img.loading = "lazy"; 
       img.alt = path;
       img.dataset.path = path;
       img.dataset.folder = folder;
+      img.dataset.index = i + 1;
+      
+      // Show page number on hover
+      img.title = `Page ${i + 1} / ${allPaths.length}`;
       
       if (folder && chapterStartIndex[folder].element === null) {
         chapterStartIndex[folder].element = img;
@@ -398,9 +469,36 @@ async function loadAllImages() {
       readerEl.appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
+  
+  // Update page info
+  updatePageInfo();
 }
 
-/* ---------- CHAPTER NAVIGATION: SCROLL TO FIRST IMAGE OF CHAPTER ---------- */
+/* ---------- PAGE INFO DISPLAY (ENHANCEMENT) ---------- */
+function updatePageInfo() {
+  const scrollTop = window.scrollY;
+  const viewportHeight = window.innerHeight;
+  const images = readerEl.querySelectorAll('img');
+  
+  let currentPage = 1;
+  images.forEach((img, index) => {
+    const rect = img.getBoundingClientRect();
+    if (rect.top < viewportHeight / 2) {
+      currentPage = index + 1;
+    }
+  });
+  
+  pageInfo.textContent = `📄 Page ${currentPage} / ${images.length}`;
+  pageInfo.classList.add('visible');
+}
+
+window.addEventListener('scroll', () => {
+  if (allImages.length > 0) {
+    updatePageInfo();
+  }
+});
+
+/* ---------- CHAPTER NAVIGATION ---------- */
 function scrollToChapter(folder) {
   if (!folder) {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -425,25 +523,36 @@ function showChapterInfo(text) {
 
 /* ---------- KEYBOARD NAVIGATION ---------- */
 document.addEventListener("keydown", (e) => {
-  if (libraryEl.classList.contains('active')) return;
+  // Close library/help with Esc
+  if (e.key === "Escape") {
+    libraryEl.classList.remove('active');
+    shortcutsHelp.classList.remove('active');
+    return;
+  }
+  
+  // Show shortcuts help
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    e.preventDefault();
+    shortcutsHelp.classList.toggle('active');
+    return;
+  }
+  
+  // Don't process other keys when library/help is open
+  if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active')) return;
   
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const nextIdx = Math.min(idx + 1, foldersList.length - 1);
-    if (nextIdx !== idx) {
-      currentFolder = foldersList[nextIdx];
-      folderSelect.value = currentFolder;
-      scrollToChapter(currentFolder);
-    }
+    const nextIdx = (idx + 1) % foldersList.length; // FIX: Wrap around
+    currentFolder = foldersList[nextIdx];
+    folderSelect.value = currentFolder;
+    scrollToChapter(currentFolder);
   }
   if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const prevIdx = Math.max(idx - 1, 0);
-    if (prevIdx !== idx) {
-      currentFolder = foldersList[prevIdx];
-      folderSelect.value = currentFolder;
-      scrollToChapter(currentFolder);
-    }
+    const prevIdx = (idx - 1 + foldersList.length) % foldersList.length; // FIX: Wrap around
+    currentFolder = foldersList[prevIdx];
+    folderSelect.value = currentFolder;
+    scrollToChapter(currentFolder);
   }
   
   if (e.key === "t") {
@@ -462,8 +571,18 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "r" && e.ctrlKey) { e.preventDefault(); resetFilters(); }
 });
 
+/* ---------- CLOSE HELP ON CLICK OUTSIDE ---------- */
+shortcutsHelp.addEventListener('click', (e) => {
+  if (e.target === shortcutsHelp) {
+    shortcutsHelp.classList.remove('active');
+  }
+});
+
 /* ---------- INIT ---------- */
-window.addEventListener('beforeunload', cleanupThumbnails);
+window.addEventListener('beforeunload', () => {
+  cleanupBlobURLs();
+  cleanupThumbnails();
+});
 loadFilters();
 </script>
 </body>
