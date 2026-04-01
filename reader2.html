@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html>
 <head>
 <meta charset="UTF-8">
@@ -17,7 +16,7 @@ body {
 
 /* Reader */
 #reader {
-  padding-bottom: 80px;
+  padding-bottom: 100px;
 }
 
 #reader img {
@@ -26,13 +25,15 @@ body {
   width: var(--zoom, 100%);
   max-width: 1000px;
 
+  transition: width 0.2s ease;
+
   filter:
+    var(--sharpenFilter)
     contrast(var(--contrast, 1))
-    brightness(var(--brightness, 1))
-    var(--sharpenFilter);
+    brightness(var(--brightness, 1));
 }
 
-/* Tools panel */
+/* Tools */
 #tools {
   position: fixed;
   top: 10px;
@@ -55,7 +56,7 @@ body {
   margin-bottom: 10px;
 }
 
-/* Floating button */
+/* Buttons */
 #toggleTools {
   position: fixed;
   bottom: 20px;
@@ -65,9 +66,23 @@ body {
   padding: 12px 16px;
   border-radius: 50px;
   color: white;
-  font-size: 14px;
-  z-index: 10;
   cursor: pointer;
+}
+
+#prevChapter, #nextChapter {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  margin-right: 10px;
+  background: #444;
+  border: none;
+  padding: 10px 14px;
+  color: white;
+  cursor: pointer;
+}
+
+#nextChapter {
+  left: 90px;
 }
 
 /* File input */
@@ -78,64 +93,68 @@ body {
   z-index: 10;
 }
 </style>
-
 </head>
 
 <body>
 
-<!-- SVG SHARPEN FILTER -->
-
+<!-- SHARPEN FILTER -->
 <svg width="0" height="0">
   <filter id="sharpenFilter">
     <feConvolveMatrix id="kernel"
-      kernelMatrix="0 -0.2 0 -0.2 1.8 -0.2 0 -0.2 0"
+      kernelMatrix="0 -0.1 0 -0.1 1.2 -0.1 0 -0.1 0"
       divisor="1"/>
   </filter>
 </svg>
+
 <input type="file" id="fileInput" accept=".zip,.cbz">
 
 <div id="tools">
   <label>Folder</label>
   <select id="folderSelect"></select>
 
-<label>Zoom</label> <input type="range" id="zoom" min="100" max="200" value="100">
+  <label>Zoom</label>
+  <input type="range" id="zoom" min="100" max="200" value="100">
 
-<label>Contrast</label> <input type="range" id="contrast" min="80" max="150" value="100">
+  <label>Contrast</label>
+  <input type="range" id="contrast" min="80" max="150" value="100">
 
-<label>Brightness</label> <input type="range" id="brightness" min="80" max="150" value="100">
+  <label>Brightness</label>
+  <input type="range" id="brightness" min="80" max="150" value="100">
 
-<label>Sharpness</label> <input type="range" id="sharpness" min="0" max="5" value="0">
-
+  <label>Sharpness</label>
+  <input type="range" id="sharpness" min="0" max="5" value="0">
 </div>
 
 <button id="toggleTools">Tools</button>
+<button id="prevChapter">Prev</button>
+<button id="nextChapter">Next</button>
 
 <div id="reader"></div>
 
 <script>
 let zip;
 let currentFolder = "";
+let foldersList = [];
 
 const root = document.documentElement;
 const kernel = document.getElementById("kernel");
 
-/* ---------------- FILTER SYSTEM ---------------- */
+/* ---------------- FILTERS ---------------- */
 
 function updateFilters() {
   root.style.setProperty('--zoom', zoom.value + '%');
   root.style.setProperty('--contrast', contrast.value / 100);
   root.style.setProperty('--brightness', brightness.value / 100);
 
- const s = parseInt(sharpness.value);
+  const s = parseInt(sharpness.value);
 
   if (s === 0) {
     root.style.setProperty('--sharpenFilter', '');
     return;
   }
 
-
-  const surround = (-0.05 * s).toFixed(2);
-  const center = (1 + 0.2 * s).toFixed(2);
+  const surround = (-0.03 * s).toFixed(2);
+  const center = (1 + 0.12 * s).toFixed(2);
 
   kernel.setAttribute(
     "kernelMatrix",
@@ -174,11 +193,11 @@ fileInput.onchange = async (e) => {
 
   folderSelect.innerHTML = "";
 
-  if (folders.size === 0) {
-    folders.add(""); // flat archive fallback
-  }
+  if (folders.size === 0) folders.add("");
 
-  folders.forEach(f => {
+  foldersList = Array.from(folders).sort();
+
+  foldersList.forEach(f => {
     const opt = document.createElement("option");
     opt.value = f;
     opt.textContent = f || "(root)";
@@ -189,7 +208,23 @@ fileInput.onchange = async (e) => {
   loadFolder();
 };
 
-/* ---------------- FOLDER SWITCH ---------------- */
+/* ---------------- CHANGE CHAPTER ---------------- */
+
+function changeChapter(direction) {
+  let index = foldersList.indexOf(currentFolder);
+  index += direction;
+
+  if (index < 0 || index >= foldersList.length) return;
+
+  currentFolder = foldersList[index];
+  folderSelect.value = currentFolder;
+
+  loadFolder();
+  window.scrollTo(0, 0);
+}
+
+prevChapter.onclick = () => changeChapter(-1);
+nextChapter.onclick = () => changeChapter(1);
 
 folderSelect.onchange = () => {
   currentFolder = folderSelect.value;
@@ -220,6 +255,39 @@ async function loadFolder() {
     reader.appendChild(img);
   }
 }
+
+/* ---------------- AUTO CHAPTER SWITCH ---------------- */
+
+let scrollCooldown = false;
+
+window.addEventListener("scroll", () => {
+  if (scrollCooldown) return;
+
+  const scrollTop = window.scrollY;
+  const scrollBottom = window.innerHeight + scrollTop;
+  const docHeight = document.body.offsetHeight;
+
+  // bottom → next
+  if (scrollBottom >= docHeight - 10) {
+    scrollCooldown = true;
+    changeChapter(1);
+    setTimeout(() => scrollCooldown = false, 800);
+  }
+
+  // top → prev
+  if (scrollTop <= 0) {
+    scrollCooldown = true;
+    changeChapter(-1);
+    setTimeout(() => scrollCooldown = false, 800);
+  }
+});
+
+/* ---------------- KEYBOARD ---------------- */
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight") changeChapter(1);
+  if (e.key === "ArrowLeft") changeChapter(-1);
+});
 </script>
 
 </body>
