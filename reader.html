@@ -14,6 +14,8 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   height: auto;
   max-width: 100%;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
+  min-height: 100px;
+  background: #1a1a1a;
 }
 #reader .chapter-marker {
   position: absolute;
@@ -75,19 +77,25 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #saveFiltersBtn:hover, #resetFiltersBtn:hover { background: #008ecc; }
 #resetFiltersBtn { background: #666; }
 #resetFiltersBtn:hover { background: #555; }
-.controls-hidden #toggleTools, .controls-hidden #openLibrary, .controls-hidden #singleFileBtn {
+.controls-hidden #toggleTools, 
+.controls-hidden #openLibrary, 
+.controls-hidden #singleFileBtn,
+.controls-hidden #pageInfo,
+.controls-hidden #chapterInfo {
   opacity: 0; pointer-events: none; transform: translateY(10px);
 }
 #chapterInfo {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
   background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
   font-size: 12px; z-index: 15; display: none;
+  transition: opacity 0.2s, transform 0.2s;
 }
 #chapterInfo.visible { display: block; }
 #pageInfo {
   position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
   background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
   font-size: 12px; z-index: 15; display: none;
+  transition: opacity 0.2s, transform 0.2s;
 }
 #pageInfo.visible { display: block; }
 #shortcutsHelp {
@@ -101,6 +109,10 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #shortcutsHelp td { padding: 4px 0; }
 #shortcutsHelp kbd { 
   background: #444; padding: 2px 6px; border-radius: 4px; font-family: monospace; 
+}
+.img-placeholder {
+  display: flex; align-items: center; justify-content: center;
+  background: #1a1a1a; color: #555; font-size: 11px;
 }
 </style>
 </head>
@@ -158,7 +170,8 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 
 <script>
 let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
-let currentBlobURLs = []; // Track URLs for cleanup
+let currentBlobURLs = [];
+let imageCache = new Map(); // Cache for loaded image blobs
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
@@ -166,6 +179,7 @@ const chapterInfo = document.getElementById("chapterInfo");
 const pageInfo = document.getElementById("pageInfo");
 const shortcutsHelp = document.getElementById("shortcutsHelp");
 const thumbURLs = [];
+let intersectionObserver = null;
 
 // Filter elements
 const contrast = document.getElementById("contrast");
@@ -242,12 +256,13 @@ function resetFilters() {
 saveFiltersBtn.onclick = saveFilters;
 resetFiltersBtn.onclick = resetFilters;
 
-/* ---------- MEMORY CLEANUP (BUG FIX) ---------- */
+/* ---------- MEMORY CLEANUP ---------- */
 function cleanupBlobURLs() {
   currentBlobURLs.forEach(url => {
     try { URL.revokeObjectURL(url); } catch(e) {}
   });
   currentBlobURLs = [];
+  imageCache.clear();
 }
 
 function cleanupThumbnails() {
@@ -260,12 +275,12 @@ function cleanupThumbnails() {
 /* ---------- UI TOGGLE ON CLICK ONLY ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp')) return;
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo')) return;
   
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
   if (!controlsVisible) document.getElementById("tools").style.display = "none";
-});
+};
 
 /* ---------- TOOLS PANEL ---------- */
 document.getElementById("toggleTools").onclick = (e) => {
@@ -397,12 +412,14 @@ function renderLibrary(books) {
   });
 }
 
-/* ---------- LOAD ZIP & SHOW ALL IMAGES ---------- */
+/* ---------- STREAMING ZIP LOAD - STRUCTURE ONLY ---------- */
 async function loadZipFile(file) {
-  cleanupBlobURLs(); // FIX: Clean up old URLs before loading new
+  cleanupBlobURLs();
   
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
-  zip = await JSZip.loadAsync(file);
+  
+  // Load zip structure only (fast streaming metadata parse)
+  zip = await JSZip.loadAsync(file, { checkCRC32: false });
   
   const folders = new Set();
   Object.keys(zip.files).forEach(path => {
@@ -421,82 +438,149 @@ async function loadZipFile(file) {
   
   currentFolder = "";
   folderSelect.value = "";
-  await loadAllImages();
+  await loadAllImagesStreaming();
   showChapterInfo("📖 " + currentZipName);
   window.scrollTo(0, 0);
 }
 
-/* ---------- LOAD ALL IMAGES WITH PAGE COUNTER ---------- */
-async function loadAllImages() {
-  readerEl.innerHTML = '<div class="loading">Loading all pages...</div>';
+/* ---------- STREAMING IMAGE LOADING WITH INTERSECTION OBSERVER ---------- */
+async function loadAllImagesStreaming() {
+  readerEl.innerHTML = '<div class="loading">📚 Reading manga structure...</div>';
   
-  const allPaths = Object.keys(zip.files)
+  // Get all image paths - structure only, NO blob loading yet
+  allImages = Object.keys(zip.files)
     .filter(p => !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   
-  allImages = allPaths;
   chapterStartIndex = {};
   readerEl.innerHTML = "";
   
-  for (let i = 0; i < allPaths.length; i++) {
-    const path = allPaths[i];
+  // Create placeholder elements for all images (instant)
+  for (let i = 0; i < allImages.length; i++) {
+    const path = allImages[i];
     const folder = path.includes("/") ? path.split("/")[0] : "";
     
     if (folder && !chapterStartIndex[folder]) {
       chapterStartIndex[folder] = { index: i, element: null };
     }
     
-    try {
-      const blob = await zip.files[path].async("blob");
-      const url = URL.createObjectURL(blob);
-      currentBlobURLs.push(url); // Track for cleanup
-      
-      const img = document.createElement("img");
-      img.src = url; 
-      img.loading = "lazy"; 
-      img.alt = path;
-      img.dataset.path = path;
-      img.dataset.folder = folder;
-      img.dataset.index = i + 1;
-      
-      // Show page number on hover
-      img.title = `Page ${i + 1} / ${allPaths.length}`;
-      
-      if (folder && chapterStartIndex[folder].element === null) {
-        chapterStartIndex[folder].element = img;
-      }
-      
-      readerEl.appendChild(img);
-    } catch(e) { console.warn('Image load fail:', path, e); }
+    // Create placeholder div that will become img when loaded
+    const placeholder = document.createElement("div");
+    placeholder.className = "img-placeholder";
+    placeholder.textContent = `📄 Page ${i + 1}`;
+    placeholder.dataset.path = path;
+    placeholder.dataset.folder = folder;
+    placeholder.dataset.index = i + 1;
+    placeholder.style.height = "400px"; // Approximate height for layout
+    
+    if (folder && chapterStartIndex[folder].element === null) {
+      chapterStartIndex[folder].element = placeholder;
+    }
+    
+    readerEl.appendChild(placeholder);
   }
   
-  // Update page info
-  updatePageInfo();
+  // Setup IntersectionObserver for lazy loading images
+  setupImageObserver();
+  
+  // Update page info with total count
+  pageInfo.textContent = `📄 Page 1 / ${allImages.length}`;
+  pageInfo.classList.add('visible');
 }
 
-/* ---------- PAGE INFO DISPLAY (ENHANCEMENT) ---------- */
+/* ---------- INTERSECTION OBSERVER FOR STREAMING ---------- */
+function setupImageObserver() {
+  // Clean up existing observer
+  if (intersectionObserver) {
+    intersectionObserver.disconnect();
+  }
+  
+  intersectionObserver = new IntersectionObserver(async (entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting) {
+        const placeholder = entry.target;
+        const path = placeholder.dataset.path;
+        
+        // Skip if already loaded
+        if (placeholder.tagName === 'IMG') continue;
+        
+        // Check cache first
+        if (imageCache.has(path)) {
+          replacePlaceholderWithImage(placeholder, imageCache.get(path));
+          continue;
+        }
+        
+        // Load image blob on-demand (streaming!)
+        try {
+          const blob = await zip.files[path].async("blob");
+          const url = URL.createObjectURL(blob);
+          imageCache.set(path, { url, blob });
+          currentBlobURLs.push(url);
+          replacePlaceholderWithImage(placeholder, { url, blob });
+        } catch(e) {
+          placeholder.textContent = `❌ Failed to load`;
+          placeholder.style.color = '#f66';
+          console.warn('Stream load fail:', path, e);
+        }
+      }
+    }
+  }, {
+    rootMargin: '300px 0px', // Preload images 300px before they enter viewport
+    threshold: 0.01
+  });
+  
+  // Observe all placeholders
+  readerEl.querySelectorAll('.img-placeholder').forEach(el => {
+    intersectionObserver.observe(el);
+  });
+}
+
+function replacePlaceholderWithImage(placeholder, imageData) {
+  const img = document.createElement("img");
+  img.src = imageData.url;
+  img.loading = "lazy";
+  img.alt = placeholder.dataset.path;
+  img.dataset.path = placeholder.dataset.path;
+  img.dataset.folder = placeholder.dataset.folder;
+  img.dataset.index = placeholder.dataset.index;
+  img.title = `Page ${placeholder.dataset.index} / ${allImages.length}`;
+  
+  // Preserve chapter marker reference
+  const folder = placeholder.dataset.folder;
+  if (folder && chapterStartIndex[folder]?.element === placeholder) {
+    chapterStartIndex[folder].element = img;
+  }
+  
+  placeholder.replaceWith(img);
+}
+
+/* ---------- PAGE INFO DISPLAY ---------- */
 function updatePageInfo() {
+  if (allImages.length === 0) return;
+  
   const scrollTop = window.scrollY;
   const viewportHeight = window.innerHeight;
-  const images = readerEl.querySelectorAll('img');
+  const images = readerEl.querySelectorAll('img, .img-placeholder');
   
   let currentPage = 1;
-  images.forEach((img, index) => {
-    const rect = img.getBoundingClientRect();
-    if (rect.top < viewportHeight / 2) {
+  images.forEach((el, index) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top < viewportHeight / 2 && rect.bottom > 0) {
       currentPage = index + 1;
     }
   });
   
-  pageInfo.textContent = `📄 Page ${currentPage} / ${images.length}`;
-  pageInfo.classList.add('visible');
+  pageInfo.textContent = `📄 Page ${currentPage} / ${allImages.length}`;
 }
 
+let scrollTimeout;
 window.addEventListener('scroll', () => {
   if (allImages.length > 0) {
-    updatePageInfo();
+    // Debounce scroll updates for performance
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(updatePageInfo, 50);
   }
-});
+}, { passive: true });
 
 /* ---------- CHAPTER NAVIGATION ---------- */
 function scrollToChapter(folder) {
@@ -523,33 +607,30 @@ function showChapterInfo(text) {
 
 /* ---------- KEYBOARD NAVIGATION ---------- */
 document.addEventListener("keydown", (e) => {
-  // Close library/help with Esc
   if (e.key === "Escape") {
     libraryEl.classList.remove('active');
     shortcutsHelp.classList.remove('active');
     return;
   }
   
-  // Show shortcuts help
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
     e.preventDefault();
     shortcutsHelp.classList.toggle('active');
     return;
   }
   
-  // Don't process other keys when library/help is open
   if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active')) return;
   
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const nextIdx = (idx + 1) % foldersList.length; // FIX: Wrap around
+    const nextIdx = (idx + 1) % foldersList.length;
     currentFolder = foldersList[nextIdx];
     folderSelect.value = currentFolder;
     scrollToChapter(currentFolder);
   }
   if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const prevIdx = (idx - 1 + foldersList.length) % foldersList.length; // FIX: Wrap around
+    const prevIdx = (idx - 1 + foldersList.length) % foldersList.length;
     currentFolder = foldersList[prevIdx];
     folderSelect.value = currentFolder;
     scrollToChapter(currentFolder);
@@ -571,18 +652,31 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "r" && e.ctrlKey) { e.preventDefault(); resetFilters(); }
 });
 
-/* ---------- CLOSE HELP ON CLICK OUTSIDE ---------- */
 shortcutsHelp.addEventListener('click', (e) => {
   if (e.target === shortcutsHelp) {
     shortcutsHelp.classList.remove('active');
   }
 });
 
-/* ---------- INIT ---------- */
+/* ---------- INIT & CLEANUP ---------- */
 window.addEventListener('beforeunload', () => {
   cleanupBlobURLs();
   cleanupThumbnails();
+  if (intersectionObserver) intersectionObserver.disconnect();
 });
+
+// Handle window resize to re-trigger lazy loading if needed
+window.addEventListener('resize', () => {
+  if (intersectionObserver && readerEl.querySelectorAll('.img-placeholder').length > 0) {
+    // Re-observe placeholders in case layout changed
+    readerEl.querySelectorAll('.img-placeholder').forEach(el => {
+      if (!intersectionObserver.takeRecords().some(r => r.target === el)) {
+        intersectionObserver.observe(el);
+      }
+    });
+  }
+});
+
 loadFilters();
 </script>
 </body>
