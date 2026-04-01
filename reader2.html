@@ -22,7 +22,7 @@ body {
 
 #reader img {
   display: block;
-  margin: 12px auto;
+  margin: 0 auto;
   width: var(--zoom, 100%);
   max-width: 1000px;
 
@@ -88,11 +88,10 @@ body {
 <svg width="0" height="0">
   <filter id="sharpenFilter">
     <feConvolveMatrix id="kernel"
-      kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"
+      kernelMatrix="0 -0.2 0 -0.2 1.8 -0.2 0 -0.2 0"
       divisor="1"/>
   </filter>
 </svg>
-
 <input type="file" id="fileInput" accept=".zip,.cbz">
 
 <div id="tools">
@@ -127,18 +126,20 @@ function updateFilters() {
   root.style.setProperty('--contrast', contrast.value / 100);
   root.style.setProperty('--brightness', brightness.value / 100);
 
-  const s = parseInt(sharpness.value);
+ const s = parseInt(sharpness.value);
 
   if (s === 0) {
     root.style.setProperty('--sharpenFilter', '');
     return;
   }
 
-  const center = 5 + s * 2;
+
+  const surround = (-0.05 * s).toFixed(2);
+  const center = (1 + 0.2 * s).toFixed(2);
 
   kernel.setAttribute(
     "kernelMatrix",
-    `0 -1 0 -1 ${center} -1 0 -1 0`
+    `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`
   );
 
   root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
