@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Manga Reader</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  background: #111;
+  color: white;
+  font-family: sans-serif;
+}
+
+/* Reader */
+#reader {
+  padding-bottom: 80px;
+}
+
+#reader img {
+  display: block;
+  margin: 12px auto;
+  width: var(--zoom, 100%);
+  max-width: 1000px;
+
+  filter:
+    contrast(var(--contrast, 1))
+    brightness(var(--brightness, 1))
+    var(--sharpenFilter);
+}
+
+/* Tools panel */
+#tools {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: #222;
+  padding: 12px;
+  border-radius: 12px;
+  display: none;
+  width: 220px;
+  z-index: 10;
+}
+
+#tools label {
+  font-size: 12px;
+  display: block;
+}
+
+#tools input, #tools select {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* Floating button */
+#toggleTools {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #444;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 50px;
+  color: white;
+  font-size: 14px;
+  z-index: 10;
+  cursor: pointer;
+}
+
+/* File input */
+#fileInput {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 10;
+}
+</style>
+
+</head>
+
+<body>
+
+<!-- SVG SHARPEN FILTER -->
+
+<svg width="0" height="0">
+  <filter id="sharpenFilter">
+    <feConvolveMatrix id="kernel"
+      kernelMatrix="0 -1 0 -1 5 -1 0 -1 0"
+      divisor="1"/>
+  </filter>
+</svg>
+
+<input type="file" id="fileInput" accept=".zip,.cbz">
+
+<div id="tools">
+  <label>Folder</label>
+  <select id="folderSelect"></select>
+
+<label>Zoom</label> <input type="range" id="zoom" min="100" max="200" value="100">
+
+<label>Contrast</label> <input type="range" id="contrast" min="80" max="150" value="100">
+
+<label>Brightness</label> <input type="range" id="brightness" min="80" max="150" value="100">
+
+<label>Sharpness</label> <input type="range" id="sharpness" min="0" max="5" value="0">
+
+</div>
+
+<button id="toggleTools">Tools</button>
+
+<div id="reader"></div>
+
+<script>
+let zip;
+let currentFolder = "";
+
+const root = document.documentElement;
+const kernel = document.getElementById("kernel");
+
+/* ---------------- FILTER SYSTEM ---------------- */
+
+function updateFilters() {
+  root.style.setProperty('--zoom', zoom.value + '%');
+  root.style.setProperty('--contrast', contrast.value / 100);
+  root.style.setProperty('--brightness', brightness.value / 100);
+
+  const s = parseInt(sharpness.value);
+
+  if (s === 0) {
+    root.style.setProperty('--sharpenFilter', '');
+    return;
+  }
+
+  const center = 5 + s * 2;
+
+  kernel.setAttribute(
+    "kernelMatrix",
+    `0 -1 0 -1 ${center} -1 0 -1 0`
+  );
+
+  root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
+}
+
+zoom.oninput = updateFilters;
+contrast.oninput = updateFilters;
+brightness.oninput = updateFilters;
+sharpness.oninput = updateFilters;
+
+/* ---------------- UI ---------------- */
+
+toggleTools.onclick = () => {
+  tools.style.display =
+    tools.style.display === "none" ? "block" : "none";
+};
+
+/* ---------------- FILE LOAD ---------------- */
+
+fileInput.onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  zip = await JSZip.loadAsync(file);
+
+  const folders = new Set();
+
+  Object.keys(zip.files).forEach(path => {
+    const parts = path.split("/");
+    if (parts.length > 1) folders.add(parts[0]);
+  });
+
+  folderSelect.innerHTML = "";
+
+  if (folders.size === 0) {
+    folders.add(""); // flat archive fallback
+  }
+
+  folders.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f || "(root)";
+    folderSelect.appendChild(opt);
+  });
+
+  currentFolder = folderSelect.value;
+  loadFolder();
+};
+
+/* ---------------- FOLDER SWITCH ---------------- */
+
+folderSelect.onchange = () => {
+  currentFolder = folderSelect.value;
+  loadFolder();
+};
+
+/* ---------------- LOAD IMAGES ---------------- */
+
+async function loadFolder() {
+  reader.innerHTML = "";
+
+  const files = Object.keys(zip.files)
+    .filter(p => p.startsWith(currentFolder))
+    .sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
+
+  for (const path of files) {
+    if (!path.match(/\.(jpg|jpeg|png|webp)$/i)) continue;
+
+    const blob = await zip.files[path].async("blob");
+    const url = URL.createObjectURL(blob);
+
+    const img = document.createElement("img");
+    img.src = url;
+    img.loading = "lazy";
+
+    reader.appendChild(img);
+  }
+}
+</script>
+
+</body>
+</html>
