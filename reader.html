@@ -10,9 +10,9 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #reader img {
   display: block;
   margin: 0 auto;
-  width: 100%;
+  width: initial;
   height: auto;
-  transition: width 0.2s ease;
+  max-width: 100%;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
 }
 #reader .chapter-marker {
@@ -98,10 +98,6 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   <label>Jump to Chapter <select id="folderSelect"></select></label>
   
   <div class="slider-row">
-    <label class="filter-label">Zoom <span id="zoomValue">100%</span></label>
-    <input type="range" id="zoom" min="50" max="200" value="100">
-  </div>
-  <div class="slider-row">
     <label class="filter-label">Contrast <span id="contrastValue">1.00</span></label>
     <input type="range" id="contrast" min="80" max="150" value="100">
   </div>
@@ -129,10 +125,9 @@ const chapterInfo = document.getElementById("chapterInfo");
 const thumbURLs = [];
 
 // Filter elements
-const zoom = document.getElementById("zoom"), contrast = document.getElementById("contrast");
+const contrast = document.getElementById("contrast");
 const brightness = document.getElementById("brightness");
 const grayscaleToggle = document.getElementById("grayscale");
-const zoomValue = document.getElementById("zoomValue");
 const contrastValue = document.getElementById("contrastValue");
 const brightnessValue = document.getElementById("brightnessValue");
 const saveFiltersBtn = document.getElementById("saveFiltersBtn");
@@ -141,38 +136,30 @@ const folderSelect = document.getElementById("folderSelect");
 const readerEl = document.getElementById("reader");
 
 // Default filter values
-const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, grayscale: false };
+const DEFAULTS = { contrast: 100, brightness: 100, grayscale: false };
 
-/* ---------- FILTERS (FIXED: Direct width for Windows 7 + proper height) ---------- */
+/* ---------- FILTERS ---------- */
 function updateFilters() {
-  const zoomVal = zoom.value;
   const contrastVal = contrast.value / 100;
   const brightnessVal = brightness.value / 100;
   const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
   
-  zoomValue.textContent = zoomVal + '%';
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
   
-  // FIX: Set width directly on images (works on all browsers including Win 7)
-  const images = readerEl.querySelectorAll('img');
-  images.forEach(img => {
-    img.style.width = zoomVal + '%';
-  });
-  
-  // CSS variables for other filters
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
 }
 
-[zoom, contrast, brightness].forEach(el => el.oninput = updateFilters);
+[contrast, brightness].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
 /* ---------- SAVE/LOAD/RESET FILTERS ---------- */
 function saveFilters() {
   const settings = {
-    zoom: zoom.value, contrast: contrast.value, brightness: brightness.value,
+    contrast: contrast.value,
+    brightness: brightness.value,
     grayscale: grayscaleToggle.checked
   };
   localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
@@ -185,7 +172,6 @@ function loadFilters() {
   if (!saved) return;
   try {
     const settings = JSON.parse(saved);
-    if (settings.zoom) zoom.value = settings.zoom;
     if (settings.contrast) contrast.value = settings.contrast;
     if (settings.brightness) brightness.value = settings.brightness;
     if (settings.grayscale !== undefined) grayscaleToggle.checked = settings.grayscale;
@@ -194,7 +180,6 @@ function loadFilters() {
 }
 
 function resetFilters() {
-  zoom.value = DEFAULTS.zoom;
   contrast.value = DEFAULTS.contrast;
   brightness.value = DEFAULTS.brightness;
   grayscaleToggle.checked = DEFAULTS.grayscale;
@@ -392,7 +377,6 @@ async function loadAllImages() {
     const path = allPaths[i];
     const folder = path.includes("/") ? path.split("/")[0] : "";
     
-    // FIX: Store reference to actual image element for chapter jumping
     if (folder && !chapterStartIndex[folder]) {
       chapterStartIndex[folder] = { index: i, element: null };
     }
@@ -406,9 +390,7 @@ async function loadAllImages() {
       img.alt = path;
       img.dataset.path = path;
       img.dataset.folder = folder;
-      img.id = `img-${i}`;
       
-      // Store element reference for chapter jumping
       if (folder && chapterStartIndex[folder].element === null) {
         chapterStartIndex[folder].element = img;
       }
@@ -416,9 +398,6 @@ async function loadAllImages() {
       readerEl.appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
-  
-  // Apply current zoom to newly loaded images
-  updateFilters();
 }
 
 /* ---------- CHAPTER NAVIGATION: SCROLL TO FIRST IMAGE OF CHAPTER ---------- */
