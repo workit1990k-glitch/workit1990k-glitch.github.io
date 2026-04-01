@@ -8,10 +8,19 @@
 body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
-  display: block; margin: 0 auto; width: var(--zoom, 100%);
-  max-width: 1000px; transition: width 0.2s ease;
+  display: block; margin: 0 auto;
+  width: auto;
+  max-width: calc(1000px * var(--zoom-factor, 1));
+  transition: max-width 0.2s ease;
   filter: var(--sharpenFilter) contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
 }
+#reader .chapter-marker {
+  text-align: center; padding: 12px 20px; margin: 20px auto;
+  background: #2a2a4a; color: #aaa; font-size: 12px;
+  border-radius: 8px; max-width: calc(1000px * var(--zoom-factor, 1));
+  border: 1px solid #3a3a6a; cursor: pointer;
+}
+#reader .chapter-marker:hover { background: #3a3a6a; color: white; }
 #tools {
   position: fixed; top: 10px; right: 10px; background: #222;
   padding: 12px; border-radius: 12px; display: none;
@@ -91,11 +100,11 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <div id="chapterInfo"></div>
 
 <div id="tools">
-  <label>Chapter <select id="folderSelect"></select></label>
+  <label>Jump to Chapter <select id="folderSelect"></select></label>
   
   <div class="slider-row">
     <label class="filter-label">Zoom <span id="zoomValue">100%</span></label>
-    <input type="range" id="zoom" min="100" max="200" value="100">
+    <input type="range" id="zoom" min="50" max="200" value="100">
   </div>
   <div class="slider-row">
     <label class="filter-label">Contrast <span id="contrastValue">1.00</span></label>
@@ -121,7 +130,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <div id="reader"></div>
 
 <script>
-let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [];
+let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
 const root = document.documentElement, kernel = document.getElementById("kernel");
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
@@ -156,7 +165,8 @@ function updateFilters() {
   brightnessValue.textContent = brightnessVal.toFixed(2);
   sharpnessValue.textContent = sharpnessVal;
   
-  root.style.setProperty('--zoom', zoomVal + '%');
+  // FIX: Use zoom-factor for proper scaling from natural image size
+  root.style.setProperty('--zoom-factor', zoomVal / 100);
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
@@ -216,16 +226,11 @@ resetFiltersBtn.onclick = resetFilters;
 /* ---------- UI TOGGLE ON CLICK ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  // Don't toggle if clicking on interactive elements
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library')) return;
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, .chapter-marker')) return;
   
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
-  
-  // Also hide tools panel if hiding controls
-  if (!controlsVisible) {
-    document.getElementById("tools").style.display = "none";
-  }
+  if (!controlsVisible) document.getElementById("tools").style.display = "none";
 });
 
 /* ---------- TOOLS PANEL ---------- */
@@ -361,7 +366,7 @@ function renderLibrary(books) {
   });
 }
 
-/* ---------- LOAD ZIP & SHOW ALL IMAGES ---------- */
+/* ---------- LOAD ZIP & SHOW ALL IMAGES (FIXED) ---------- */
 async function loadZipFile(file) {
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
   zip = await JSZip.loadAsync(file);
@@ -373,27 +378,26 @@ async function loadZipFile(file) {
     if (parts.length > 1) folders.add(parts[0]);
   });
   
-  folderSelect.innerHTML = "";
-  foldersList = folders.size > 0 
-    ? Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true })) 
-    : [""];
+  folderSelect.innerHTML = '<option value="">📁 All Pages (full manga)</option>';
+  foldersList = ["", ...Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true }))];
   
-  foldersList.forEach(f => {
+  foldersList.filter(f => f).forEach(f => {
     const opt = document.createElement("option");
-    opt.value = f; opt.textContent = f || "📁 All Pages";
+    opt.value = f; opt.textContent = `📑 ${f}`;
     folderSelect.appendChild(opt);
   });
   
-  currentFolder = ""; // Start with ALL images
+  currentFolder = "";
   folderSelect.value = "";
-  await loadAllImages(); // Show everything immediately
+  await loadAllImages(); // Always show ALL images
   showChapterInfo("📖 " + currentZipName);
   window.scrollTo(0, 0);
 }
 
-/* ---------- LOAD ALL IMAGES (FLATTED VIEW) ---------- */
+/* ---------- LOAD ALL IMAGES WITH CHAPTER MARKERS ---------- */
 async function loadAllImages() {
-  document.getElementById("reader").innerHTML = '<div class="loading">Loading pages...</div>';
+  const reader = document.getElementById("reader");
+  reader.innerHTML = '<div class="loading">Loading all pages...</div>';
   
   // Get ALL images from zip, sorted naturally
   const allPaths = Object.keys(zip.files)
@@ -401,46 +405,79 @@ async function loadAllImages() {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   
   allImages = allPaths;
-  document.getElementById("reader").innerHTML = "";
+  chapterStartIndex = {};
+  reader.innerHTML = "";
   
-  for (const path of allPaths) {
+  for (let i = 0; i < allPaths.length; i++) {
+    const path = allPaths[i];
+    const folder = path.includes("/") ? path.split("/")[0] : "";
+    
+    // Track first image index for each chapter (for scrolling)
+    if (folder && !chapterStartIndex[folder]) {
+      chapterStartIndex[folder] = i;
+    }
+    
     try {
       const blob = await zip.files[path].async("blob");
       const url = URL.createObjectURL(blob);
       const img = document.createElement("img");
-      img.src = url; img.loading = "lazy"; img.alt = path;
-      document.getElementById("reader").appendChild(img);
-    } catch(e) { console.warn('Image load fail:', path, e); }
-  }
-}
-
-/* ---------- CHAPTER NAVIGATION (TOOLS DROPDOWN ONLY) ---------- */
-async function goToChapter(folder) {
-  currentFolder = folder;
-  document.getElementById("reader").innerHTML = '<div class="loading">Loading chapter...</div>';
-  
-  const prefix = folder ? folder + "/" : "";
-  const files = Object.keys(zip.files)
-    .filter(p => p.startsWith(prefix) && !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  
-  document.getElementById("reader").innerHTML = "";
-  for (const path of files) {
-    try {
-      const blob = await zip.files[path].async("blob");
-      const url = URL.createObjectURL(blob);
-      const img = document.createElement("img");
-      img.src = url; img.loading = "lazy"; img.alt = path;
-      document.getElementById("reader").appendChild(img);
+      img.src = url; 
+      img.loading = "lazy"; 
+      img.alt = path;
+      img.dataset.path = path;
+      img.dataset.folder = folder;
+      reader.appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
   
-  const chapterName = folder || "All Pages";
-  showChapterInfo(`📑 ${chapterName} (${files.length} pages)`);
-  window.scrollTo(0, 0);
+  // Add clickable chapter markers for easy navigation
+  addChapterMarkers();
 }
 
-folderSelect.onchange = () => goToChapter(folderSelect.value);
+function addChapterMarkers() {
+  document.querySelectorAll('.chapter-marker').forEach(el => el.remove());
+  
+  for (const [folder, index] of Object.entries(chapterStartIndex)) {
+    const img = document.getElementById("reader").children[index];
+    if (img) {
+      const marker = document.createElement("div");
+      marker.className = "chapter-marker";
+      marker.textContent = `📑 ${folder} — click to jump`;
+      marker.onclick = (e) => { e.stopPropagation(); scrollToChapter(folder); };
+      img.parentNode.insertBefore(marker, img);
+    }
+  }
+}
+
+/* ---------- CHAPTER NAVIGATION: SCROLL TO CHAPTER (NOT FILTER) ---------- */
+function scrollToChapter(folder) {
+  if (!folder) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    showChapterInfo("📖 All Pages");
+    return;
+  }
+  
+  const startIndex = chapterStartIndex[folder];
+  if (startIndex !== undefined) {
+    const children = document.getElementById("reader").children;
+    // Find the marker or image at this index
+    let target = children[startIndex];
+    // If there's a marker before the image, scroll to marker
+    if (startIndex > 0) {
+      const prev = children[startIndex - 1];
+      if (prev?.classList?.contains('chapter-marker')) {
+        target = prev;
+      }
+    }
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      showChapterInfo(`📑 Jumped to: ${folder}`);
+    }
+  }
+}
+
+// Dropdown now scrolls to chapter instead of filtering
+folderSelect.onchange = () => scrollToChapter(folderSelect.value);
 
 function showChapterInfo(text) {
   chapterInfo.textContent = text;
@@ -448,18 +485,18 @@ function showChapterInfo(text) {
   setTimeout(() => chapterInfo.classList.remove('visible'), 2500);
 }
 
-/* ---------- KEYBOARD NAVIGATION (NO AUTO-SCROLL) ---------- */
+/* ---------- KEYBOARD NAVIGATION ---------- */
 document.addEventListener("keydown", (e) => {
   if (libraryEl.classList.contains('active')) return;
   
-  // Chapter navigation: A/D or Arrow Left/Right
+  // Chapter navigation via dropdown: use A/D to cycle chapters
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
     const nextIdx = Math.min(idx + 1, foldersList.length - 1);
     if (nextIdx !== idx) {
       currentFolder = foldersList[nextIdx];
       folderSelect.value = currentFolder;
-      goToChapter(currentFolder);
+      scrollToChapter(currentFolder);
     }
   }
   if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
@@ -468,55 +505,36 @@ document.addEventListener("keydown", (e) => {
     if (prevIdx !== idx) {
       currentFolder = foldersList[prevIdx];
       folderSelect.value = currentFolder;
-      goToChapter(currentFolder);
+      scrollToChapter(currentFolder);
     }
   }
   
-  // Toggle tools: T
   if (e.key === "t") {
     e.stopPropagation();
     const tools = document.getElementById("tools");
     tools.style.display = tools.style.display === "none" ? "block" : "none";
   }
-  
-  // Open library: L
-  if (e.key === "l") {
-    e.stopPropagation();
-    document.getElementById("openLibrary").click();
-  }
-  
-  // Open single file: O
-  if (e.key === "o") {
-    e.stopPropagation();
-    document.getElementById("singleFileBtn").click();
-  }
-  
-  // Toggle controls visibility: SPACE or C
+  if (e.key === "l") { e.stopPropagation(); document.getElementById("openLibrary").click(); }
+  if (e.key === "o") { e.stopPropagation(); document.getElementById("singleFileBtn").click(); }
   if (e.key === " " || e.key === "c") {
     e.preventDefault();
     controlsVisible = !controlsVisible;
     document.body.classList.toggle('controls-hidden', !controlsVisible);
     if (!controlsVisible) document.getElementById("tools").style.display = "none";
   }
-  
-  // Reset filters: R
-  if (e.key === "r" && e.ctrlKey) {
-    e.preventDefault();
-    resetFilters();
-  }
+  if (e.key === "r" && e.ctrlKey) { e.preventDefault(); resetFilters(); }
 });
 
 /* ---------- INIT ---------- */
 window.addEventListener('beforeunload', cleanupThumbnails);
 loadFilters();
 
-// Hide controls after 3 seconds of inactivity on first load
+// Auto-hide controls after inactivity
 let hideTimeout = setTimeout(() => {
   controlsVisible = false;
   document.body.classList.add('controls-hidden');
 }, 3000);
 
-// Reset timeout on any interaction
 ['mousemove', 'touchstart', 'keydown', 'click'].forEach(evt => {
   document.addEventListener(evt, () => {
     clearTimeout(hideTimeout);
