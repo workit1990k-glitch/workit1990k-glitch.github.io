@@ -36,7 +36,10 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; }
 
 #tools label { font-size: 12px; display: block; }
 
-#tools input { width: 100%; margin-bottom: 10px; }
+#tools input, #tools select {
+  width: 100%;
+  margin-bottom: 10px;
+}
 
 button {
   position: fixed;
@@ -57,8 +60,6 @@ button {
 #openSingle { left: 270px; }
 #backToLibrary { left: 20px; display: none; }
 #backToLibrary.visible { display: block; }
-
-#fileInput, #libraryInput, #singleInput { display: none; }
 
 #library {
   display: none;
@@ -108,6 +109,13 @@ button {
   background: #00a8ff;
   width: 0%;
 }
+
+/* hide UI */
+.hidden-ui button,
+.hidden-ui #tools {
+  opacity: 0;
+  pointer-events: none;
+}
 </style>
 </head>
 
@@ -127,6 +135,10 @@ button {
 
 <div id="tools">
 
+<label>Chapter
+<select id="folderSelect"></select>
+</label>
+
 <label>Zoom <span id="zoomVal"></span>
 <input type="range" id="zoom" min="100" max="200" value="100"></label>
 
@@ -139,12 +151,12 @@ button {
 <label>Sharpness <span id="sharpnessVal"></span>
 <input type="range" id="sharpness" min="0" max="5" value="0"></label>
 
-<label>
-Grayscale
+<label>Grayscale
 <input type="checkbox" id="grayscale">
 </label>
 
-<button id="saveFilters" style="position:static;width:100%;">💾 Save</button>
+<button id="saveFilters">💾 Save</button>
+<button id="defaultFilters">♻️ Default</button>
 
 </div>
 
@@ -159,11 +171,9 @@ Grayscale
 
 <script>
 
-let zip, currentFolder = "", foldersList = [];
+let zip, foldersList = [], currentFolder = "";
 const root = document.documentElement;
 const kernel = document.getElementById("kernel");
-const libraryEl = document.getElementById("library");
-const progressFill = document.getElementById("progressFill");
 
 /* ---------- FILTERS ---------- */
 function updateFilters() {
@@ -192,6 +202,7 @@ function updateFilters() {
   kernel.setAttribute("kernelMatrix",
     `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`
   );
+
   root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
 }
 
@@ -209,16 +220,36 @@ saveFilters.onclick = () => {
   }));
 };
 
+defaultFilters.onclick = () => {
+  zoom.value = 100;
+  contrast.value = 100;
+  brightness.value = 100;
+  sharpness.value = 0;
+  grayscale.checked = false;
+  updateFilters();
+};
+
 (function loadSaved() {
   const s = JSON.parse(localStorage.getItem("filters"));
   if (!s) return;
+
   zoom.value = s.zoom;
   contrast.value = s.contrast;
   brightness.value = s.brightness;
   sharpness.value = s.sharpness;
   grayscale.checked = s.grayscale;
+
   updateFilters();
 })();
+
+/* ---------- UI ---------- */
+toggleTools.onclick = () => {
+  tools.style.display = tools.style.display === "none" ? "block" : "none";
+};
+
+backToLibrary.onclick = () => {
+  library.classList.add('active');
+};
 
 /* ---------- PARALLEL ---------- */
 async function processWithConcurrency(items, processor, concurrency = 3) {
@@ -228,11 +259,7 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
   async function worker() {
     while (index < items.length) {
       const i = index++;
-      try {
-        results[i] = await processor(items[i], i);
-      } catch {
-        results[i] = null;
-      }
+      results[i] = await processor(items[i], i);
       completed++;
       progressFill.style.width = `${(completed/items.length)*100}%`;
     }
@@ -243,22 +270,23 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
 }
 
 /* ---------- LIBRARY ---------- */
-openLibrary.onclick = () => {
-  libraryEl.classList.add('active');
-  libraryEl.innerHTML = '<div class="loading">Loading...</div>';
-  libraryInput.click();
-};
+openLibrary.onclick = () => libraryInput.click();
+openSingle.onclick = () => singleInput.click();
 
+/* ---------- LOAD ZIP ---------- */
 libraryInput.onchange = async e => {
   const files = [...e.target.files];
 
   const books = await processWithConcurrency(files, async file => {
     const zipTemp = await JSZip.loadAsync(file);
-    const imgPath = Object.keys(zipTemp.files)
-      .find(p => /\.(jpg|png|jpeg|webp)$/i.test(p));
-    if (!imgPath) return null;
 
-    const blob = await zipTemp.files[imgPath].async("blob");
+    const img = Object.keys(zipTemp.files)
+      .find(p => /\.(jpg|png|jpeg|webp)$/i.test(p));
+
+    if (!img) return null;
+
+    const blob = await zipTemp.files[img].async("blob");
+
     return {
       file,
       name: file.name,
@@ -266,41 +294,67 @@ libraryInput.onchange = async e => {
     };
   });
 
-  libraryEl.innerHTML = '';
-
-  books.filter(Boolean).forEach(b => {
-    const div = document.createElement("div");
-    div.className = "book";
-    div.innerHTML = `<img src="${b.thumb}"><span>${b.name}</span>`;
-    div.onclick = async () => {
-      await loadZipFile(b.file);
-      libraryEl.classList.remove('active');
-    };
-    libraryEl.appendChild(div);
-  });
+  renderLibrary(books.filter(Boolean));
 };
 
 /* ---------- SINGLE ---------- */
-openSingle.onclick = () => singleInput.click();
-
 singleInput.onchange = async e => {
   const file = e.target.files[0];
   if (!file) return;
   await loadZipFile(file);
+  library.classList.remove('active');
 };
 
-/* ---------- LOAD ZIP ---------- */
+/* ---------- RENDER ---------- */
+function renderLibrary(books) {
+  library.innerHTML = "";
+
+  books.forEach(b => {
+    const div = document.createElement("div");
+    div.className = "book";
+
+    div.innerHTML = `<img src="${b.thumb}"><span>${b.name}</span>`;
+
+    div.onclick = () => loadZipFile(b.file);
+
+    library.appendChild(div);
+  });
+
+  library.classList.add('active');
+}
+
+/* ---------- LOAD ---------- */
 async function loadZipFile(file) {
   zip = await JSZip.loadAsync(file);
 
   const folders = new Set();
+
   Object.keys(zip.files).forEach(p => {
-    const parts = p.split("/");
+    const parts = p.split("/").filter(Boolean);
     if (parts.length > 1) folders.add(parts[0]);
   });
 
-  foldersList = folders.size ? [...folders] : [""];
+  foldersList = folders.size
+    ? [...folders]
+    : [""];
+
+  folderSelect.innerHTML = "";
+
+  foldersList.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f || "(root)";
+    folderSelect.appendChild(opt);
+  });
+
   currentFolder = foldersList[0];
+  folderSelect.value = currentFolder;
+
+  folderSelect.onchange = () => {
+    currentFolder = folderSelect.value;
+    loadFolder();
+  };
+
   loadFolder();
 }
 
@@ -314,31 +368,57 @@ async function loadFolder() {
     .filter(p => p.startsWith(prefix))
     .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 
+  let first = null;
+  let last = null;
+
   for (const path of files) {
     if (!/\.(jpg|png|jpeg|webp)$/i.test(path)) continue;
 
     const blob = await zip.files[path].async("blob");
+
     const img = document.createElement("img");
     img.src = URL.createObjectURL(blob);
+
+    if (!first) first = img;
+    last = img;
+
     reader.appendChild(img);
   }
+
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+
+      if (e.target === last) change(1);
+      if (e.target === first) change(-1);
+    });
+  }, { threshold: 1 });
+
+  if (first) obs.observe(first);
+  if (last) obs.observe(last);
 }
 
 /* ---------- NAV ---------- */
 prevChapter.onclick = () => change(-1);
 nextChapter.onclick = () => change(1);
 
-function change(d) {
-  const i = foldersList.indexOf(currentFolder) + d;
+function change(dir) {
+  const i = foldersList.indexOf(currentFolder) + dir;
   if (i < 0 || i >= foldersList.length) return;
+
   currentFolder = foldersList[i];
+  folderSelect.value = currentFolder;
   loadFolder();
 }
 
-/* ---------- TOOLS ---------- */
-toggleTools.onclick = () => {
-  tools.style.display = tools.style.display === "none" ? "block" : "none";
-};
+/* ---------- HIDE UI ---------- */
+let hidden = false;
+
+document.addEventListener("click", e => {
+  if (e.target.closest("#tools") || e.target.tagName === "BUTTON") return;
+  hidden = !hidden;
+  document.body.classList.toggle("hidden-ui", hidden);
+});
 
 </script>
 </body>
