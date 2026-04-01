@@ -5,7 +5,7 @@
 <title>Manga Reader</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body { margin: 0; background: #111; color: white; font-family: sans-serif; }
+body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
   display: block; margin: 0 auto; width: var(--zoom, 100%);
@@ -22,18 +22,14 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; }
 #tools .slider-row input { flex: 1; }
 #tools .slider-row span { min-width: 40px; text-align: right; font-size: 11px; color: #aaa; }
 #tools select, #tools button { width: 100%; margin-top: 5px; }
-#toggleTools, #prevChapter, #nextChapter, #openLibrary, #backToLibrary, #singleFileBtn {
+#toggleTools, #openLibrary, #singleFileBtn {
   position: fixed; bottom: 20px; background: #444; border: none;
   padding: 10px 14px; color: white; cursor: pointer; border-radius: 8px; z-index: 20;
-  font-size: 13px;
+  font-size: 13px; transition: opacity 0.2s, transform 0.2s;
 }
 #toggleTools { right: 20px; }
-#prevChapter { left: 20px; }
-#nextChapter { left: 90px; }
-#openLibrary { left: 170px; }
-#singleFileBtn { left: 280px; }
-#backToLibrary { left: 20px; display: none; }
-#backToLibrary.visible { display: block; }
+#openLibrary { right: 110px; }
+#singleFileBtn { right: 220px; }
 #fileInput, #libraryInput { display: none; }
 #library {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -62,8 +58,21 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; }
   height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s;
 }
 .filter-label { display: flex; justify-content: space-between; align-items: center; }
-#saveFiltersBtn { background: #00a8ff; margin-top: 10px; font-size: 12px; padding: 6px; border-radius: 6px; }
-#saveFiltersBtn:hover { background: #008ecc; }
+#saveFiltersBtn, #resetFiltersBtn { 
+  background: #00a8ff; margin-top: 8px; font-size: 12px; padding: 6px; border-radius: 6px; 
+}
+#saveFiltersBtn:hover, #resetFiltersBtn:hover { background: #008ecc; }
+#resetFiltersBtn { background: #666; }
+#resetFiltersBtn:hover { background: #555; }
+.controls-hidden #toggleTools, .controls-hidden #openLibrary, .controls-hidden #singleFileBtn {
+  opacity: 0; pointer-events: none; transform: translateY(10px);
+}
+#chapterInfo {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
+  font-size: 12px; z-index: 15; display: none;
+}
+#chapterInfo.visible { display: block; }
 </style>
 </head>
 <body>
@@ -79,9 +88,10 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; }
 
 <div id="library"></div>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<div id="chapterInfo"></div>
 
 <div id="tools">
-  <label>Folder <select id="folderSelect"></select></label>
+  <label>Chapter <select id="folderSelect"></select></label>
   
   <div class="slider-row">
     <label class="filter-label">Zoom <span id="zoomValue">100%</span></label>
@@ -101,31 +111,37 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; }
   </div>
   <label><input type="checkbox" id="grayscale"> Grayscale (100%)</label>
   
-  <button id="saveFiltersBtn">💾 Save Filter Settings</button>
+  <button id="saveFiltersBtn">💾 Save Settings</button>
+  <button id="resetFiltersBtn">↺ Reset to Default</button>
 </div>
 
-<button id="toggleTools">Tools</button>
-<button id="prevChapter">Prev</button>
-<button id="nextChapter">Next</button>
+<button id="toggleTools">⚙️ Tools</button>
 <button id="openLibrary">📚 Library</button>
 <button id="singleFileBtn">📄 Open File</button>
-<button id="backToLibrary">← Library</button>
 <div id="reader"></div>
 
 <script>
-let zip, currentFolder = "", foldersList = [], currentZipName = "";
+let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [];
 const root = document.documentElement, kernel = document.getElementById("kernel");
-const libraryEl = document.getElementById("library"), backToLibraryBtn = document.getElementById("backToLibrary");
+const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
+const chapterInfo = document.getElementById("chapterInfo");
 const thumbURLs = [];
 
-// Filter value displays
+// Filter elements
+const zoom = document.getElementById("zoom"), contrast = document.getElementById("contrast");
+const brightness = document.getElementById("brightness"), sharpness = document.getElementById("sharpness");
+const grayscaleToggle = document.getElementById("grayscale");
 const zoomValue = document.getElementById("zoomValue");
 const contrastValue = document.getElementById("contrastValue");
 const brightnessValue = document.getElementById("brightnessValue");
 const sharpnessValue = document.getElementById("sharpnessValue");
-const grayscaleToggle = document.getElementById("grayscale");
 const saveFiltersBtn = document.getElementById("saveFiltersBtn");
+const resetFiltersBtn = document.getElementById("resetFiltersBtn");
+const folderSelect = document.getElementById("folderSelect");
+
+// Default filter values
+const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, sharpness: 0, grayscale: false };
 
 /* ---------- FILTERS ---------- */
 function updateFilters() {
@@ -135,19 +151,16 @@ function updateFilters() {
   const sharpnessVal = parseInt(sharpness.value);
   const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
   
-  // Update display values with proper formatting
   zoomValue.textContent = zoomVal + '%';
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
   sharpnessValue.textContent = sharpnessVal;
   
-  // Apply CSS variables
   root.style.setProperty('--zoom', zoomVal + '%');
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
   
-  // Update sharpen filter
   if (sharpnessVal === 0) { 
     root.style.setProperty('--sharpenFilter', ''); 
   } else {
@@ -161,18 +174,15 @@ function updateFilters() {
 [zoom, contrast, brightness, sharpness].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
-/* ---------- SAVE/LOAD FILTERS ---------- */
+/* ---------- SAVE/LOAD/RESET FILTERS ---------- */
 function saveFilters() {
   const settings = {
-    zoom: zoom.value,
-    contrast: contrast.value,
-    brightness: brightness.value,
-    sharpness: sharpness.value,
-    grayscale: grayscaleToggle.checked
+    zoom: zoom.value, contrast: contrast.value, brightness: brightness.value,
+    sharpness: sharpness.value, grayscale: grayscaleToggle.checked
   };
   localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
   saveFiltersBtn.textContent = '✓ Saved!';
-  setTimeout(() => saveFiltersBtn.textContent = '💾 Save Filter Settings', 1500);
+  setTimeout(() => saveFiltersBtn.textContent = '💾 Save Settings', 1500);
 }
 
 function loadFilters() {
@@ -180,61 +190,83 @@ function loadFilters() {
   if (!saved) return;
   try {
     const settings = JSON.parse(saved);
-    if (settings.zoom) { zoom.value = settings.zoom; }
-    if (settings.contrast) { contrast.value = settings.contrast; }
-    if (settings.brightness) { brightness.value = settings.brightness; }
-    if (settings.sharpness) { sharpness.value = settings.sharpness; }
-    if (settings.grayscale !== undefined) { grayscaleToggle.checked = settings.grayscale; }
+    if (settings.zoom) zoom.value = settings.zoom;
+    if (settings.contrast) contrast.value = settings.contrast;
+    if (settings.brightness) brightness.value = settings.brightness;
+    if (settings.sharpness) sharpness.value = settings.sharpness;
+    if (settings.grayscale !== undefined) grayscaleToggle.checked = settings.grayscale;
     updateFilters();
   } catch(e) { console.warn('Failed to load filters:', e); }
 }
 
-saveFiltersBtn.onclick = saveFilters;
+function resetFilters() {
+  zoom.value = DEFAULTS.zoom;
+  contrast.value = DEFAULTS.contrast;
+  brightness.value = DEFAULTS.brightness;
+  sharpness.value = DEFAULTS.sharpness;
+  grayscaleToggle.checked = DEFAULTS.grayscale;
+  updateFilters();
+  resetFiltersBtn.textContent = '✓ Reset!';
+  setTimeout(() => resetFiltersBtn.textContent = '↺ Reset to Default', 1500);
+}
 
-/* ---------- UI ---------- */
-toggleTools.onclick = () => {
+saveFiltersBtn.onclick = saveFilters;
+resetFiltersBtn.onclick = resetFilters;
+
+/* ---------- UI TOGGLE ON CLICK ---------- */
+let controlsVisible = true;
+document.addEventListener('click', (e) => {
+  // Don't toggle if clicking on interactive elements
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library')) return;
+  
+  controlsVisible = !controlsVisible;
+  document.body.classList.toggle('controls-hidden', !controlsVisible);
+  
+  // Also hide tools panel if hiding controls
+  if (!controlsVisible) {
+    document.getElementById("tools").style.display = "none";
+  }
+});
+
+/* ---------- TOOLS PANEL ---------- */
+document.getElementById("toggleTools").onclick = (e) => {
+  e.stopPropagation();
   const tools = document.getElementById("tools");
   tools.style.display = tools.style.display === "none" ? "block" : "none";
 };
 
-openLibrary.onclick = async () => {
+/* ---------- LIBRARY & SINGLE FILE ---------- */
+document.getElementById("openLibrary").onclick = (e) => {
+  e.stopPropagation();
   libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files...</div>';
   libraryEl.classList.add('active');
-  backToLibraryBtn.classList.remove('visible');
   progressFill.style.width = '0%';
   cleanupThumbnails();
-  libraryInput.click();
+  document.getElementById("libraryInput").click();
 };
 
-// Single file input handler - NEW FEATURE
-singleFileBtn.onclick = () => {
+document.getElementById("singleFileBtn").onclick = (e) => {
+  e.stopPropagation();
   cleanupThumbnails();
-  fileInput.click();
+  document.getElementById("fileInput").click();
 };
 
-fileInput.onchange = async (e) => {
+document.getElementById("fileInput").onchange = async (e) => {
   const file = e.target.files[0];
   if (!file || !/\.(zip|cbz)$/i.test(file.name)) return;
   
   progressFill.style.width = '0%';
   libraryEl.innerHTML = `<div class="loading">Loading ${file.name}...</div>`;
   libraryEl.classList.add('active');
-  backToLibraryBtn.classList.remove('visible');
   
   try {
     await loadZipFile(file);
     libraryEl.classList.remove('active');
-    backToLibraryBtn.classList.add('visible');
   } catch(err) {
     libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
   }
   progressFill.style.width = '0%';
-  fileInput.value = ''; // Reset for re-selection
-};
-
-backToLibraryBtn.onclick = () => {
-  libraryEl.classList.remove('active');
-  if (zip) backToLibraryBtn.classList.add('visible');
+  e.target.value = '';
 };
 
 function cleanupThumbnails() {
@@ -256,7 +288,7 @@ async function extractFirstImageThumbnail(file) {
   return url;
 }
 
-/* ---------- FIXED PARALLEL PROCESSING POOL - ALWAYS WORKS ---------- */
+/* ---------- PARALLEL PROCESSING POOL ---------- */
 async function processWithConcurrency(items, processor, concurrency = 3) {
   const results = new Array(items.length);
   const executing = [];
@@ -266,17 +298,11 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
     const index = i;
     const item = items[i];
     
-    // Wrap processor in async IIFE with error handling to prevent pool corruption
     const promise = (async () => {
-      try {
-        return await processor(item, index);
-      } catch(err) {
-        console.warn('Processor error at index', index, ':', err);
-        return null;
-      }
+      try { return await processor(item, index); }
+      catch(err) { console.warn('Processor error', index, err); return null; }
     })().then(result => {
       results[index] = result;
-      // Safely remove from executing array
       const idx = executing.indexOf(promise);
       if (idx > -1) executing.splice(idx, 1);
       completed++;
@@ -285,20 +311,14 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
     });
     
     executing.push(promise);
-    
-    // When pool is full, wait for one to finish before continuing
-    if (executing.length >= concurrency) {
-      await Promise.race(executing);
-    }
+    if (executing.length >= concurrency) await Promise.race(executing);
   }
-  
-  // Wait for all remaining promises to complete
   await Promise.all(executing);
   return results;
 }
 
 /* ---------- LIBRARY LOADING ---------- */
-libraryInput.onchange = async (e) => {
+document.getElementById("libraryInput").onchange = async (e) => {
   const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (files.length === 0) {
     libraryEl.innerHTML = '<div class="loading">No ZIP/CBZ files selected</div>';
@@ -309,25 +329,16 @@ libraryInput.onchange = async (e) => {
   
   const books = await processWithConcurrency(files, async (file, index) => {
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
-    
     try {
       const thumbURL = await extractFirstImageThumbnail(file);
-      return {
-        file: file,
-        name: file.name.replace(/\.(zip|cbz)$/i, ''),
-        thumb: thumbURL
-      };
-    } catch (err) {
-      console.warn('Skip:', file.name, err);
-      return null;
-    }
+      return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumb: thumbURL };
+    } catch (err) { console.warn('Skip:', file.name, err); return null; }
   }, 3);
   
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
-  
   renderLibrary(books.filter(b => b !== null));
-  libraryInput.value = ''; // Reset for re-selection - enables parallel on subsequent opens
+  e.target.value = '';
 };
 
 function renderLibrary(books) {
@@ -336,7 +347,6 @@ function renderLibrary(books) {
     libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
     return;
   }
-  
   const placeholder = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
   
   books.forEach(book => {
@@ -346,17 +356,17 @@ function renderLibrary(books) {
     div.onclick = async () => {
       await loadZipFile(book.file);
       libraryEl.classList.remove('active');
-      backToLibraryBtn.classList.add('visible');
     };
     libraryEl.appendChild(div);
   });
 }
 
-/* ---------- LOAD ZIP FOR READING ---------- */
+/* ---------- LOAD ZIP & SHOW ALL IMAGES ---------- */
 async function loadZipFile(file) {
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
   zip = await JSZip.loadAsync(file);
   
+  // Build folder list for chapter navigation
   const folders = new Set();
   Object.keys(zip.files).forEach(path => {
     const parts = path.split("/").filter(p => p);
@@ -370,77 +380,156 @@ async function loadZipFile(file) {
   
   foldersList.forEach(f => {
     const opt = document.createElement("option");
-    opt.value = f; opt.textContent = f || "(root)";
+    opt.value = f; opt.textContent = f || "📁 All Pages";
     folderSelect.appendChild(opt);
   });
   
-  currentFolder = folderSelect.value;
-  loadFolder();
+  currentFolder = ""; // Start with ALL images
+  folderSelect.value = "";
+  await loadAllImages(); // Show everything immediately
+  showChapterInfo("📖 " + currentZipName);
   window.scrollTo(0, 0);
 }
 
-/* ---------- NAVIGATION ---------- */
-function changeChapter(direction) {
-  const index = foldersList.indexOf(currentFolder) + direction;
-  if (index < 0 || index >= foldersList.length) return;
-  currentFolder = foldersList[index];
-  folderSelect.value = currentFolder;
-  loadFolder();
-  window.scrollTo(0, 0);
-}
-prevChapter.onclick = () => changeChapter(-1);
-nextChapter.onclick = () => changeChapter(1);
-folderSelect.onchange = () => { currentFolder = folderSelect.value; loadFolder(); };
-
-async function loadFolder() {
-  reader.innerHTML = "";
-  const prefix = currentFolder ? currentFolder + "/" : "";
-  const files = Object.keys(zip.files)
-    .filter(p => p.startsWith(prefix) && !p.endsWith("/") && !p.includes('__MACOSX'))
+/* ---------- LOAD ALL IMAGES (FLATTED VIEW) ---------- */
+async function loadAllImages() {
+  document.getElementById("reader").innerHTML = '<div class="loading">Loading pages...</div>';
+  
+  // Get ALL images from zip, sorted naturally
+  const allPaths = Object.keys(zip.files)
+    .filter(p => !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   
-  for (const path of files) {
-    if (!/\.(jpg|jpeg|png|webp)$/i.test(path)) continue;
+  allImages = allPaths;
+  document.getElementById("reader").innerHTML = "";
+  
+  for (const path of allPaths) {
     try {
       const blob = await zip.files[path].async("blob");
       const url = URL.createObjectURL(blob);
       const img = document.createElement("img");
       img.src = url; img.loading = "lazy"; img.alt = path;
-      reader.appendChild(img);
+      document.getElementById("reader").appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
 }
 
-/* ---------- AUTO-SCROLL & KEYBOARD ---------- */
-let scrollCooldown = false;
-window.addEventListener("scroll", () => {
-  if (scrollCooldown || !zip) return;
-  const { scrollY, innerHeight } = window, docH = document.body.offsetHeight;
-  if (scrollY + innerHeight >= docH - 10) {
-    scrollCooldown = true; changeChapter(1);
-    setTimeout(() => scrollCooldown = false, 800);
+/* ---------- CHAPTER NAVIGATION (TOOLS DROPDOWN ONLY) ---------- */
+async function goToChapter(folder) {
+  currentFolder = folder;
+  document.getElementById("reader").innerHTML = '<div class="loading">Loading chapter...</div>';
+  
+  const prefix = folder ? folder + "/" : "";
+  const files = Object.keys(zip.files)
+    .filter(p => p.startsWith(prefix) && !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  
+  document.getElementById("reader").innerHTML = "";
+  for (const path of files) {
+    try {
+      const blob = await zip.files[path].async("blob");
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.src = url; img.loading = "lazy"; img.alt = path;
+      document.getElementById("reader").appendChild(img);
+    } catch(e) { console.warn('Image load fail:', path, e); }
   }
-  if (scrollY <= 0) {
-    scrollCooldown = true; changeChapter(-1);
-    setTimeout(() => scrollCooldown = false, 800);
-  }
-});
+  
+  const chapterName = folder || "All Pages";
+  showChapterInfo(`📑 ${chapterName} (${files.length} pages)`);
+  window.scrollTo(0, 0);
+}
 
+folderSelect.onchange = () => goToChapter(folderSelect.value);
+
+function showChapterInfo(text) {
+  chapterInfo.textContent = text;
+  chapterInfo.classList.add('visible');
+  setTimeout(() => chapterInfo.classList.remove('visible'), 2500);
+}
+
+/* ---------- KEYBOARD NAVIGATION (NO AUTO-SCROLL) ---------- */
 document.addEventListener("keydown", (e) => {
   if (libraryEl.classList.contains('active')) return;
-  if (e.key === "d" || e.key === "ArrowRight") changeChapter(1);
-  if (e.key === "a" || e.key === "ArrowLeft") changeChapter(-1);
-  if (e.key === "t") toggleTools.click();
-  if (e.key === "l") openLibrary.click();
-  if (e.key === "o") singleFileBtn.click(); // NEW: Open single file with 'o' key
+  
+  // Chapter navigation: A/D or Arrow Left/Right
+  if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
+    const idx = foldersList.indexOf(currentFolder);
+    const nextIdx = Math.min(idx + 1, foldersList.length - 1);
+    if (nextIdx !== idx) {
+      currentFolder = foldersList[nextIdx];
+      folderSelect.value = currentFolder;
+      goToChapter(currentFolder);
+    }
+  }
+  if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
+    const idx = foldersList.indexOf(currentFolder);
+    const prevIdx = Math.max(idx - 1, 0);
+    if (prevIdx !== idx) {
+      currentFolder = foldersList[prevIdx];
+      folderSelect.value = currentFolder;
+      goToChapter(currentFolder);
+    }
+  }
+  
+  // Toggle tools: T
+  if (e.key === "t") {
+    e.stopPropagation();
+    const tools = document.getElementById("tools");
+    tools.style.display = tools.style.display === "none" ? "block" : "none";
+  }
+  
+  // Open library: L
+  if (e.key === "l") {
+    e.stopPropagation();
+    document.getElementById("openLibrary").click();
+  }
+  
+  // Open single file: O
+  if (e.key === "o") {
+    e.stopPropagation();
+    document.getElementById("singleFileBtn").click();
+  }
+  
+  // Toggle controls visibility: SPACE or C
+  if (e.key === " " || e.key === "c") {
+    e.preventDefault();
+    controlsVisible = !controlsVisible;
+    document.body.classList.toggle('controls-hidden', !controlsVisible);
+    if (!controlsVisible) document.getElementById("tools").style.display = "none";
+  }
+  
+  // Reset filters: R
+  if (e.key === "r" && e.ctrlKey) {
+    e.preventDefault();
+    resetFilters();
+  }
 });
 
 /* ---------- INIT ---------- */
-backToLibraryBtn.classList.remove('visible');
 window.addEventListener('beforeunload', cleanupThumbnails);
-
-// Load saved filters on startup - NEW FEATURE
 loadFilters();
+
+// Hide controls after 3 seconds of inactivity on first load
+let hideTimeout = setTimeout(() => {
+  controlsVisible = false;
+  document.body.classList.add('controls-hidden');
+}, 3000);
+
+// Reset timeout on any interaction
+['mousemove', 'touchstart', 'keydown', 'click'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    clearTimeout(hideTimeout);
+    if (!controlsVisible) {
+      controlsVisible = true;
+      document.body.classList.remove('controls-hidden');
+    }
+    hideTimeout = setTimeout(() => {
+      controlsVisible = false;
+      document.body.classList.add('controls-hidden');
+    }, 3000);
+  });
+});
 </script>
 </body>
 </html>
