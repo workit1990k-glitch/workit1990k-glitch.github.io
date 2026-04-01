@@ -92,6 +92,34 @@ body {
   left: 10px;
   z-index: 10;
 }
+
+  #library {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 140px);
+  gap: 12px;
+  padding: 20px;
+}
+
+.book {
+  cursor: pointer;
+  background: #222;
+  padding: 8px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.book img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.book span {
+  font-size: 12px;
+  display: block;
+  margin-top: 6px;
+}
 </style>
 </head>
 
@@ -107,7 +135,11 @@ body {
 </svg>
 
 <input type="file" id="fileInput" accept=".zip,.cbz">
+<br>
+<button id="openLibrary">Library</button>
+<input type="file" id="libraryInput" webkitdirectory multiple style="display:none">
 
+<div id="library"></div>
 <div id="tools">
   <label>Folder</label>
   <select id="folderSelect"></select>
@@ -285,9 +317,95 @@ window.addEventListener("scroll", () => {
 /* ---------------- KEYBOARD ---------------- */
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowRight") changeChapter(1);
-  if (e.key === "ArrowLeft") changeChapter(-1);
+  if (e.key === "d") changeChapter(1);
+  if (e.key === "a") changeChapter(-1);
 });
+
+  openLibrary.onclick = () => {
+  libraryInput.click();
+};
+
+libraryInput.onchange = async (e) => {
+  const files = Array.from(e.target.files);
+
+  // group files by archive
+  const archives = {};
+
+  files.forEach(file => {
+    const path = file.webkitRelativePath;
+    const root = path.split("/")[0];
+
+    if (!archives[root]) archives[root] = [];
+    archives[root].push(file);
+  });
+
+  library.innerHTML = "";
+
+  for (const name in archives) {
+    const fileList = archives[name];
+
+    // find zip file
+    const zipFile = fileList.find(f =>
+      f.name.match(/\.(zip|cbz)$/i)
+    );
+
+    if (!zipFile) continue;
+
+    // load zip
+    const zipData = await JSZip.loadAsync(zipFile);
+
+    // find first image
+    const imagePath = Object.keys(zipData.files)
+      .find(p => p.match(/\.(jpg|jpeg|png|webp)$/i));
+
+    let thumbURL = "";
+
+    if (imagePath) {
+      const blob = await zipData.files[imagePath].async("blob");
+      thumbURL = URL.createObjectURL(blob);
+    }
+
+    const div = document.createElement("div");
+    div.className = "book";
+
+    div.innerHTML = `
+      <img src="${thumbURL}">
+      <span>${name}</span>
+    `;
+
+    div.onclick = async () => {
+      zip = await JSZip.loadAsync(zipFile);
+
+      // rebuild folder list
+      const folders = new Set();
+
+      Object.keys(zip.files).forEach(path => {
+        const parts = path.split("/");
+        if (parts.length > 1) folders.add(parts[0]);
+      });
+
+      folderSelect.innerHTML = "";
+
+      foldersList = Array.from(folders).sort();
+
+      if (foldersList.length === 0) foldersList.push("");
+
+      foldersList.forEach(f => {
+        const opt = document.createElement("option");
+        opt.value = f;
+        opt.textContent = f || "(root)";
+        folderSelect.appendChild(opt);
+      });
+
+      currentFolder = folderSelect.value;
+
+      library.innerHTML = ""; // hide library
+      loadFolder();
+    };
+
+    library.appendChild(div);
+  }
+};
 </script>
 
 </body>
