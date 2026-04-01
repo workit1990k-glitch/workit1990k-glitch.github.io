@@ -11,17 +11,13 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   display: block;
   margin: 0 auto;
   width: initial;
-  max-width: calc(100vw * var(--zoom-factor, 1));
-  transition: max-width 0.2s ease;
+  transition: transform 0.2s ease;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0));
+  transform-origin: top center;
 }
 #reader .chapter-marker {
-  text-align: center; padding: 12px 20px; margin: 20px auto;
-  background: #2a2a4a; color: #aaa; font-size: 12px;
-  border-radius: 8px; max-width: calc(100vw * var(--zoom-factor, 1));
-  border: 1px solid #3a3a6a; cursor: pointer;
+  display: none;
 }
-#reader .chapter-marker:hover { background: #3a3a6a; color: white; }
 #tools {
   position: fixed; top: 10px; right: 10px; background: #222;
   padding: 12px; border-radius: 12px; display: none;
@@ -138,11 +134,12 @@ const brightnessValue = document.getElementById("brightnessValue");
 const saveFiltersBtn = document.getElementById("saveFiltersBtn");
 const resetFiltersBtn = document.getElementById("resetFiltersBtn");
 const folderSelect = document.getElementById("folderSelect");
+const readerEl = document.getElementById("reader");
 
 // Default filter values
 const DEFAULTS = { zoom: 100, contrast: 100, brightness: 100, grayscale: false };
 
-/* ---------- FILTERS ---------- */
+/* ---------- FILTERS (FIXED: Direct transform for Windows 7 compatibility) ---------- */
 function updateFilters() {
   const zoomVal = zoom.value;
   const contrastVal = contrast.value / 100;
@@ -153,7 +150,14 @@ function updateFilters() {
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
   
-  root.style.setProperty('--zoom-factor', zoomVal / 100);
+  // FIX: Apply zoom directly via transform on images (better Windows 7/browser compatibility)
+  const zoomScale = zoomVal / 100;
+  const images = readerEl.querySelectorAll('img');
+  images.forEach(img => {
+    img.style.transform = `scale(${zoomScale})`;
+  });
+  
+  // CSS variables for other filters
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--grayscale', grayscaleVal);
@@ -202,7 +206,7 @@ resetFiltersBtn.onclick = resetFilters;
 /* ---------- UI TOGGLE ON CLICK ONLY ---------- */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, .chapter-marker')) return;
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library')) return;
   
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
@@ -369,10 +373,9 @@ async function loadZipFile(file) {
   window.scrollTo(0, 0);
 }
 
-/* ---------- LOAD ALL IMAGES WITH CHAPTER MARKERS ---------- */
+/* ---------- LOAD ALL IMAGES WITH HIDDEN CHAPTER MARKERS ---------- */
 async function loadAllImages() {
-  const reader = document.getElementById("reader");
-  reader.innerHTML = '<div class="loading">Loading all pages...</div>';
+  readerEl.innerHTML = '<div class="loading">Loading all pages...</div>';
   
   const allPaths = Object.keys(zip.files)
     .filter(p => !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
@@ -380,7 +383,7 @@ async function loadAllImages() {
   
   allImages = allPaths;
   chapterStartIndex = {};
-  reader.innerHTML = "";
+  readerEl.innerHTML = "";
   
   for (let i = 0; i < allPaths.length; i++) {
     const path = allPaths[i];
@@ -399,10 +402,11 @@ async function loadAllImages() {
       img.alt = path;
       img.dataset.path = path;
       img.dataset.folder = folder;
-      reader.appendChild(img);
+      readerEl.appendChild(img);
     } catch(e) { console.warn('Image load fail:', path, e); }
   }
   
+  // Add hidden chapter markers for click-to-jump functionality
   addChapterMarkers();
 }
 
@@ -410,11 +414,11 @@ function addChapterMarkers() {
   document.querySelectorAll('.chapter-marker').forEach(el => el.remove());
   
   for (const [folder, index] of Object.entries(chapterStartIndex)) {
-    const img = document.getElementById("reader").children[index];
+    const img = readerEl.children[index];
     if (img) {
       const marker = document.createElement("div");
       marker.className = "chapter-marker";
-      marker.textContent = `📑 ${folder} — click to jump`;
+      marker.textContent = `📑 ${folder}`;
       marker.onclick = (e) => { e.stopPropagation(); scrollToChapter(folder); };
       img.parentNode.insertBefore(marker, img);
     }
@@ -431,7 +435,7 @@ function scrollToChapter(folder) {
   
   const startIndex = chapterStartIndex[folder];
   if (startIndex !== undefined) {
-    const children = document.getElementById("reader").children;
+    const children = readerEl.children;
     let target = children[startIndex];
     if (startIndex > 0) {
       const prev = children[startIndex - 1];
