@@ -24,9 +24,7 @@ body {
   margin: 0 auto;
   width: var(--zoom, 100%);
   max-width: 1000px;
-
   transition: width 0.2s ease;
-
   filter:
     var(--sharpenFilter)
     contrast(var(--contrast, 1))
@@ -67,6 +65,7 @@ body {
   border-radius: 50px;
   color: white;
   cursor: pointer;
+  z-index: 20;
 }
 
 #prevChapter, #nextChapter {
@@ -79,46 +78,108 @@ body {
   padding: 10px 14px;
   color: white;
   cursor: pointer;
+  z-index: 20;
 }
 
 #nextChapter {
   left: 90px;
 }
 
-/* File input */
-#fileInput {
+/* Library Button - moved lower */
+#openLibrary {
   position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
+  bottom: 20px;
+  left: 180px;
+  background: #444;
+  border: none;
+  padding: 10px 14px;
+  color: white;
+  cursor: pointer;
+  border-radius: 8px;
+  z-index: 20;
 }
 
-  #library {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 140px);
-  gap: 12px;
+/* File input - hidden, used for direct load */
+#fileInput {
+  display: none;
+}
+
+/* Library View */
+#library {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #111;
   padding: 20px;
+  overflow-y: auto;
+  z-index: 30;
+  grid-template-columns: repeat(auto-fill, 160px);
+  gap: 16px;
+}
+
+#library.active {
+  display: grid;
 }
 
 .book {
   cursor: pointer;
   background: #222;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: 12px;
   text-align: center;
+  transition: transform 0.1s, background 0.2s;
+}
+
+.book:hover {
+  background: #333;
+  transform: translateY(-2px);
 }
 
 .book img {
   width: 100%;
-  height: 180px;
+  height: 220px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 8px;
+  background: #1a1a1a;
 }
 
 .book span {
   font-size: 12px;
   display: block;
-  margin-top: 6px;
+  margin-top: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Back button for library */
+#backToLibrary {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: #555;
+  border: none;
+  padding: 10px 14px;
+  color: white;
+  cursor: pointer;
+  border-radius: 8px;
+  z-index: 20;
+  display: none;
+}
+
+#backToLibrary.visible {
+  display: block;
+}
+
+/* Loading indicator */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #888;
+  font-size: 14px;
 }
 </style>
 </head>
@@ -134,12 +195,14 @@ body {
   </filter>
 </svg>
 
+<!-- Hidden file inputs -->
 <input type="file" id="fileInput" accept=".zip,.cbz">
-<br>
-<button id="openLibrary">Library</button>
-<input type="file" id="libraryInput" webkitdirectory multiple style="display:none">
+<input type="file" id="libraryInput" accept=".zip,.cbz" multiple style="display:none">
 
+<!-- Library View -->
 <div id="library"></div>
+
+<!-- Tools Panel -->
 <div id="tools">
   <label>Folder</label>
   <select id="folderSelect"></select>
@@ -157,9 +220,12 @@ body {
   <input type="range" id="sharpness" min="0" max="5" value="0">
 </div>
 
+<!-- Control Buttons -->
 <button id="toggleTools">Tools</button>
 <button id="prevChapter">Prev</button>
 <button id="nextChapter">Next</button>
+<button id="openLibrary">📚 Library</button>
+<button id="backToLibrary">← Library</button>
 
 <div id="reader"></div>
 
@@ -167,32 +233,30 @@ body {
 let zip;
 let currentFolder = "";
 let foldersList = [];
+let currentZipName = "";
 
 const root = document.documentElement;
 const kernel = document.getElementById("kernel");
+const libraryEl = document.getElementById("library");
+const backToLibraryBtn = document.getElementById("backToLibrary");
 
 /* ---------------- FILTERS ---------------- */
-
 function updateFilters() {
   root.style.setProperty('--zoom', zoom.value + '%');
   root.style.setProperty('--contrast', contrast.value / 100);
   root.style.setProperty('--brightness', brightness.value / 100);
 
   const s = parseInt(sharpness.value);
-
   if (s === 0) {
     root.style.setProperty('--sharpenFilter', '');
     return;
   }
-
   const surround = (-0.03 * s).toFixed(2);
   const center = (1 + 0.12 * s).toFixed(2);
-
   kernel.setAttribute(
     "kernelMatrix",
     `0 ${surround} 0 ${surround} ${center} ${surround} 0 ${surround} 0`
   );
-
   root.style.setProperty('--sharpenFilter', 'url(#sharpenFilter)');
 }
 
@@ -201,112 +265,198 @@ contrast.oninput = updateFilters;
 brightness.oninput = updateFilters;
 sharpness.oninput = updateFilters;
 
-/* ---------------- UI ---------------- */
-
+/* ---------------- UI TOGGLES ---------------- */
 toggleTools.onclick = () => {
-  tools.style.display =
-    tools.style.display === "none" ? "block" : "none";
+  tools.style.display = tools.style.display === "none" ? "block" : "none";
 };
 
-/* ---------------- FILE LOAD ---------------- */
+// Show library view
+openLibrary.onclick = async () => {
+  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files to add to library...</div>';
+  libraryEl.classList.add('active');
+  backToLibraryBtn.classList.remove('visible');
+  
+  // Trigger file picker for multiple zip/cbz files
+  libraryInput.click();
+};
 
+// Hide library and go back to reader
+backToLibraryBtn.onclick = () => {
+  libraryEl.classList.remove('active');
+  if (zip) backToLibraryBtn.classList.add('visible');
+};
+
+/* ---------------- FILE LOAD (Direct) ---------------- */
 fileInput.onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  await loadZipFile(file);
+};
 
-  zip = await JSZip.loadAsync(file);
+/* ---------------- LIBRARY: Load Multiple Zips ---------------- */
+libraryInput.onchange = async (e) => {
+  const files = Array.from(e.target.files).filter(f => 
+    f.name.match(/\.(zip|cbz)$/i)
+  );
+  
+  if (files.length === 0) {
+    libraryEl.innerHTML = '<div class="loading">No ZIP/CBZ files selected</div>';
+    return;
+  }
 
+  libraryEl.innerHTML = '<div class="loading">Loading library... (' + files.length + ' files)</div>';
+  
+  const books = [];
+  
+  // Process each file to extract thumbnail and name
+  for (const file of files) {
+    try {
+      const zipData = await JSZip.loadAsync(file);
+      const imagePath = Object.keys(zipData.files)
+        .find(p => p.match(/\.(jpg|jpeg|png|webp)$/i) && !p.includes('__MACOSX'));
+      
+      let thumbURL = "";
+      if (imagePath) {
+        const blob = await zipData.files[imagePath].async("blob");
+        thumbURL = URL.createObjectURL(blob);
+      }
+      
+      books.push({
+        file: file,
+        name: file.name.replace(/\.(zip|cbz)$/i, ''),
+        thumb: thumbURL,
+        zipData: zipData
+      });
+    } catch (err) {
+      console.warn('Failed to load', file.name, err);
+    }
+  }
+  
+  // Render library grid
+  renderLibrary(books);
+};
+
+function renderLibrary(books) {
+  libraryEl.innerHTML = '';
+  
+  if (books.length === 0) {
+    libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
+    return;
+  }
+  
+  books.forEach(book => {
+    const div = document.createElement("div");
+    div.className = "book";
+    div.innerHTML = `
+      <img src="${book.thumb || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%22220%22><rect fill=%22%23222%22 width=%22100%%22 height=%22100%%22/><text x=%2250%%22 y=%2250%%22 fill=%22%23666%22 font-size=%2212%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>No Preview</text></svg>'}">
+      <span title="${book.name}">${book.name}</span>
+    `;
+    
+    div.onclick = async () => {
+      // Load the selected zip and switch to reader view
+      await loadZipFile(book.file, book.zipData);
+      libraryEl.classList.remove('active');
+      backToLibraryBtn.classList.add('visible');
+    };
+    
+    libraryEl.appendChild(div);
+  });
+}
+
+/* ---------------- Load ZIP and Initialize Reader ---------------- */
+async function loadZipFile(file, preloadedZip = null) {
+  currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
+  
+  // Use preloaded zip if available, otherwise load fresh
+  zip = preloadedZip || await JSZip.loadAsync(file);
+  
+  // Extract folder list for chapter navigation
   const folders = new Set();
-
   Object.keys(zip.files).forEach(path => {
-    const parts = path.split("/");
+    const parts = path.split("/").filter(p => p);
     if (parts.length > 1) folders.add(parts[0]);
   });
-
+  
+  // Populate folder selector
   folderSelect.innerHTML = "";
-
-  if (folders.size === 0) folders.add("");
-
-  foldersList = Array.from(folders).sort();
-
+  foldersList = folders.size > 0 ? Array.from(folders).sort((a,b) => 
+    a.localeCompare(b, undefined, { numeric: true })
+  ) : [""];
+  
   foldersList.forEach(f => {
     const opt = document.createElement("option");
     opt.value = f;
     opt.textContent = f || "(root)";
     folderSelect.appendChild(opt);
   });
-
+  
   currentFolder = folderSelect.value;
   loadFolder();
-};
+  window.scrollTo(0, 0);
+}
 
-/* ---------------- CHANGE CHAPTER ---------------- */
-
+/* ---------------- Chapter Navigation ---------------- */
 function changeChapter(direction) {
   let index = foldersList.indexOf(currentFolder);
   index += direction;
-
   if (index < 0 || index >= foldersList.length) return;
-
+  
   currentFolder = foldersList[index];
   folderSelect.value = currentFolder;
-
   loadFolder();
   window.scrollTo(0, 0);
 }
 
 prevChapter.onclick = () => changeChapter(-1);
 nextChapter.onclick = () => changeChapter(1);
-
 folderSelect.onchange = () => {
   currentFolder = folderSelect.value;
   loadFolder();
 };
 
-/* ---------------- LOAD IMAGES ---------------- */
-
+/* ---------------- Load Images from Folder ---------------- */
 async function loadFolder() {
   reader.innerHTML = "";
-
+  
   const files = Object.keys(zip.files)
-    .filter(p => p.startsWith(currentFolder))
-    .sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true })
-    );
-
+    .filter(p => {
+      const folderPrefix = currentFolder ? currentFolder + "/" : "";
+      return p.startsWith(folderPrefix) && !p.endsWith("/");
+    })
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  
   for (const path of files) {
     if (!path.match(/\.(jpg|jpeg|png|webp)$/i)) continue;
-
-    const blob = await zip.files[path].async("blob");
-    const url = URL.createObjectURL(blob);
-
-    const img = document.createElement("img");
-    img.src = url;
-    img.loading = "lazy";
-
-    reader.appendChild(img);
+    if (path.includes('__MACOSX')) continue;
+    
+    try {
+      const blob = await zip.files[path].async("blob");
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.src = url;
+      img.loading = "lazy";
+      img.alt = path;
+      reader.appendChild(img);
+    } catch (e) {
+      console.warn('Failed to load image:', path, e);
+    }
   }
 }
 
-/* ---------------- AUTO CHAPTER SWITCH ---------------- */
-
+/* ---------------- Auto Chapter Switch on Scroll ---------------- */
 let scrollCooldown = false;
-
 window.addEventListener("scroll", () => {
-  if (scrollCooldown) return;
-
+  if (scrollCooldown || !zip) return;
+  
   const scrollTop = window.scrollY;
   const scrollBottom = window.innerHeight + scrollTop;
   const docHeight = document.body.offsetHeight;
-
-  // bottom → next
+  
   if (scrollBottom >= docHeight - 10) {
     scrollCooldown = true;
     changeChapter(1);
     setTimeout(() => scrollCooldown = false, 800);
   }
-
-  // top → prev
   if (scrollTop <= 0) {
     scrollCooldown = true;
     changeChapter(-1);
@@ -314,98 +464,20 @@ window.addEventListener("scroll", () => {
   }
 });
 
-/* ---------------- KEYBOARD ---------------- */
-
+/* ---------------- Keyboard Navigation ---------------- */
 document.addEventListener("keydown", (e) => {
-  if (e.key === "d") changeChapter(1);
-  if (e.key === "a") changeChapter(-1);
+  // Only handle navigation if library is not active
+  if (libraryEl.classList.contains('active')) return;
+  
+  if (e.key === "d" || e.key === "ArrowRight") changeChapter(1);
+  if (e.key === "a" || e.key === "ArrowLeft") changeChapter(-1);
+  if (e.key === "t") toggleTools.click();
+  if (e.key === "l") openLibrary.click();
 });
 
-  openLibrary.onclick = () => {
-  libraryInput.click();
-};
-
-libraryInput.onchange = async (e) => {
-  const files = Array.from(e.target.files);
-
-  // group files by archive
-  const archives = {};
-
-  files.forEach(file => {
-    const path = file.webkitRelativePath;
-    const root = path.split("/")[0];
-
-    if (!archives[root]) archives[root] = [];
-    archives[root].push(file);
-  });
-
-  library.innerHTML = "";
-
-  for (const name in archives) {
-    const fileList = archives[name];
-
-    // find zip file
-    const zipFile = fileList.find(f =>
-      f.name.match(/\.(zip|cbz)$/i)
-    );
-
-    if (!zipFile) continue;
-
-    // load zip
-    const zipData = await JSZip.loadAsync(zipFile);
-
-    // find first image
-    const imagePath = Object.keys(zipData.files)
-      .find(p => p.match(/\.(jpg|jpeg|png|webp)$/i));
-
-    let thumbURL = "";
-
-    if (imagePath) {
-      const blob = await zipData.files[imagePath].async("blob");
-      thumbURL = URL.createObjectURL(blob);
-    }
-
-    const div = document.createElement("div");
-    div.className = "book";
-
-    div.innerHTML = `
-      <img src="${thumbURL}">
-      <span>${name}</span>
-    `;
-
-    div.onclick = async () => {
-      zip = await JSZip.loadAsync(zipFile);
-
-      // rebuild folder list
-      const folders = new Set();
-
-      Object.keys(zip.files).forEach(path => {
-        const parts = path.split("/");
-        if (parts.length > 1) folders.add(parts[0]);
-      });
-
-      folderSelect.innerHTML = "";
-
-      foldersList = Array.from(folders).sort();
-
-      if (foldersList.length === 0) foldersList.push("");
-
-      foldersList.forEach(f => {
-        const opt = document.createElement("option");
-        opt.value = f;
-        opt.textContent = f || "(root)";
-        folderSelect.appendChild(opt);
-      });
-
-      currentFolder = folderSelect.value;
-
-      library.innerHTML = ""; // hide library
-      loadFolder();
-    };
-
-    library.appendChild(div);
-  }
-};
+/* ---------------- Initialize ---------------- */
+// Show library button, hide back button initially
+backToLibraryBtn.classList.remove('visible');
 </script>
 
 </body>
