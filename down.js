@@ -1,6 +1,6 @@
 // down.js - Manga Downloader Script
 // Loaded via bookmarklet from GitHub Raw
-// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter + Range Select)
+// Version: 2024-03-20 (3-Chapter Parallel Fetch + Save ID + Image Progress + Scanlator Filter + Range Select + Auto API URL Capture)
 
 (function() {
   'use strict';
@@ -70,16 +70,87 @@
     }
   };
 
+  // ============ PERFORMANCE API URL CAPTURE (NEW) ============
+  const captureChaptersApiUrl = (mangaCode) => {
+    try {
+      const entries = performance.getEntriesByType('resource');
+      for (const entry of entries) {
+        const url = entry.name;
+        if (url.includes(`/api/v2/manga/${mangaCode}/chapters?`) && 
+            url.includes('order[number]')) {
+          return url;
+        }
+      }
+    } catch (e) {
+      console.warn('performance API not available', e);
+    }
+    return null;
+  };
+
+  const generateApiParams = () => {
+    const time = Math.floor(Date.now() / 1000);
+    const token = '1' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36).slice(-6);
+    return `&time=${time}&_=${token}`;
+  };
+
+  const buildChapterUrl = (code, page, capturedBase = null) => {
+    if (capturedBase) {
+      let url = capturedBase.replace(/page=\d+/, `page=${page}`);
+      url = url.replace(/limit=\d+/, 'limit=100');
+      return url;
+    }
+    const params = generateApiParams();
+    return `${API_BASE}/manga/${code}/chapters?limit=100&page=${page}&order[number]=desc${params}`;
+  };
+
+  const waitForNetworkCapture = (mangaCode, timeout = 500) => {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        const url = captureChaptersApiUrl(mangaCode);
+        if (url) {
+          resolve(url);
+        } else if (Date.now() - start > timeout) {
+          resolve(null);
+        } else {
+          setTimeout(check, 50);
+        }
+      };
+      check();
+    });
+  };
+
+  // ============ FETCH ALL CHAPTERS (UPDATED) ============
   const fetchAllChapters = async (code) => {
     const chapters = [];
     let page = 1, hasMore = true;
+    let capturedUrlPattern = null;
+    
+    // Wait briefly for any existing network requests to register
+    await new Promise(resolve => setTimeout(resolve, 150));
+    capturedUrlPattern = captureChaptersApiUrl(code);
+    
+    // If not captured, trigger a request to generate the pattern
+    if (!capturedUrlPattern) {
+      try {
+        log('🔍 Capturing API URL from network...', 'info');
+        const testUrl = buildChapterUrl(code, 1, null);
+        await fetch(testUrl, { headers: HEADERS, method: 'HEAD' });
+        capturedUrlPattern = await waitForNetworkCapture(code, 300);
+        if (capturedUrlPattern) {
+          log('✓ Captured real API URL pattern', 'success');
+        }
+      } catch (e) {
+        console.warn('Failed to capture API URL, using auto-generated params', e);
+      }
+    }
     
     while (hasMore) {
       try {
-        const res = await fetchRetry(
-          `${API_BASE}/manga/${code}/chapters?limit=100&page=${page}&order[number]=asc`
-        );
-        const items = res.result?.items || [];
+        const url = buildChapterUrl(code, page, capturedUrlPattern);
+        const res = await fetchRetry(url);
+        const items = res.result?.items || res.items || [];
+        
         if (!items.length) {
           hasMore = false;
         } else {
@@ -90,7 +161,23 @@
         await new Promise(resolve => setTimeout(resolve, 50));
       } catch (e) {
         console.warn('Failed to fetch chapters page', page, e);
-        hasMore = false;
+        // One retry with fresh capture attempt
+        try {
+          capturedUrlPattern = captureChaptersApiUrl(code) || capturedUrlPattern;
+          const url = buildChapterUrl(code, page, capturedUrlPattern);
+          const res = await fetchRetry(url);
+          const items = res.result?.items || res.items || [];
+          if (items.length) {
+            chapters.push(...items);
+            hasMore = items.length === 100;
+            page++;
+          } else {
+            hasMore = false;
+          }
+        } catch (retryErr) {
+          console.error('Retry failed for page', page, retryErr);
+          hasMore = false;
+        }
       }
     }
     
@@ -240,7 +327,6 @@
           const blob = await res.blob();
           
           downloadedCount++;
-          // Log image progress: every 5 images or on completion
           if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
             const imgWord = downloadedCount === 1 ? 'image' : 'images';
             log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageUrls.length} ${imgWord} downloaded`, 'image-success');
@@ -262,7 +348,6 @@
         downloadTasks, 
         PARALLEL_IMAGES,
         (completed, total) => {
-          // Optional: Update visual progress bar per chapter
           if (showLog && completed % 10 === 0 && completed < total) {
             const imgWord = completed === 1 ? 'image' : 'images';
             log(`⏳ Chapter ${chapterNum}: ${completed}/${total} ${imgWord}...`, 'info');
@@ -560,7 +645,6 @@
         (cacheData ? ' fetched' : '') +
         (isFetching && isSelected && !isPaused ? ' fetching' : '');
       
-      // Visual hint for filtered chapters, but still clickable
       if (!isFiltered) {
         item.style.opacity = '0.6';
         item.classList.add('filtered');
@@ -581,7 +665,6 @@
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
       checkbox.checked = isSelected;
-      // Only disable during active (non-paused) fetch
       checkbox.disabled = isFetching && !isPaused;
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
@@ -654,7 +737,6 @@
         item.appendChild(statusDiv);
       }
       
-      // Show image progress bar for actively fetching chapters
       if (isFetching && isSelected && !cacheData && isFiltered && !isPaused) {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'mdx-image-progress';
@@ -679,7 +761,6 @@
   };
 
   const toggleChapter = (id) => {
-    // Allow selection when paused or done fetching
     if (isFetching && !isPaused) {
       log('⚠️ Pause fetching to modify selection', 'warning');
       return;
@@ -742,7 +823,6 @@
     updateCount();
   };
 
-  // NEW: Select unique integer chapters in a range (e.g., 40-90)
   const selectUniqueRange = () => {
     if (isFetching && !isPaused) {
       log('⚠️ Pause fetching to modify selection', 'warning');
@@ -762,7 +842,6 @@
     selectedChapters.clear();
     const selectedIntegers = new Set();
     
-    // Sort to ensure consistent "first match" selection
     const sorted = [...allChapters].sort((a, b) => {
       const na = parseFloat(a.number), nb = parseFloat(b.number);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -770,15 +849,12 @@
     });
     
     sorted.forEach(ch => {
-      // Respect active scanlator filter
       if (selectedScanlators.size > 0 && !isChapterFiltered(ch)) return;
       
       const num = parseFloat(ch.number);
       if (!isNaN(num)) {
         const intNum = Math.floor(num);
-        // Only process chapters in range
         if (intNum >= start && intNum <= end && !selectedIntegers.has(intNum)) {
-          // Prefer exact integer matches (40 over 40.1)
           const isExact = num === intNum;
           if (isExact) {
             selectedIntegers.add(intNum);
@@ -787,7 +863,6 @@
             const cn = parseFloat(c.number);
             return Math.floor(cn) === intNum && cn === intNum;
           })) {
-            // If no exact match exists, take the decimal version
             selectedIntegers.add(intNum);
             selectedChapters.add(ch.chapter_id);
           }
@@ -868,7 +943,7 @@
     if (fill) fill.style.width = `${(current / total) * 100}%`;
   };
 
-  // ============ FETCH SELECTED (3 PARALLEL CHAPTERS) ============
+  // ============ FETCH SELECTED ============
   const fetchSelected = async () => {
     if (selectedChapters.size === 0 || isFetching) return;
     
@@ -1162,7 +1237,6 @@
       btnScanlatorSelect.addEventListener('click', selectByScanlator);
     }
 
-    // NEW: Range selector button
     const btnRange = document.getElementById('mdx-btn-range');
     if (btnRange) btnRange.addEventListener('click', selectUniqueRange);
 
@@ -1240,7 +1314,6 @@
               <button id="mdx-btn-scanlator-select" class="mdx-btn mdx-btn-secondary" style="padding:4px 10px;font-size:11px;" title="Select chapters matching chosen scanlators">
                 ✅ Select Filtered
               </button>
-              <!-- NEW: Range Selector -->
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:8px;padding-left:8px;border-left:1px solid #414868;">
                 <span style="font-size:11px;color:#7982a9;">Range:</span>
                 <input type="number" id="mdx-range-start" placeholder="40" min="1" 
