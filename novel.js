@@ -456,11 +456,26 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     zip.file("META-INF/container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
     
     const oebps = zip.folder("OEBPS");
-    oebps.file("styles.css", `body{}`);
+    
+    // Enhanced CSS with info page styles
+    oebps.file("styles.css", `
+        body { font-family: serif; line-height: 1.6; margin: 1rem; color: #222; }
+        .chapter-title { text-align: center; border-bottom: 1px solid #ddd; padding-bottom: 0.5em; margin-bottom: 1em; }
+        /* Info page styles */
+        .info-container { max-width: 600px; margin: 2rem auto; padding: 0 1.5rem; font-family: serif; line-height: 1.8; }
+        .info-header { text-align: center; margin-bottom: 1.5em; border-bottom: 2px solid #eee; padding-bottom: 0.8em; }
+        .info-header h1 { font-size: 1.6em; margin: 0 0 0.3em 0; }
+        .info-meta { background: #f9f9f9; padding: 1em; border-radius: 4px; margin: 1em 0; }
+        .info-meta p { margin: 0.4em 0; }
+        .info-meta strong { color: #333; }
+        .info-desc { margin: 1.5em 0; text-align: justify; }
+        .info-footer { margin-top: 2em; font-size: 0.9em; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 1em; }
+    `);
     
     let manifestItems = '', spineItems = '';
     let coverFilename = null;
     
+    // Handle cover image
     if (metadata.cover) {
         if (progressText) progressText.textContent = `Fetching cover via proxy...`;
         const coverBlob = await tryEmbedCover(metadata.cover);
@@ -472,37 +487,82 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
         }
     }
     
+    // --- Cover Page ---
     const coverContent = coverFilename 
         ? `<div style="margin:0;padding:0;text-align:center;background:#fff"><img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/></div>`
         : `<div style="margin-top:35vh;text-align:center;padding:20px"><h1 style="font-size:1.8em;margin-bottom:0.5em">${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="font-size:1.2em;color:#555">by ${escapeXml(metadata.author)}</p>` : ''}${metadata.description ? `<p style="margin-top:1.5em;font-style:italic;color:#666">${escapeXml(metadata.description.slice(0,200))}${metadata.description.length>200?'...':''}</p>`:''}</div>`;
     
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff;font-family:serif}</style></head><body>${coverContent}</body></html>`);
     
+    // --- ✨ NEW: Info Page with Metadata ---
+    const genresHtml = metadata.tags && metadata.tags.length > 0 
+        ? `<p><strong>Genres:</strong> ${metadata.tags.map(t => escapeXml(t)).join(', ')}</p>` 
+        : '';
+        
+    const descHtml = metadata.description 
+        ? `<p class="info-desc">${escapeXml(metadata.description)}</p>` 
+        : '<p class="info-desc" style="color:#666"><em>No description available.</em></p>';
+
+    const infoContent = `
+    <div class="info-container">
+        <div class="info-header">
+            <h1>${escapeXml(metadata.title)}</h1>
+            ${metadata.author ? `<p style="font-size:1.1em;color:#555;margin:0.3em 0"><strong>by</strong> ${escapeXml(metadata.author)}</p>` : ''}
+        </div>
+        <div class="info-meta">
+            ${genresHtml}
+            ${metadata.author ? `<p><strong>Author:</strong> ${escapeXml(metadata.author)}</p>` : ''}
+        </div>
+        ${descHtml}
+        <div class="info-footer">
+            <p>Downloaded via WTR Lab Downloader<br>Generated: ${new Date().toLocaleDateString()}</p>
+        </div>
+    </div>`;
+
+    oebps.file("info.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(metadata.title)} - Info</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body>${infoContent}</body></html>`);
+
+    // Add cover and info to manifest/spine FIRST
     manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';
+    manifestItems += '<item id="info" href="info.xhtml" media-type="application/xhtml+xml"/>\n';
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
-    spineItems += '<itemref idref="cover"/>\n';
     
+    spineItems += '<itemref idref="cover"/>\n';
+    spineItems += '<itemref idref="info"/>\n';  // ← Info page comes after cover
+    
+    // --- Chapter Files ---
     for (const ch of chapters) {
         const escapedContent = ch.content.split('\n').map(line => escapeXml(line.trim())).filter(line => line).join('</p><p>');
-        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(ch.title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(ch.title)}</h1><p>${escapedContent || ' '}</p></body></html>`;
+        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(ch.title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(ch.title)}</h1><p>${escapedContent || ' '}</p></body></html>`;
         const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
         oebps.file(filename, xhtml);
         manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
     }
     
+    // --- content.opf ---
     const safeTitle = escapeXml(metadata.title), safeAuthor = escapeXml(metadata.author || 'Unknown');
     const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
     const tagsXml = metadata.tags.filter(t => t).map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`).join('\n    ');
     
     oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">${uid}</dc:identifier><dc:title>${safeTitle}</dc:title><dc:creator>${safeAuthor}</dc:creator><dc:language>en</dc:language><dc:date>${timestamp}</dc:date>${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}${tagsXml ? '\n    ' + tagsXml : ''}</metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="styles.css" media-type="text/css"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
     
-    const navPoints = chapters.map((ch, idx) => `\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(ch.title)}</text></navLabel><content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/></navPoint>`).join('');
+    // --- toc.ncx with info page ---
+    const navPoints = [
+        `<navPoint id="navpoint-0" playOrder="0"><navLabel><text>📋 Novel Info</text></navLabel><content src="info.xhtml"/></navPoint>`,
+        ...chapters.map((ch, idx) => `\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(ch.title)}</text></navLabel><content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/></navPoint>`)
+    ].join('');
+    
     oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uid}"/></head><docTitle><text>${safeTitle}</text></docTitle><docAuthor><text>${safeAuthor}</text></docAuthor><navMap>${navPoints}\n  </navMap></ncx>`);
     
-    const navItems = chapters.map(ch => `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`).join('\n');
-    oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title></head><body><nav epub:type="toc"><h1>Chapters</h1><ol>${navItems}</ol></nav></body></html>`);
+    // --- nav.xhtml with info page ---
+    const navItems = [
+        `<li><a href="info.xhtml">📋 Novel Info</a></li>`,
+        ...chapters.map(ch => `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`)
+    ].join('\n');
     
+    oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title></head><body><nav epub:type="toc"><h1>Contents</h1><ol>${navItems}</ol></nav></body></html>`);
+    
+    // --- Generate and Download ---
     const safeFilename = sanitizeFilename(metadata.title);
     const filename = `${safeFilename}.epub`;
     
@@ -554,6 +614,6 @@ if (rangeInput) {
     });
 }
 
-console.log("🔍 WTR Downloader loaded - Full term support, wsrv.nl cover proxy, modal fixed");
+console.log("🔍 WTR Downloader loaded - Full term support, wsrv.nl cover proxy, modal fixed, info page added");
 
 })();
