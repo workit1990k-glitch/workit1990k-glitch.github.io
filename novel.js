@@ -459,17 +459,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     
     // Enhanced CSS with info page styles
     oebps.file("styles.css", `
-        body { font-family: serif; line-height: 1.6; margin: 1rem; color: #222; }
-        .chapter-title { text-align: center; border-bottom: 1px solid #ddd; padding-bottom: 0.5em; margin-bottom: 1em; }
-        /* Info page styles */
-        .info-container { max-width: 600px; margin: 2rem auto; padding: 0 1.5rem; font-family: serif; line-height: 1.8; }
-        .info-header { text-align: center; margin-bottom: 1.5em; border-bottom: 2px solid #eee; padding-bottom: 0.8em; }
-        .info-header h1 { font-size: 1.6em; margin: 0 0 0.3em 0; }
-        .info-meta { background: #f9f9f9; padding: 1em; border-radius: 4px; margin: 1em 0; }
-        .info-meta p { margin: 0.4em 0; }
-        .info-meta strong { color: #333; }
-        .info-desc { margin: 1.5em 0; text-align: justify; }
-        .info-footer { margin-top: 2em; font-size: 0.9em; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 1em; }
+        body { font-family: serif; line-height: 1.6; margin: 1rem; }
     `);
     
     let manifestItems = '', spineItems = '';
