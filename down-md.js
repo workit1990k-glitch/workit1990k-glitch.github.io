@@ -5,7 +5,7 @@ window.mddxLoaded=true;
 
 // ===== CONFIG =====
 var API='https://api.mangadex.org';
-var QUALITY='data-saver';  // 'data' or 'data-saver'
+var QUALITY='data';  // 'data' or 'data-saver'
 var MAX_ZIP=524288000;
 var PAR_IMG=2;
 var MAX_RETRIES=2;
