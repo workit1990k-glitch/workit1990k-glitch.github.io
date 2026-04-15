@@ -5,11 +5,11 @@ window.mddxLoaded=true;
 
 // ===== CONFIG =====
 var API='https://api.mangadex.org';
-var QUALITY='data';  // 'data' or 'data-saver'
+var QUALITY='data-saver';  // 'data' or 'data-saver'
 var MAX_ZIP=524288000;
 var PAR_IMG=2;
 var MAX_RETRIES=2;
-var DEBUG=false;  // Set to true to see URL generation in console
+var DEBUG=false;
 
 // ===== HELPERS =====
 function fmt(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(2)+'MB';}
@@ -64,41 +64,44 @@ function fetchChapters(mangaId){
   });
 }
 
-// ===== IMAGES (FIXED: handle objects vs strings + debug) =====
+// ===== IMAGES (FIXED: dataSaver camelCase + correct URL path) =====
 var atHomeCache={};
 
-function extractFileName(item){
-  // Handle both string filenames and {fileName: "..."} objects
-  if(typeof item==='string') return item;
-  if(item&&typeof item==='object'&&(item.fileName||item.filename)) return item.fileName||item.filename;
-  return null;
+// Map our quality setting to the API field name and URL path segment
+function getQualityConfig(quality){
+  if(quality==='data-saver'){
+    return {field:'dataSaver', path:'data-saver'};  // API field is camelCase, URL uses hyphen
+  }
+  return {field:'data', path:'data'};
 }
 
 function fetchImages(cid,forceRefresh){
   if(!forceRefresh&&atHomeCache[cid]) return Promise.resolve(atHomeCache[cid]);
   
+  var qc=getQualityConfig(QUALITY);
+  
   return apiGet(API+'/at-home/server/'+cid).then(function(res){
-    log('at-home response:',res);
+    log('at-home response keys:',Object.keys(res.chapter||{}));
     
     var ch=res.chapter||res.data||{};
     var base=res.baseUrl||'';
     var hash=ch.hash||'';
     
-    // Try quality key, fallback to 'data'
-    var files=ch[QUALITY]||ch['data-saver']||ch.data||[];
-    log('Using quality:',QUALITY,'| files count:',files.length);
+    // Use CORRECT field name: dataSaver (camelCase) for data-saver quality [[4]]
+    var files=ch[qc.field]||ch.data||[];
+    log('Using field:',qc.field,'| URL path:',qc.path,'| files:',files.length);
     
-    // Extract filenames robustly
     var urls=[];
     for(var i=0;i<files.length;i++){
-      var fname=extractFileName(files[i]);
+      var fname=files[i];  // Files are plain strings per API docs [[4]]
       if(fname){
-        var url=base+'/'+QUALITY+'/'+hash+'/'+fname;
+        // URL format: baseUrl/QUALITY_PATH/hash/filename [[4]]
+        var url=base+'/'+qc.path+'/'+hash+'/'+fname;
         urls.push(url);
-        if(i<3)log('Generated URL:',url); // Log first 3 for debug
+        if(i<3)log('URL['+i+']:',url);
       }
     }
-    log('Total URLs generated:',urls.length);
+    log('Generated '+urls.length+' URLs');
     
     atHomeCache[cid]=urls;
     return urls;
@@ -107,7 +110,7 @@ function fetchImages(cid,forceRefresh){
 
 function dlImg(url,retryCount){
   retryCount=retryCount||0;
-  log('Downloading:',url);
+  log('DL:',url);
   return fetch(url,{
     headers:{
       'Referer':'https://mangadex.org/',
@@ -116,7 +119,7 @@ function dlImg(url,retryCount){
   }).then(function(r){
     if(r.ok) return r.blob();
     if(r.status===404&&retryCount<MAX_RETRIES){
-      log('404 retry '+ (retryCount+1) +':',url);
+      log('404 retry '+(retryCount+1)+':',url);
       return sleep(300).then(function(){return dlImg(url,retryCount+1);});
     }
     throw new Error('HTTP '+r.status);
@@ -211,7 +214,7 @@ function fetchSelected(chapters,selected,cache,onProg){
     function tryFetch(refresh){
       return fetchImages(ch.id,refresh).then(function(urls){
         if(urls.length===0){
-          log('No URLs generated for chapter',ch.id);
+          log('No URLs for chapter',ch.id);
           cache[ch.id]={blobs:[],size:0,total:0,failed:0};
           done++;if(onProg)onProg(done,0,0);
           return sleep(50).then(function(){return processOne(idx+1);});
@@ -221,7 +224,7 @@ function fetchSelected(chapters,selected,cache,onProg){
         function dlBatch(bIdx){
           if(bIdx>=urls.length)return;
           var batch=[];
-          for(var k=0;k<PAR_IMG&&bIdx+k<urls.length;k++) batch.push(dlImg(urls[bIdx+k]).catch(function(e){failed++;log('Img fail:',urls[bIdx+k],e.message);return null;}));
+          for(var k=0;k<PAR_IMG&&bIdx+k<urls.length;k++) batch.push(dlImg(urls[bIdx+k]).catch(function(e){failed++;log('Img fail:',e.message);return null;}));
           return Promise.all(batch).then(function(results){
             for(var k=0;k<results.length;k++){
               var blob=results[k];
@@ -233,12 +236,12 @@ function fetchSelected(chapters,selected,cache,onProg){
         }
         return dlBatch(0).then(function(){
           if(failed>0&&!refresh){
-            log('Retrying chapter with fresh URLs:',ch.id);
+            log('Retry with fresh URLs:',ch.id);
             atHomeCache[ch.id]=null;
             return tryFetch(true);
           }
           cache[ch.id]={blobs:blobs,size:size,total:urls.length,failed:failed};
-          log('Chapter done:',ch.num,'| OK:',blobs.length,'| Failed:',failed);
+          log('Chapter '+ch.num+': OK='+blobs.length+' Failed='+failed);
           done++;if(onProg)onProg(done,0,0);
           return sleep(50).then(function(){return processOne(idx+1);});
         });
@@ -259,7 +262,7 @@ function downloadAll(chapters,selected,cache,title){
   return loadLibs().then(function(){
     var fetched=[];
     selected.forEach(function(id){var ch=chapters.find(function(c){return c.id===id;});if(ch&&cache[ch.id]&&cache[ch.id].blobs&&cache[ch.id].blobs.length)fetched.push(ch);});
-    if(!fetched.length){alert('No fetched chapters to download');return;}
+    if(!fetched.length){alert('No fetched chapters');return;}
     var zip=new JSZip(),curSize=0,part=1;
     function saveZip(){
       if(curSize===0)return Promise.resolve();
@@ -268,7 +271,7 @@ function downloadAll(chapters,selected,cache,title){
       });
     }
     function addChap(idx){
-      if(idx>=fetched.length)return saveZip().then(function(){alert('✅ Download complete!');});
+      if(idx>=fetched.length)return saveZip().then(function(){alert('✅ Done!');});
       var ch=fetched[idx],data=cache[ch.id];
       var fname='Ch.'+ch.num+(ch.title?' - '+ch.title:'');
       var folder=zip.folder(fname);
@@ -288,7 +291,7 @@ function init(){
   var ui=createUI(),body=ui.body;
   body.innerHTML='<div style="text-align:center;padding:40px;color:#aaa;">⏳ Loading...</div>';
   
-  log('MangaDex Downloader started | DEBUG:',DEBUG,'| Quality:',QUALITY);
+  log('MangaDex DL | DEBUG:'+DEBUG+' | Quality:'+QUALITY);
   
   apiGet(API+'/manga/'+mid).then(function(res){
     var m=res.data.attributes.title;
@@ -309,8 +312,8 @@ function init(){
           ui.fetchBtn.disabled=false;updateCount(selected,cache);
           var p=document.getElementById('mp');if(p)p.parentNode.removeChild(p);
           var totalFail=[...selected].reduce(function(sum,id){return sum+(cache[id]?cache[id].failed:0);},0);
-          if(totalFail>0) alert('⚠️ '+totalFail+' images failed (check console for details)');
-        }).catch(function(err){alert('Fetch error: '+err.message);ui.fetchBtn.disabled=false;});
+          if(totalFail>0) alert('⚠️ '+totalFail+' images failed');
+        }).catch(function(err){alert('Error: '+err.message);ui.fetchBtn.disabled=false;});
       };
       ui.dlBtn.onclick=function(){downloadAll(chapters,selected,cache,title);};
       updateCount(selected,cache);
