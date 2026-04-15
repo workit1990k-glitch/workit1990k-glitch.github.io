@@ -5,8 +5,8 @@ window.mddxLoaded=true;
 
 // ===== CONFIG =====
 var API='https://api.mangadex.org';
-var QUALITY='data-saver';
-var MAX_ZIP=524288000;
+var QUALITY='data-saver'; // 'data' for original, 'data-saver' for low size
+var MAX_ZIP=524288000;    // 500MB
 var PAR_IMG=2;
 
 // ===== HELPERS =====
@@ -14,8 +14,14 @@ function fmt(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'K
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
 function apiGet(url){
-  return fetch(url,{headers:{'Content-Type':'application/json'}})
-    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+  return fetch(url).then(function(r){
+    if(r.ok) return r.json();
+    return r.json().catch(function(){throw new Error('HTTP '+r.status);}).then(function(err){
+      var msg='HTTP '+r.status;
+      if(err.errors&&err.errors[0]) msg=err.errors[0].detail||msg;
+      throw new Error(msg);
+    });
+  });
 }
 
 function getMangaId(){
@@ -23,18 +29,19 @@ function getMangaId(){
   return m?m[1]:null;
 }
 
-// ===== CHAPTERS =====
+// ===== CHAPTERS (OFFSET PAGINATION) =====
 function fetchChapters(mangaId){
   var chapters=[];
-  var page=1;
+  var offset=0;
+  var limit=100;
   
   function nextPage(){
-    var url=API+'/manga/'+mangaId+'/feed?limit=100&order[chapter]=desc&translatedLanguage[]=en&page='+page;
+    var url=API+'/manga/'+mangaId+'/feed?limit='+limit+'&offset='+offset+'&order[chapter]=desc&translatedLanguage[]=en';
     return apiGet(url).then(function(res){
       var items=res.data||[];
-      if(!items.length)return;
+      if(!items.length) return;
       for(var i=0;i<items.length;i++){
-        var c=items[i],a=c.attributes;
+        var c=items[i], a=c.attributes;
         chapters.push({
           id:c.id,
           num:a.chapter||'0',
@@ -42,16 +49,16 @@ function fetchChapters(mangaId){
           groups:(a.groups||[]).map(function(g){return g.attributes?g.attributes.name:null;}).filter(Boolean).join(', ')
         });
       }
-      if(items.length<100)return;
-      page++;
-      return sleep(100).then(nextPage);
+      if(items.length<limit) return;
+      offset+=limit;
+      return sleep(150).then(nextPage);
     });
   }
   
   return nextPage().then(function(){
     return chapters.sort(function(a,b){
-      var na=parseFloat(a.num),nb=parseFloat(b.num);
-      if(!isNaN(na)&&!isNaN(nb))return na-nb;
+      var na=parseFloat(a.num), nb=parseFloat(b.num);
+      if(!isNaN(na)&&!isNaN(nb)) return na-nb;
       return String(a.num).localeCompare(String(b.num),undefined,{numeric:true});
     });
   });
@@ -70,13 +77,13 @@ function fetchImages(cid){
 
 function dlImg(url){
   return fetch(url).then(function(r){
-    if(!r.ok)throw new Error('HTTP '+r.status);
+    if(!r.ok) throw new Error('HTTP '+r.status);
     return r.blob();
   });
 }
 
 // ===== LIBS =====
-var JSZip=null,saveAs=null;
+var JSZip=null, saveAs=null;
 function loadLibs(){
   var loads=[];
   if(!JSZip){
@@ -117,11 +124,9 @@ function createUI(){
     '<button id="md" disabled style="padding:6px 14px;background:#48a;border:none;border-radius:5px;color:#fff;cursor:pointer;">💾 DL</button></div></div>';
   
   document.body.appendChild(ov);
-  
   var close=function(){if(ov.parentNode)ov.parentNode.removeChild(ov);};
   document.getElementById('mx').onclick=close;
   ov.onclick=function(e){if(e.target===ov)close();};
-  
   return{
     body:document.getElementById('mb'),
     cnt:document.getElementById('mc'),
@@ -153,34 +158,22 @@ function render(chapters,selected,cache){
     
     div.appendChild(cb);
     div.appendChild(info);
-    
-    div.onclick=function(e){
-      if(e.target===cb)return;
-      cb.checked=!cb.checked;
-      cb.onchange();
-    };
-    
+    div.onclick=function(e){if(e.target!==cb){cb.checked=!cb.checked;cb.onchange();}};
     cb.onchange=function(){
       var id=cb.dataset.id;
-      if(cb.checked)selected.add(id);
-      else selected.delete(id);
+      if(cb.checked)selected.add(id);else selected.delete(id);
       updateCount(selected,cache);
     };
-    
     frag.appendChild(div);
   }
   return frag;
 }
 
 function updateCount(selected,cache){
-  var cnt=document.getElementById('mc');
-  var fb=document.getElementById('mf');
-  var db=document.getElementById('md');
+  var cnt=document.getElementById('mc'), fb=document.getElementById('mf'), db=document.getElementById('md');
   if(!cnt||!fb||!db)return;
-  
   var fetched=0;
   selected.forEach(function(id){if(cache[id]&&cache[id].blobs&&cache[id].blobs.length)fetched++;});
-  
   cnt.textContent=selected.size+' selected ('+fetched+' fetched)';
   fb.disabled=selected.size===0;
   db.disabled=fetched===0;
@@ -193,23 +186,17 @@ function fetchSelected(chapters,selected,cache,onProg){
     var ch=chapters.find(function(c){return c.id===id;});
     if(ch&&!cache[ch.id])todo.push(ch);
   });
-  
   var done=0;
   
   function processOne(idx){
     if(idx>=todo.length)return Promise.resolve();
     var ch=todo[idx];
-    
     return fetchImages(ch.id).then(function(urls){
-      var blobs=[];
-      var size=0;
-      
+      var blobs=[], size=0;
       function dlBatch(bIdx){
         if(bIdx>=urls.length)return;
         var batch=[];
-        for(var k=0;k<PAR_IMG&&bIdx+k<urls.length;k++){
-          batch.push(dlImg(urls[bIdx+k]).catch(function(){return null;}));
-        }
+        for(var k=0;k<PAR_IMG&&bIdx+k<urls.length;k++) batch.push(dlImg(urls[bIdx+k]).catch(function(){return null;}));
         return Promise.all(batch).then(function(results){
           for(var k=0;k<results.length;k++){
             var blob=results[k];
@@ -223,7 +210,6 @@ function fetchSelected(chapters,selected,cache,onProg){
           return dlBatch(bIdx+PAR_IMG);
         });
       }
-      
       return dlBatch(0).then(function(){
         cache[ch.id]={blobs:blobs,size:size,total:urls.length};
         done++;
@@ -238,7 +224,6 @@ function fetchSelected(chapters,selected,cache,onProg){
       return sleep(50).then(function(){return processOne(idx+1);});
     });
   }
-  
   return processOne(0);
 }
 
@@ -250,42 +235,29 @@ function downloadAll(chapters,selected,cache,title){
       var ch=chapters.find(function(c){return c.id===id;});
       if(ch&&cache[ch.id]&&cache[ch.id].blobs&&cache[ch.id].blobs.length)fetched.push(ch);
     });
-    
     if(!fetched.length){alert('No fetched chapters');return;}
     
-    var zip=new JSZip();
-    var curSize=0;
-    var part=1;
-    
+    var zip=new JSZip(), curSize=0, part=1;
     function saveZip(){
       if(curSize===0)return Promise.resolve();
       return zip.generateAsync({type:'blob',compression:'STORE'}).then(function(blob){
         saveAs(blob,title+'_part'+part+'.zip');
-        part++;
-        zip=new JSZip();
-        curSize=0;
+        part++; zip=new JSZip(); curSize=0;
       });
     }
-    
     function addChap(idx){
-      if(idx>=fetched.length)return saveZip().then(function(){alert('✅ Done!');});
-      var ch=fetched[idx];
-      var data=cache[ch.id];
+      if(idx>=fetched.length)return saveZip().then(function(){alert('✅ Download complete!');});
+      var ch=fetched[idx], data=cache[ch.id];
       var fname='Ch.'+ch.num+(ch.title?' - '+ch.title:'');
       var folder=zip.folder(fname);
-      
       for(var i=0;i<data.blobs.length;i++){
         var b=data.blobs[i];
         if(b&&b.name&&b.blob)folder.file(b.name,b.blob);
       }
       curSize+=data.size;
-      
-      if(curSize>=MAX_ZIP&&idx<fetched.length-1){
-        return saveZip().then(function(){return addChap(idx+1);});
-      }
+      if(curSize>=MAX_ZIP&&idx<fetched.length-1) return saveZip().then(function(){return addChap(idx+1);});
       return addChap(idx+1);
     }
-    
     return addChap(0);
   });
 }
@@ -293,64 +265,46 @@ function downloadAll(chapters,selected,cache,title){
 // ===== INIT =====
 function init(){
   var mid=getMangaId();
-  if(!mid){alert('❌ Open a MangaDex manga page first');return;}
+  if(!mid){alert('❌ Open a MangaDex manga page first (URL must contain /title/uuid)');return;}
   
   var ui=createUI();
   var body=ui.body;
-  body.innerHTML='<div style="text-align:center;padding:40px;color:#aaa;">⏳ Loading...</div>';
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#aaa;">⏳ Loading manga data...</div>';
   
   apiGet(API+'/manga/'+mid).then(function(res){
     var m=res.data.attributes.title;
     var title=(m.en||m['ja-ro']||m.ja||'manga').replace(/[^a-z0-9]/gi,'').slice(0,35);
-    
     return fetchChapters(mid).then(function(chapters){
-      var selected=new Set();
-      var cache={};
-      
+      var selected=new Set(), cache={};
       body.innerHTML='';
       body.appendChild(render(chapters,selected,cache));
       
       document.getElementById('ma').onclick=function(){
         chapters.forEach(function(c){selected.add(c.id);});
-        body.innerHTML='';
-        body.appendChild(render(chapters,selected,cache));
-        updateCount(selected,cache);
+        body.innerHTML='';body.appendChild(render(chapters,selected,cache));updateCount(selected,cache);
       };
-      
       document.getElementById('mn').onclick=function(){
         selected.clear();
-        body.innerHTML='';
-        body.appendChild(render(chapters,selected,cache));
-        updateCount(selected,cache);
+        body.innerHTML='';body.appendChild(render(chapters,selected,cache));updateCount(selected,cache);
       };
-      
       ui.fetchBtn.onclick=function(){
         ui.fetchBtn.disabled=true;
         body.insertAdjacentHTML('beforeend','<div id="mp" style="padding:8px;background:#222;border-radius:5px;font-size:11px;color:#aaa;margin:8px 0;">⏳ Fetching...</div>');
-        
         fetchSelected(chapters,selected,cache,function(cDone,cTot,iDone,iTot){
           var p=document.getElementById('mp');
-          if(p){
-            var t='📥 Ch '+cDone+'/'+cTot;
-            if(iTot)t+=' | Img '+iDone+'/'+iTot;
-            p.textContent=t;
-          }
+          if(p){var t='📥 Ch '+cDone+'/'+cTot;if(iTot)t+=' | Img '+iDone+'/'+iTot;p.textContent=t;}
         }).then(function(){
-          body.innerHTML='';
-          body.appendChild(render(chapters,selected,cache));
-          ui.fetchBtn.disabled=false;
-          updateCount(selected,cache);
-          var p=document.getElementById('mp');
-          if(p)p.parentNode.removeChild(p);
-        });
+          body.innerHTML='';body.appendChild(render(chapters,selected,cache));
+          ui.fetchBtn.disabled=false;updateCount(selected,cache);
+          var p=document.getElementById('mp');if(p)p.parentNode.removeChild(p);
+        }).catch(function(err){alert('Fetch error: '+err.message);ui.fetchBtn.disabled=false;});
       };
-      
       ui.dlBtn.onclick=function(){downloadAll(chapters,selected,cache,title);};
       updateCount(selected,cache);
     });
   }).catch(function(err){
     console.error(err);
-    body.innerHTML='<div style="color:#f66;text-align:center;padding:20px;">❌ '+err.message+'</div>';
+    body.innerHTML='<div style="color:#f66;text-align:center;padding:20px;white-space:pre-wrap;">❌ '+err.message+'</div>';
   });
 }
 
