@@ -1,378 +1,358 @@
-// down-mangadex.js - MangaDex Downloader (Fixed & Compact)
-(function(){'use strict';
-if(window.mddxLoaded){console.log('✅ Already loaded');return;}
+(function(){
+'use strict';
+if(window.mddxLoaded){return;}
 window.mddxLoaded=true;
 
-// Config
-const API='https://api.mangadex.org';
-const QUALITY='data-saver'; // 'data' for original quality
-const MAX_ZIP=500*1024*1024;
-const PAR_CH=2;
-const PAR_IMG=2;
+// ===== CONFIG =====
+var API='https://api.mangadex.org';
+var QUALITY='data-saver';
+var MAX_ZIP=524288000;
+var PAR_IMG=2;
 
-// Helper: fetch with JSON parsing
-const LOAD=async(url,options)=>{
-  const res=await fetch(url,{...options,headers:{'Content-Type':'application/json',...options?.headers}});
-  if(!res.ok)throw new Error('HTTP '+res.status);
-  return res.json();
-};
+// ===== HELPERS =====
+function fmt(b){if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(2)+'MB';}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const fmtBytes=b=>b<1024?b+'B':b<1048576?(b/1024).toFixed(1)+'KB':(b/1048576).toFixed(2)+'MB';
+function apiGet(url){
+  return fetch(url,{headers:{'Content-Type':'application/json'}})
+    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});
+}
 
-// Extract manga UUID from MangaDex URL
-const getMangaId=()=>{
-  const m=location.href.match(/mangadex\.org\/title\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+function getMangaId(){
+  var m=location.href.match(/mangadex\.org\/title\/([0-9a-f-]{36})/i);
   return m?m[1]:null;
-};
+}
 
-// Fetch all chapters for a manga (paginated, English only)
-const fetchChapters=async(mangaId)=>{
-  const chapters=[];
-  let page=1;
-  while(true){
-    const url=`${API}/manga/${mangaId}/feed?limit=100&order[chapter]=desc&translatedLanguage[]=en&page=${page}`;
-    const res=await LOAD(url);
-    const items=res.data||[];
-    if(!items.length)break;
-    for(const c of items){
-      const attr=c.attributes;
-      chapters.push({
-        id:c.id,
-        num:attr.chapter||'0',
-        title:attr.title||'',
-        groups:(attr.groups||[]).map(g=>g.attributes?.name).filter(Boolean).join(', ')
-      });
-    }
-    if(items.length<100)break;
-    page++;
-    await sleep(100); // Be nice to API
-  }
-  // Sort by chapter number (numeric aware)
-  return chapters.sort((a,b)=>{
-    const na=parseFloat(a.num),nb=parseFloat(b.num);
-    if(!isNaN(na)&&!isNaN(nb))return na-nb;
-    return String(a.num).localeCompare(String(b.num),undefined,{numeric:true});
-  });
-};
-
-// Get image URLs for a chapter via at-home server
-const fetchChapterImages=async(chapterId)=>{
-  const res=await LOAD(`${API}/at-home/server/${chapterId}`);
-  const chapter=res.chapter;
-  const baseUrl=res.baseUrl;
-  const hash=chapter.hash;
-  // Use computed property to get data-saver or data array
-  const files=chapter[QUALITY]||chapter.data||[];
-  return files.map(f=>`${baseUrl}/${QUALITY}/${hash}/${f}`);
-};
-
-// Download a single image as blob
-const downloadImage=async(url)=>{
-  const res=await fetch(url);
-  if(!res.ok)throw new Error('HTTP '+res.status);
-  return await res.blob();
-};
-
-// Lazy-load external libraries
-let JSZip,saveAs;
-const loadLibs=async()=>{
-  if(!JSZip){
-    JSZip=await new Promise((resolve,reject)=>{
-      const s=document.createElement('script');
-      s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
-      s.onload=()=>resolve(window.JSZip);
-      s.onerror=reject;
-      document.head.appendChild(s);
+// ===== CHAPTERS =====
+function fetchChapters(mangaId){
+  var chapters=[];
+  var page=1;
+  
+  function nextPage(){
+    var url=API+'/manga/'+mangaId+'/feed?limit=100&order[chapter]=desc&translatedLanguage[]=en&page='+page;
+    return apiGet(url).then(function(res){
+      var items=res.data||[];
+      if(!items.length)return;
+      for(var i=0;i<items.length;i++){
+        var c=items[i],a=c.attributes;
+        chapters.push({
+          id:c.id,
+          num:a.chapter||'0',
+          title:a.title||'',
+          groups:(a.groups||[]).map(function(g){return g.attributes?g.attributes.name:null;}).filter(Boolean).join(', ')
+        });
+      }
+      if(items.length<100)return;
+      page++;
+      return sleep(100).then(nextPage);
     });
+  }
+  
+  return nextPage().then(function(){
+    return chapters.sort(function(a,b){
+      var na=parseFloat(a.num),nb=parseFloat(b.num);
+      if(!isNaN(na)&&!isNaN(nb))return na-nb;
+      return String(a.num).localeCompare(String(b.num),undefined,{numeric:true});
+    });
+  });
+}
+
+// ===== IMAGES =====
+function fetchImages(cid){
+  return apiGet(API+'/at-home/server/'+cid).then(function(res){
+    var ch=res.chapter||{};
+    var base=res.baseUrl||'';
+    var hash=ch.hash||'';
+    var files=ch[QUALITY]||ch.data||[];
+    return files.map(function(f){return base+'/'+QUALITY+'/'+hash+'/'+f;});
+  });
+}
+
+function dlImg(url){
+  return fetch(url).then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.blob();
+  });
+}
+
+// ===== LIBS =====
+var JSZip=null,saveAs=null;
+function loadLibs(){
+  var loads=[];
+  if(!JSZip){
+    loads.push(new Promise(function(res,rej){
+      var s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+      s.onload=function(){JSZip=window.JSZip;res();};
+      s.onerror=rej;
+      document.head.appendChild(s);
+    }));
   }
   if(!saveAs){
-    saveAs=await new Promise((resolve,reject)=>{
-      const s=document.createElement('script');
+    loads.push(new Promise(function(res,rej){
+      var s=document.createElement('script');
       s.src='https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js';
-      s.onload=()=>resolve(window.saveAs);
-      s.onerror=reject;
+      s.onload=function(){saveAs=window.saveAs;res();};
+      s.onerror=rej;
       document.head.appendChild(s);
-    });
+    }));
   }
-};
+  return Promise.all(loads);
+}
 
-// Create overlay UI
-const createUI=()=>{
-  const overlay=document.createElement('div');
-  overlay.id='mddx-overlay';
-  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,sans-serif;color:#fff;';
+// ===== UI =====
+function createUI(){
+  var ov=document.createElement('div');
+  ov.id='mddx';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:sans-serif;color:#fff;';
   
-  overlay.innerHTML=`
-    <div style="background:#1a1a2e;max-width:800px;width:100%;max-height:95vh;overflow:hidden;border-radius:12px;display:flex;flex-direction:column;">
-      <div style="padding:12px 16px;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center;">
-        <strong>📚 MangaDex Downloader</strong>
-        <button id="mddx-close" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;">&times;</button>
-      </div>
-      <div id="mddx-body" style="flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px;"></div>
-      <div style="padding:12px 16px;border-top:1px solid #333;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <button id="mddx-all" style="padding:8px 16px;background:#333;border:none;border-radius:6px;color:#fff;cursor:pointer;">All</button>
-        <button id="mddx-none" style="padding:8px 16px;background:#333;border:none;border-radius:6px;color:#fff;cursor:pointer;">None</button>
-        <span id="mddx-count" style="margin-left:auto;color:#aaa;font-size:13px;">0 selected</span>
-        <button id="mddx-fetch" disabled style="padding:8px 16px;background:#4a4;border:none;border-radius:6px;color:#fff;cursor:pointer;">📥 Fetch</button>
-        <button id="mddx-dl" disabled style="padding:8px 16px;background:#48a;border:none;border-radius:6px;color:#fff;cursor:pointer;">💾 Download</button>
-      </div>
-    </div>
-  `;
+  ov.innerHTML='<div style="background:#1a1a2e;max-width:750px;width:100%;max-height:95vh;overflow:hidden;border-radius:10px;display:flex;flex-direction:column;">'+
+    '<div style="padding:10px 14px;border-bottom:1px solid #333;display:flex;justify-content:space-between;"><strong>📚 MangaDex DL</strong><button id="mx" style="background:none;border:none;color:#aaa;font-size:18px;cursor:pointer;">&times;</button></div>'+
+    '<div id="mb" style="flex:1;overflow:auto;padding:14px;"></div>'+
+    '<div style="padding:10px 14px;border-top:1px solid #333;display:flex;gap:8px;flex-wrap:wrap;">'+
+    '<button id="ma" style="padding:6px 14px;background:#333;border:none;border-radius:5px;color:#fff;cursor:pointer;">All</button>'+
+    '<button id="mn" style="padding:6px 14px;background:#333;border:none;border-radius:5px;color:#fff;cursor:pointer;">None</button>'+
+    '<span id="mc" style="margin-left:auto;color:#aaa;font-size:12px;">0 selected</span>'+
+    '<button id="mf" disabled style="padding:6px 14px;background:#4a4;border:none;border-radius:5px;color:#fff;cursor:pointer;">📥 Fetch</button>'+
+    '<button id="md" disabled style="padding:6px 14px;background:#48a;border:none;border-radius:5px;color:#fff;cursor:pointer;">💾 DL</button></div></div>';
   
-  document.body.appendChild(overlay);
+  document.body.appendChild(ov);
   
-  const close=()=>overlay.remove();
-  document.getElementById('mddx-close').onclick=close;
-  overlay.onclick=e=>{if(e.target===overlay)close();};
+  var close=function(){if(ov.parentNode)ov.parentNode.removeChild(ov);};
+  document.getElementById('mx').onclick=close;
+  ov.onclick=function(e){if(e.target===ov)close();};
   
   return{
-    overlay,
-    body:document.getElementById('mddx-body'),
-    count:document.getElementById('mddx-count'),
-    fetchBtn:document.getElementById('mddx-fetch'),
-    dlBtn:document.getElementById('mddx-dl'),
-    close
+    body:document.getElementById('mb'),
+    cnt:document.getElementById('mc'),
+    fetchBtn:document.getElementById('mf'),
+    dlBtn:document.getElementById('md'),
+    close:close
   };
-};
+}
 
-// Render chapter list
-const renderChapters=(chapters,selected,cache)=>{
-  const fragment=document.createDocumentFragment();
-  
-  for(const ch of chapters){
-    const div=document.createElement('div');
-    div.style.cssText='padding:10px;background:#222;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;';
-    if(cache[ch.id])div.style.background='#2a3a2a';
+function render(chapters,selected,cache){
+  var frag=document.createDocumentFragment();
+  for(var i=0;i<chapters.length;i++){
+    var c=chapters[i];
+    var div=document.createElement('div');
+    div.style.cssText='padding:9px;background:#222;border-radius:7px;cursor:pointer;margin-bottom:6px;';
+    if(cache[c.id])div.style.background='#253525';
     
-    const checked=selected.has(ch.id)?' checked':'';
-    div.innerHTML=`
-      <input type="checkbox"${checked} data-id="${ch.id}" style="cursor:pointer;">
-      <div>
-        <div style="font-weight:600">Ch.${ch.num}${ch.title?' - '+ch.title:''}</div>
-        <div style="font-size:11px;color:#aaa">${ch.groups||'Unknown'}</div>
-        ${cache[ch.id]?`<div style="font-size:10px;color:#4a4">✓ ${fmtBytes(cache[ch.id].size)}</div>`:''}
-      </div>
-    `;
+    var cb=document.createElement('input');
+    cb.type='checkbox';
+    cb.checked=selected.has(c.id);
+    cb.dataset.id=c.id;
+    cb.style.cssText='margin-right:8px;cursor:pointer;';
     
-    div.onclick=e=>{
-      if(e.target.tagName!=='INPUT'){
-        const cb=div.querySelector('input');
-        cb.checked=!cb.checked;
-        cb.onchange();
-      }
+    var info=document.createElement('div');
+    info.style.display='inline-block';
+    info.innerHTML='<div style="font-weight:600">Ch.'+c.num+(c.title?' - '+c.title:'')+'</div>'+
+      '<div style="font-size:10px;color:#aaa">'+(c.groups||'Unknown')+'</div>'+
+      (cache[c.id]?'<div style="font-size:9px;color:#4a4">✓ '+fmt(cache[c.id].size)+'</div>':'');
+    
+    div.appendChild(cb);
+    div.appendChild(info);
+    
+    div.onclick=function(e){
+      if(e.target===cb)return;
+      cb.checked=!cb.checked;
+      cb.onchange();
     };
     
-    const checkbox=div.querySelector('input');
-    checkbox.onchange=()=>{
-      if(checkbox.checked){
-        selected.add(ch.id);
-      }else{
-        selected.delete(ch.id);
-      }
+    cb.onchange=function(){
+      var id=cb.dataset.id;
+      if(cb.checked)selected.add(id);
+      else selected.delete(id);
       updateCount(selected,cache);
     };
     
-    fragment.appendChild(div);
+    frag.appendChild(div);
   }
-  
-  return fragment;
-};
+  return frag;
+}
 
-// Update UI counts and button states
-const updateCount=(selected,cache)=>{
-  const countEl=document.getElementById('mddx-count');
-  const fetchBtn=document.getElementById('mddx-fetch');
-  const dlBtn=document.getElementById('mddx-dl');
+function updateCount(selected,cache){
+  var cnt=document.getElementById('mc');
+  var fb=document.getElementById('mf');
+  var db=document.getElementById('md');
+  if(!cnt||!fb||!db)return;
   
-  if(!countEl||!fetchBtn||!dlBtn)return;
+  var fetched=0;
+  selected.forEach(function(id){if(cache[id]&&cache[id].blobs&&cache[id].blobs.length)fetched++;});
   
-  const fetchedCount=[...selected].filter(id=>cache[id]?.blobs?.length>0).length;
-  countEl.textContent=`${selected.size} selected (${fetchedCount} fetched)`;
-  fetchBtn.disabled=selected.size===0;
-  dlBtn.disabled=fetchedCount===0;
-};
+  cnt.textContent=selected.size+' selected ('+fetched+' fetched)';
+  fb.disabled=selected.size===0;
+  db.disabled=fetched===0;
+}
 
-// Fetch selected chapters with progress
-const fetchSelected=async(chapters,selected,cache,onProgress)=>{
-  const todo=[...selected].map(id=>chapters.find(c=>c.id===id)).filter(Boolean);
-  let completed=0;
+// ===== FETCH LOGIC =====
+function fetchSelected(chapters,selected,cache,onProg){
+  var todo=[];
+  selected.forEach(function(id){
+    var ch=chapters.find(function(c){return c.id===id;});
+    if(ch&&!cache[ch.id])todo.push(ch);
+  });
   
-  for(const ch of todo){
-    if(cache[ch.id])continue; // Skip already fetched
+  var done=0;
+  
+  function processOne(idx){
+    if(idx>=todo.length)return Promise.resolve();
+    var ch=todo[idx];
     
-    try{
-      const urls=await fetchChapterImages(ch.id);
-      const blobs=[];
-      let totalSize=0;
+    return fetchImages(ch.id).then(function(urls){
+      var blobs=[];
+      var size=0;
       
-      // Download images with concurrency limit
-      for(let i=0;i<urls.length;i+=PAR_IMG){
-        const batch=urls.slice(i,i+PAR_IMG);
-        const results=await Promise.all(batch.map(url=>
-          downloadImage(url).catch(err=>{console.warn('Img fail:',err);return null;})
-        ));
-        
-        for(let j=0;j<results.length;j++){
-          const blob=results[j];
-          if(blob){
-            const idx=i+j+1;
-            blobs.push({
-              name:`page_${String(idx).padStart(3,'0')}.jpg`,
-              blob:blob,
-              size:blob.size
-            });
-            totalSize+=blob.size;
+      function dlBatch(bIdx){
+        if(bIdx>=urls.length)return;
+        var batch=[];
+        for(var k=0;k<PAR_IMG&&bIdx+k<urls.length;k++){
+          batch.push(dlImg(urls[bIdx+k]).catch(function(){return null;}));
+        }
+        return Promise.all(batch).then(function(results){
+          for(var k=0;k<results.length;k++){
+            var blob=results[k];
+            if(blob){
+              var n=bIdx+k+1;
+              blobs.push({name:'page_'+String(n).padStart(3,'0')+'.jpg',blob:blob,size:blob.size});
+              size+=blob.size;
+            }
           }
-        }
-        if(onProgress)onProgress(completed,blobs.length,urls.length);
+          if(onProg)onProg(done,blobs.length,urls.length);
+          return dlBatch(bIdx+PAR_IMG);
+        });
       }
       
-      cache[ch.id]={blobs,size:totalSize,total:urls.length};
-      
-    }catch(err){
-      console.warn('Chapter failed:',ch.num,err);
-      cache[ch.id]={blobs:[],size:0,total:0,error:err.message};
-    }
-    
-    completed++;
-    if(onProgress)onProgress(completed,todo.length,0);
-    await sleep(50);
-  }
-};
-
-// Download fetched chapters as ZIP
-const downloadChapters=async(chapters,selected,cache,mangaTitle)=>{
-  await loadLibs();
-  
-  const fetched=[...selected]
-    .filter(id=>cache[id]?.blobs?.length>0)
-    .map(id=>chapters.find(c=>c.id===id))
-    .filter(Boolean);
-  
-  if(!fetched.length){
-    alert('❌ No fetched chapters to download');
-    return;
-  }
-  
-  let zip=new JSZip();
-  let currentSize=0;
-  let partNum=1;
-  
-  const saveCurrentZip=async()=>{
-    if(currentSize===0)return;
-    const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
-    const filename=`${mangaTitle}_part${partNum++}.zip`;
-    saveAs(blob,filename);
-    zip=new JSZip();
-    currentSize=0;
-  };
-  
-  for(const ch of fetched){
-    const data=cache[ch.id];
-    if(!data||!data.blobs.length)continue;
-    
-    const folderName=`Ch.${ch.num}${ch.title?' - '+ch.title:''}`;
-    const folder=zip.folder(folderName);
-    
-    for(const item of data.blobs){
-      if(item?.name&&item?.blob){
-        folder.file(item.name,item.blob);
-      }
-    }
-    
-    currentSize+=data.size;
-    
-    // Split ZIP if too large
-    if(currentSize>=MAX_ZIP){
-      await saveCurrentZip();
-    }
-  }
-  
-  await saveCurrentZip();
-  alert('✅ Download complete!');
-};
-
-// Main initialization
-const init=async()=>{
-  const mangaId=getMangaId();
-  if(!mangaId){
-    alert('❌ Please open a MangaDex manga page first');
-    return;
-  }
-  
-  const ui=createUI();
-  const body=ui.body;
-  
-  try{
-    body.innerHTML='<div style="text-align:center;padding:40px;color:#aaa;">⏳ Loading manga info...</div>';
-    
-    // Fetch manga details
-    const mangaRes=await LOAD(`${API}/manga/${mangaId}`);
-    const manga=mangaRes.data;
-    const titles=manga.attributes.title;
-    const mangaTitle=(titles.en||titles['ja-ro']||titles['ja']||'manga')
-      .replace(/[^a-z0-9\s]/gi,'')
-      .trim()
-      .slice(0,40)||'manga';
-    
-    // Fetch chapters
-    const chapters=await fetchChapters(mangaId);
-    
-    // State
-    const selected=new Set();
-    const cache={};
-    
-    // Render UI
-    body.innerHTML='';
-    body.appendChild(renderChapters(chapters,selected,cache));
-    
-    // Button handlers
-    document.getElementById('mddx-all').onclick=()=>{
-      chapters.forEach(c=>selected.add(c.id));
-      body.innerHTML='';
-      body.appendChild(renderChapters(chapters,selected,cache));
-      updateCount(selected,cache);
-    };
-    
-    document.getElementById('mddx-none').onclick=()=>{
-      selected.clear();
-      body.innerHTML='';
-      body.appendChild(renderChapters(chapters,selected,cache));
-      updateCount(selected,cache);
-    };
-    
-    ui.fetchBtn.onclick=async()=>{
-      ui.fetchBtn.disabled=true;
-      body.insertAdjacentHTML('beforeend',`<div id="mddx-progress" style="padding:8px;background:#222;border-radius:6px;font-size:12px;color:#aaa;">⏳ Fetching chapters...</div>`);
-      
-      await fetchSelected(chapters,selected,cache,(chDone,chTotal,imgDone,imgTotal)=>{
-        const prog=document.getElementById('mddx-progress');
-        if(prog){
-          let text=`📥 Chapter ${chDone}/${chTotal}`;
-          if(imgTotal)text+=` | Images ${imgDone}/${imgTotal}`;
-          prog.textContent=text;
-        }
+      return dlBatch(0).then(function(){
+        cache[ch.id]={blobs:blobs,size:size,total:urls.length};
+        done++;
+        if(onProg)onProg(done,0,0);
+        return sleep(50).then(function(){return processOne(idx+1);});
       });
-      
-      // Re-render with cached data
-      body.innerHTML='';
-      body.appendChild(renderChapters(chapters,selected,cache));
-      ui.fetchBtn.disabled=false;
-      updateCount(selected,cache);
-      document.getElementById('mddx-progress')?.remove();
-    };
-    
-    ui.dlBtn.onclick=()=>downloadChapters(chapters,selected,cache,mangaTitle);
-    
-    updateCount(selected,cache);
-    
-  }catch(err){
-    console.error('Init error:',err);
-    body.innerHTML=`<div style="color:#f66;text-align:center;padding:20px;">❌ ${err.message||'Unknown error'}</div>`;
+    }).catch(function(err){
+      console.warn('Fail:',ch.num,err);
+      cache[ch.id]={blobs:[],size:0,total:0};
+      done++;
+      if(onProg)onProg(done,0,0);
+      return sleep(50).then(function(){return processOne(idx+1);});
+    });
   }
-};
+  
+  return processOne(0);
+}
 
-// Start
+// ===== DOWNLOAD =====
+function downloadAll(chapters,selected,cache,title){
+  return loadLibs().then(function(){
+    var fetched=[];
+    selected.forEach(function(id){
+      var ch=chapters.find(function(c){return c.id===id;});
+      if(ch&&cache[ch.id]&&cache[ch.id].blobs&&cache[ch.id].blobs.length)fetched.push(ch);
+    });
+    
+    if(!fetched.length){alert('No fetched chapters');return;}
+    
+    var zip=new JSZip();
+    var curSize=0;
+    var part=1;
+    
+    function saveZip(){
+      if(curSize===0)return Promise.resolve();
+      return zip.generateAsync({type:'blob',compression:'STORE'}).then(function(blob){
+        saveAs(blob,title+'_part'+part+'.zip');
+        part++;
+        zip=new JSZip();
+        curSize=0;
+      });
+    }
+    
+    function addChap(idx){
+      if(idx>=fetched.length)return saveZip().then(function(){alert('✅ Done!');});
+      var ch=fetched[idx];
+      var data=cache[ch.id];
+      var fname='Ch.'+ch.num+(ch.title?' - '+ch.title:'');
+      var folder=zip.folder(fname);
+      
+      for(var i=0;i<data.blobs.length;i++){
+        var b=data.blobs[i];
+        if(b&&b.name&&b.blob)folder.file(b.name,b.blob);
+      }
+      curSize+=data.size;
+      
+      if(curSize>=MAX_ZIP&&idx<fetched.length-1){
+        return saveZip().then(function(){return addChap(idx+1);});
+      }
+      return addChap(idx+1);
+    }
+    
+    return addChap(0);
+  });
+}
+
+// ===== INIT =====
+function init(){
+  var mid=getMangaId();
+  if(!mid){alert('❌ Open a MangaDex manga page first');return;}
+  
+  var ui=createUI();
+  var body=ui.body;
+  body.innerHTML='<div style="text-align:center;padding:40px;color:#aaa;">⏳ Loading...</div>';
+  
+  apiGet(API+'/manga/'+mid).then(function(res){
+    var m=res.data.attributes.title;
+    var title=(m.en||m['ja-ro']||m.ja||'manga').replace(/[^a-z0-9]/gi,'').slice(0,35);
+    
+    return fetchChapters(mid).then(function(chapters){
+      var selected=new Set();
+      var cache={};
+      
+      body.innerHTML='';
+      body.appendChild(render(chapters,selected,cache));
+      
+      document.getElementById('ma').onclick=function(){
+        chapters.forEach(function(c){selected.add(c.id);});
+        body.innerHTML='';
+        body.appendChild(render(chapters,selected,cache));
+        updateCount(selected,cache);
+      };
+      
+      document.getElementById('mn').onclick=function(){
+        selected.clear();
+        body.innerHTML='';
+        body.appendChild(render(chapters,selected,cache));
+        updateCount(selected,cache);
+      };
+      
+      ui.fetchBtn.onclick=function(){
+        ui.fetchBtn.disabled=true;
+        body.insertAdjacentHTML('beforeend','<div id="mp" style="padding:8px;background:#222;border-radius:5px;font-size:11px;color:#aaa;margin:8px 0;">⏳ Fetching...</div>');
+        
+        fetchSelected(chapters,selected,cache,function(cDone,cTot,iDone,iTot){
+          var p=document.getElementById('mp');
+          if(p){
+            var t='📥 Ch '+cDone+'/'+cTot;
+            if(iTot)t+=' | Img '+iDone+'/'+iTot;
+            p.textContent=t;
+          }
+        }).then(function(){
+          body.innerHTML='';
+          body.appendChild(render(chapters,selected,cache));
+          ui.fetchBtn.disabled=false;
+          updateCount(selected,cache);
+          var p=document.getElementById('mp');
+          if(p)p.parentNode.removeChild(p);
+        });
+      };
+      
+      ui.dlBtn.onclick=function(){downloadAll(chapters,selected,cache,title);};
+      updateCount(selected,cache);
+    });
+  }).catch(function(err){
+    console.error(err);
+    body.innerHTML='<div style="color:#f66;text-align:center;padding:20px;">❌ '+err.message+'</div>';
+  });
+}
+
 init();
 })();
