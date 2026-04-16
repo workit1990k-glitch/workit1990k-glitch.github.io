@@ -433,7 +433,10 @@ function getImageExtension(url, mimeType) {
 function sanitizeFilename(str) {
     return str.replace(/[^a-z0-9\-]/gi, ' ').replace(/-+/g, ' ').replace(/^-+|-+$/g, '').slice(0, 100) || 'novel';
 }
-
+// --- Chapter Title Formatter ---
+function formatChapterTitle(order, title) {
+    return `${order}. ${title}`;
+}
 // --- EPUB Generation ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const chapters = downloadState.chapters.filter(c => c.order >= startOrder && c.order <= endOrder).sort((a,b) => a.order - b.order);
@@ -491,22 +494,19 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
         
     const descHtml = metadata.description 
         ? `<p class="info-desc">${escapeXml(metadata.description)}</p>` 
-        : '<p class="info-desc" style="color:#666"><em>No description available.</em></p>';
+        : '<p class="info-desc"><em>No description available.</em></p>';
 
     const infoContent = `
     <div class="info-container">
         <div class="info-header">
             <h1>${escapeXml(metadata.title)}</h1>
-            ${metadata.author ? `<p style="font-size:1.1em;color:#555;margin:0.3em 0"><strong>by</strong> ${escapeXml(metadata.author)}</p>` : ''}
+            ${metadata.author ? `<strong>by</strong> ${escapeXml(metadata.author)}` : ''}
         </div>
         <div class="info-meta">
             ${genresHtml}
             ${metadata.author ? `<p><strong>Author:</strong> ${escapeXml(metadata.author)}</p>` : ''}
         </div>
         ${descHtml}
-        <div class="info-footer">
-            <p>Downloaded via WTR Lab Downloader<br>Generated: ${new Date().toLocaleDateString()}</p>
-        </div>
     </div>`;
 
     oebps.file("info.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(metadata.title)} - Info</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body>${infoContent}</body></html>`);
@@ -522,8 +522,8 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     // --- Chapter Files ---
     for (const ch of chapters) {
         const escapedContent = ch.content.split('\n').map(line => escapeXml(line.trim())).filter(line => line).join('</p><p>');
-        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(ch.title)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(ch.title)}</h1><p>${escapedContent || ' '}</p></body></html>`;
-        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
+const numberedTitle = formatChapterTitle(ch.order, ch.title);
+const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(numberedTitle)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(numberedTitle)}</h1><p>${escapedContent || ' '}</p></body></html>`;        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
         oebps.file(filename, xhtml);
         manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
@@ -539,7 +539,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     // --- toc.ncx with info page ---
     const navPoints = [
         `<navPoint id="navpoint-0" playOrder="0"><navLabel><text>📋 Novel Info</text></navLabel><content src="info.xhtml"/></navPoint>`,
-        ...chapters.map((ch, idx) => `\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(ch.title)}</text></navLabel><content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/></navPoint>`)
+        ...chapters.map((ch, idx) => `\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(formatChapterTitle(ch.order, ch.title))}</text></navLabel><content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/></navPoint>`)
     ].join('');
     
     oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uid}"/></head><docTitle><text>${safeTitle}</text></docTitle><docAuthor><text>${safeAuthor}</text></docAuthor><navMap>${navPoints}\n  </navMap></ncx>`);
@@ -547,7 +547,7 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     // --- nav.xhtml with info page ---
     const navItems = [
         `<li><a href="info.xhtml">📋 Novel Info</a></li>`,
-        ...chapters.map(ch => `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(ch.title)}</a></li>`)
+        ...chapters.map(ch => `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(formatChapterTitle(ch.order, ch.title))}</a></li>`)
     ].join('\n');
     
     oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title></head><body><nav epub:type="toc"><h1>Contents</h1><ol>${navItems}</ol></nav></body></html>`);
