@@ -1,3 +1,8 @@
+/**
+ * Novel18 Syosetu → EPUB Exporter v5
+ * Plain text output, translation-safe, WebP images, auto-cover, XML sanitization
+ * Load via bookmarklet on novel18.syosetu.com
+ */
 
 (function() {
   'use strict';
@@ -8,6 +13,8 @@
   // === UTILS ===
   const $ = (sel, ctx=document) => ctx?.querySelector(sel);
   const slug = s => (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'novel';
+  const escapeHtml = s => (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const stripHtml = h => new DOMParser().parseFromString(h||'','text/html').body.textContent || '';
   const notify = (m,t='info') => {
     const d=document.createElement('div');d.textContent=m;
     d.style.cssText=`position:fixed;top:24px;left:50%;transform:translateX(-50%);background:${t==='error'?'#ff4757':t==='success'?'#00ff9d':'#4d7cff'};color:#fff;padding:12px 24px;border-radius:10px;z-index:9999999;font-weight:500;box-shadow:0 8px 25px rgba(0,0,0,0.3);transition:opacity .3s`;
@@ -30,66 +37,38 @@
     document.addEventListener('keydown',function esc(e){if(e.key==='Escape'){modal.remove();document.removeEventListener('keydown',esc);}});
   }
 
-  // === ROBUST GOOGLE TRANSLATE JSON EXTRACTOR ===
+  // === TRANSLATION-SAFE PARSER ===
   function resolveChaptersData() {
     const el = document.getElementById('n18-out');
-    if (!el) return { data: chapters, translated: false };
+    if(!el) return chapters;
+    const raw = el.innerText.trim();
+    const regex = /%%CH:(\d+)%%/g;
+    const parts = raw.split(regex);
     
-    // innerText strips HTML tags (including GT's <font> wrappers)
-    let raw = el.innerText || el.textContent;
-    raw = raw.trim();
-    
-    // Try 1: Direct parse
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed[0] && 'page' in parsed[0] && 'html' in parsed[0]) {
-        return { data: parsed, translated: true };
-      }
-    } catch(e) {}
-    
-    // Try 2: Clean GT spacing/artifacts around JSON syntax
-    let cleaned = raw
-      .replace(/\s+/g, ' ') // Normalize all whitespace
-      .replace(/\s*([[\]{}:,])\s*/g, '$1') // Remove spaces around brackets/commas
-      .replace(/"\s*:\s*"/g, '":"') // Fix broken string separators
-      .trim();
-      
-    try {
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed) && parsed[0] && 'page' in parsed[0] && 'html' in parsed[0]) {
-        return { data: parsed, translated: true };
-      }
-    } catch(e) {}
-    
-    return { data: chapters, translated: false };
+    const newData = [];
+    for(let i=1; i<parts.length; i+=2) {
+      const pageNum = parseInt(parts[i]);
+      const block = parts[i+1] || '';
+      const lines = block.trim().split('\n');
+      const title = lines[0]?.trim() || `Chapter ${pageNum}`;
+      const content = lines.slice(1).join('\n').trim();
+      // Wrap paragraphs in <p> for valid EPUB XHTML
+      const html = content.split(/\n\n+/).map(p => `<p>${escapeHtml(p.trim())}</p>`).filter(Boolean).join('');
+      const orig = chapters.find(c=>c.page===pageNum);
+      newData.push({page:pageNum, title, html, url:orig?.url||''});
+    }
+    return newData.length>0 ? newData : chapters;
   }
 
-  // === HTML SANITIZER FOR EPUB ===
+  // === HTML SANITIZER (for safety) ===
   function cleanHtmlForEpub(html) {
     if(!html) return '';
-    // Strip dangerous/unnecessary elements
-    let c = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-                .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-                .replace(/<link\b[^>]*>/gi, '')
-                .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
-    
-    // Parse via DOM to auto-fix nesting
-    const doc = new DOMParser().parseFromString(`<div xmlns="http://www.w3.org/1999/xhtml">${c}</div>`, 'text/html');
-    
-    // Fix empty paragraphs
+    const doc = new DOMParser().parseFromString(`<div xmlns="http://www.w3.org/1999/xhtml">${html}</div>`, 'text/html');
     doc.querySelectorAll('p').forEach(p => {
-      const inner = p.innerHTML.trim();
-      if(inner==='' || /^<br\s*\/?>$/.test(inner) || p.textContent.trim()==='') {
-        p.innerHTML = '<br/>';
-      }
+      if(p.innerHTML.trim()==='' || p.textContent.trim()==='') p.innerHTML = '<br/>';
     });
-
-    let cleaned = new XMLSerializer().serializeToString(doc.body.firstChild);
-    cleaned = cleaned.replace(/^<div[^>]*>|<\/div>$/g, '');
-    
-    // XML void elements
-    cleaned = cleaned.replace(/<(br|hr|img|input|link|meta|area|base|col|embed|source|track|wbr)([^>]*)(?<!\/)\s*>/gi, '<$1$2/>');
-    return cleaned;
+    let cleaned = new XMLSerializer().serializeToString(doc.body.firstChild).replace(/^<div[^>]*>|<\/div>$/g,'');
+    return cleaned.replace(/<(br|hr|img|input|link|meta|area|base|col|embed|source|track|wbr)([^>]*)(?<!\/)\s*>/gi, '<$1$2/>');
   }
 
   // === INPUT FORM ===
@@ -155,7 +134,7 @@
 
   async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
 
-  // === RESULTS UI ===
+  // === RESULTS UI (PLAIN TEXT) ===
   function showResults() {
     const ok=chapters.filter(c=>!c.error&&c.html).length,fail=chapters.filter(c=>c.error).length,imgCnt=images.size;
     openModal('✨ Export Ready', `
@@ -168,40 +147,33 @@
         </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-        <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy JSON</button>
-        <button id="n18-dl-json" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 JSON</button>
+        <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy Text</button>
+        <button id="n18-dl-txt" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 TXT File</button>
         <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
-        <button id="n18-preview" style="background:#6c5ce7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">👁 Preview</button>
         <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
       </div>
-      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate this JSON with Google Translate. "Create EPUB" will auto-detect & use translated content.</div>
-      <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:11px;color:#00ff9d;white-space:pre-wrap;word-break:break-all;min-height:200px;border:1px solid #00ff9d22"></div>
+      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below with Google Translate. Markers will auto-sync. EPUB uses translated text.</div>
+      <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></div>
     `);
-    $('#n18-out').textContent = JSON.stringify(chapters, null, 2); $('#n18-out').dataset.mode='json';
-    $('#n18-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#n18-out').textContent);notify('✓ Copied');}catch{notify('❌ Copy failed','error');}};
-    $('#n18-dl-json').onclick=()=>dl(new Blob([$('#n18-out').textContent],{type:'application/json'}),`${slug(metadata.title)}_data.json`);
-    $('#n18-preview').onclick=togglePreview; $('#n18-epub').onclick=buildEPUB;
-  }
 
-  function togglePreview() {
-    const el=$('#n18-out');
-    if(el.dataset.mode==='json'){el.innerHTML=chapters.filter(c=>c.html).map(c=>`<div style="margin-bottom:20px;padding:16px;background:#16213e;border-radius:10px;border-left:4px solid #00ff9d"><h4 style="color:#00ff9d;margin:0 0 8px 0">#${c.page}: ${escapeHtml(c.title)}</h4><div style="color:#ccc;line-height:1.6;font-size:13px">${c.html}</div></div>`).join('<hr style="border-color:#00ff9d22">')||'<em style="color:#666">No content</em>';el.dataset.mode='preview';}
-    else{el.textContent=JSON.stringify(chapters,null,2);el.dataset.mode='json';}
+    // Generate plain text output
+    const textOut = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${stripHtml(c.html)}`).join('\n\n');
+    $('#n18-out').textContent = textOut;
+
+    $('#n18-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#n18-out').innerText);notify('✓ Copied');}catch{notify('❌ Copy failed','error');}};
+    $('#n18-dl-txt').onclick=()=>dl(new Blob([$('#n18-out').innerText],{type:'text/plain;charset=utf-8'}),`${slug(metadata.title)}_text.txt`);
+    $('#n18-epub').onclick=buildEPUB;
   }
-  const escapeHtml=s=>(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
   // === EPUB GENERATION ===
   async function buildEPUB() {
     const btn=$('#n18-epub');btn.disabled=true;btn.innerHTML='⏳ Packaging...';
     try{
       const {JSZip}=await loadJSZip(),zip=new JSZip();
-      const resolved = resolveChaptersData();
-      const data = resolved.data;
-      
-      // Update status UI
-      const statusEl = $('#n18-trans-status');
-      if(resolved.translated) { statusEl.textContent='🌐 Using Translated'; statusEl.style.color='#00ff9d'; }
-      else { statusEl.textContent='🌐 Using Original (Translation parse failed)'; statusEl.style.color='#fbbf24'; }
+      const data = resolveChaptersData();
+      const statusEl=$('#n18-trans-status');
+      statusEl.textContent = data!==chapters ? '🌐 Using Translated' : '🌐 Using Original';
+      statusEl.style.color = data!==chapters ? '#00ff9d' : '#fbbf24';
 
       const slugT=slug(metadata.title),uuid='urn:uuid:'+crypto.randomUUID(),now=new Date().toISOString().split('T')[0];
       const coverId=images.size>0?images.values().next().value.id:null;
@@ -218,15 +190,14 @@
       const valid=data.filter(c=>c.html);
       for(const ch of valid){
         let html=ch.html;
-        // Fix image paths
+        // Fix image paths if any slipped through
         for(const[orig,nw] of Object.entries(imgMap)){
           html=html.replace(new RegExp(`(src|data-src)=["']?${orig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}["']?`,'gi'),`$1="${nw}"`);
         }
-        // Sanitize for XML
         html=cleanHtmlForEpub(html);
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;}img{max-width:100%;height:auto;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
+<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
 <body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
       }
 
