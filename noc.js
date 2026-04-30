@@ -1,9 +1,3 @@
-/**
- * Novel18 Syosetu Chapter Exporter
- * Fetches multiple chapters and displays JSON in a centered modal
- * Usage: Load via bookmarklet on any novel18.syosetu.com chapter page
- */
-
 (function() {
   'use strict';
 
