@@ -1,8 +1,3 @@
-/**
- * Novel18 Syosetu → EPUB Exporter v3
- * Fixes: XML validation errors, auto-uses translated JSON, WebP images, cover support
- * Load via bookmarklet on novel18.syosetu.com
- */
 
 (function() {
   'use strict';
@@ -35,6 +30,40 @@
     document.addEventListener('keydown',function esc(e){if(e.key==='Escape'){modal.remove();document.removeEventListener('keydown',esc);}});
   }
 
+  // === ROBUST GOOGLE TRANSLATE JSON EXTRACTOR ===
+  function resolveChaptersData() {
+    const el = document.getElementById('n18-out');
+    if (!el) return { data: chapters, translated: false };
+    
+    // innerText strips HTML tags (including GT's <font> wrappers)
+    let raw = el.innerText || el.textContent;
+    raw = raw.trim();
+    
+    // Try 1: Direct parse
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed[0] && 'page' in parsed[0] && 'html' in parsed[0]) {
+        return { data: parsed, translated: true };
+      }
+    } catch(e) {}
+    
+    // Try 2: Clean GT spacing/artifacts around JSON syntax
+    let cleaned = raw
+      .replace(/\s+/g, ' ') // Normalize all whitespace
+      .replace(/\s*([[\]{}:,])\s*/g, '$1') // Remove spaces around brackets/commas
+      .replace(/"\s*:\s*"/g, '":"') // Fix broken string separators
+      .trim();
+      
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed) && parsed[0] && 'page' in parsed[0] && 'html' in parsed[0]) {
+        return { data: parsed, translated: true };
+      }
+    } catch(e) {}
+    
+    return { data: chapters, translated: false };
+  }
+
   // === HTML SANITIZER FOR EPUB ===
   function cleanHtmlForEpub(html) {
     if(!html) return '';
@@ -44,23 +73,22 @@
                 .replace(/<link\b[^>]*>/gi, '')
                 .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
     
-    // Fix nesting & structure via DOM
+    // Parse via DOM to auto-fix nesting
     const doc = new DOMParser().parseFromString(`<div xmlns="http://www.w3.org/1999/xhtml">${c}</div>`, 'text/html');
     
-    // Remove empty paragraphs that only contain <br> or whitespace
+    // Fix empty paragraphs
     doc.querySelectorAll('p').forEach(p => {
       const inner = p.innerHTML.trim();
       if(inner==='' || /^<br\s*\/?>$/.test(inner) || p.textContent.trim()==='') {
-        p.innerHTML = '<br/>'; // Keep valid XML structure
+        p.innerHTML = '<br/>';
       }
     });
 
     let cleaned = new XMLSerializer().serializeToString(doc.body.firstChild);
-    cleaned = cleaned.replace(/^<div[^>]*>|<\/div>$/g, ''); // Remove wrapper
+    cleaned = cleaned.replace(/^<div[^>]*>|<\/div>$/g, '');
     
-    // XML compliance: void elements must be self-closing
+    // XML void elements
     cleaned = cleaned.replace(/<(br|hr|img|input|link|meta|area|base|col|embed|source|track|wbr)([^>]*)(?<!\/)\s*>/gi, '<$1$2/>');
-    cleaned = cleaned.replace(/<br\s*\/?\s*>/g, '<br/>').replace(/<hr\s*\/?\s*>/g, '<hr/>');
     return cleaned;
   }
 
@@ -80,7 +108,7 @@
         </div>
         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px">
           <button type="button" onclick="document.getElementById('n18-modal').remove()" style="background:#444;color:#fff;border:none;padding:12px 24px;border-radius:8px;cursor:pointer">Cancel</button>
-          <button type="submit" style="background:#00ff9d;color:#000;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:700">🚀 Fetch & Translate</button>
+          <button type="submit" style="background:#00ff9d;color:#000;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-weight:700">🚀 Fetch Chapters</button>
         </div>
       </form>`);
     $('#n18-form').onsubmit = e => { e.preventDefault(); startProcess(); };
@@ -139,13 +167,14 @@
           <div><div style="font-size:1.5rem;font-weight:700;color:#a855f7">${imgCnt}</div><div style="font-size:12px;color:#888">Images</div></div>
         </div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
         <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy JSON</button>
         <button id="n18-dl-json" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 JSON</button>
-        <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB ${imgCnt>0?'(+Cover)':''}</button>
+        <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
         <button id="n18-preview" style="background:#6c5ce7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">👁 Preview</button>
+        <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
       </div>
-      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Tip: You can use Google Translate on this JSON. "Create EPUB" will automatically use the translated content.</div>
+      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate this JSON with Google Translate. "Create EPUB" will auto-detect & use translated content.</div>
       <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:11px;color:#00ff9d;white-space:pre-wrap;word-break:break-all;min-height:200px;border:1px solid #00ff9d22"></div>
     `);
     $('#n18-out').textContent = JSON.stringify(chapters, null, 2); $('#n18-out').dataset.mode='json';
@@ -161,27 +190,19 @@
   }
   const escapeHtml=s=>(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
-  // === RESOLVE DATA (Handles Google Translate) ===
-  function resolveChaptersData() {
-    const el=$('#n18-out'); if(!el)return chapters;
-    try{
-      const raw=el.textContent.trim();
-      if(raw.startsWith('[')&&raw.endsWith(']')){
-        const parsed=JSON.parse(raw);
-        if(Array.isArray(parsed)&&parsed[0]&&'page'in parsed[0]&&'html'in parsed[0]) return parsed;
-      }
-    }catch(e){}
-    return chapters;
-  }
-
   // === EPUB GENERATION ===
   async function buildEPUB() {
     const btn=$('#n18-epub');btn.disabled=true;btn.innerHTML='⏳ Packaging...';
     try{
-      const {JSZip}=await loadJSZip(),zip=new JSZip(),data=resolveChaptersData();
-      const isTranslated = data !== chapters;
-      if(isTranslated) notify('🌐 Using translated JSON for EPUB','success');
+      const {JSZip}=await loadJSZip(),zip=new JSZip();
+      const resolved = resolveChaptersData();
+      const data = resolved.data;
       
+      // Update status UI
+      const statusEl = $('#n18-trans-status');
+      if(resolved.translated) { statusEl.textContent='🌐 Using Translated'; statusEl.style.color='#00ff9d'; }
+      else { statusEl.textContent='🌐 Using Original (Translation parse failed)'; statusEl.style.color='#fbbf24'; }
+
       const slugT=slug(metadata.title),uuid='urn:uuid:'+crypto.randomUUID(),now=new Date().toISOString().split('T')[0];
       const coverId=images.size>0?images.values().next().value.id:null;
 
