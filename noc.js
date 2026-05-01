@@ -1,9 +1,4 @@
-/**
- * Novel18 Syosetu → EPUB Exporter v6.1
- * FIXED: Variable name typo in buildEPUB
- * Plain text extraction (no HTML), auto-newlines, image markers, translation-safe
- * Load via bookmarklet on novel18.syosetu.com
- */
+
 
 (function() {
   'use strict';
@@ -220,7 +215,7 @@
         <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
       </div>
       <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below. Images are marked as %%IMG:url%%. EPUB uses translated text automatically.</div>
-       <textarea id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></textarea>
+       <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></div>
     `);
 
     // Generate plain text output with markers
