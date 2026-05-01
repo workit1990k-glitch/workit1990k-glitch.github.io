@@ -197,9 +197,11 @@
   async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
 
   // === RESULTS UI ===
-  // === RESULTS UI (Mobile-Optimized) ===
+// === RESULTS UI (Mobile-Optimized + Fixed) ===
 function showResults() {
-  const ok=chapters.filter(c=>!c.error&&c.html).length,fail=chapters.filter(c=>c.error).length,imgCnt=images.size;
+  const ok=chapters.filter(c=>!c.error&&c.html).length;
+  const fail=chapters.filter(c=>c.error).length;
+  const imgCnt=images.size;
   
   openModal('✨ Export Ready', `
     <div style="background:#0f0f1a;padding:16px;border-radius:10px;border:1px solid #00ff9d33;margin-bottom:16px">
@@ -218,13 +220,12 @@ function showResults() {
       <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
     </div>
     
-    <!-- Performance Warning -->
     <div id="n18-perf-warning" style="background:#fff3cd;color:#856404;padding:10px;border-radius:6px;margin-bottom:12px;font-size:12px;display:none">
-      ⚠️ Showing full text may freeze mobile devices. <button id="n18-hide-full" style="background:none;border:none;color:#0066cc;cursor:pointer;text-decoration:underline">Hide full text</button>
+      ⚠️ Showing full text may freeze mobile. <button id="n18-hide-full" style="background:none;border:none;color:#0066cc;cursor:pointer;text-decoration:underline">Hide</button>
     </div>
     
     <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">
-      💡 Translate the text below. Images: %%IMG:url%%. EPUB uses translated text automatically.
+      💡 Translate text below. Images: %%IMG:url%%. EPUB uses translated text.
     </div>
     
     <!-- Summary View (Default) -->
@@ -242,48 +243,73 @@ function showResults() {
 
   // Generate preview (first 3 chapters)
   const previewText = chapters.slice(0,3).map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html.substring(0,300)}...`).join('\n\n');
-  $('#n18-preview-content').textContent = previewText;
+  const previewEl = $('#n18-preview-content');
+  if(previewEl) previewEl.textContent = previewText;
 
-  // Generate full text (but don't render yet)
+  // Generate full text (lazy-load)
   const fullText = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html}`).join('\n\n');
 
-  // Event: Show Full Text
-  $('#n18-show-full').onclick = () => {
-    if(window.innerWidth < 768) {
-      if(!confirm('📱 Mobile detected: Showing full text may cause freezing. Continue?')) return;
-      $('#n18-perf-warning').style.display = 'block';
-    }
-    $('#n18-summary').style.display = 'none';
-    $('#n18-out').style.display = 'block';
-    $('#n18-out').value = fullText; // Use .value for textarea
-  };
+  // Show Full Text button
+  const showFullBtn = $('#n18-show-full');
+  if(showFullBtn) {
+    showFullBtn.onclick = () => {
+      if(window.innerWidth < 768) {
+        if(!confirm('📱 Mobile: Full text may freeze device. Continue?')) return;
+        const warn = $('#n18-perf-warning');
+        if(warn) warn.style.display = 'block';
+      }
+      const summary = $('#n18-summary');
+      const out = $('#n18-out');
+      if(summary) summary.style.display = 'none';
+      if(out) {
+        out.style.display = 'block';
+        out.value = fullText;
+      }
+    };
+  }
   
-  // Event: Hide Full Text (from warning)
-  $('#n18-hide-full')?.onclick = () => {
-    $('#n18-out').style.display = 'none';
-    $('#n18-summary').style.display = 'block';
-    $('#n18-perf-warning').style.display = 'none';
-  };
+  // Hide Full Text button (from warning)
+  const hideFullBtn = $('#n18-hide-full');
+  if(hideFullBtn) {
+    hideFullBtn.onclick = () => {
+      const out = $('#n18-out');
+      const summary = $('#n18-summary');
+      const warn = $('#n18-perf-warning');
+      if(out) out.style.display = 'none';
+      if(summary) summary.style.display = 'block';
+      if(warn) warn.style.display = 'none';
+    };
+  }
 
-  // Copy button (works for both views)
-  $('#n18-copy').onclick = async () => {
-    const text = $('#n18-out').style.display !== 'none' ? $('#n18-out').value : fullText;
-    try {
-      await navigator.clipboard.writeText(text);
-      notify('✓ Copied');
-    } catch {
-      notify('❌ Copy failed','error');
-    }
-  };
+  // Copy button
+  const copyBtn = $('#n18-copy');
+  if(copyBtn) {
+    copyBtn.onclick = async () => {
+      const out = $('#n18-out');
+      const text = (out && out.style.display !== 'none') ? out.value : fullText;
+      try {
+        await navigator.clipboard.writeText(text);
+        notify('✓ Copied');
+      } catch {
+        notify('❌ Copy failed','error');
+      }
+    };
+  }
   
   // Download button
-  $('#n18-dl-txt').onclick = () => {
-    const text = $('#n18-out').style.display !== 'none' ? $('#n18-out').value : fullText;
-    dl(new Blob([text],{type:'text/plain;charset=utf-8'}), `${slug(metadata.title)}_text.txt`);
-  };
+  const dlBtn = $('#n18-dl-txt');
+  if(dlBtn) {
+    dlBtn.onclick = () => {
+      const out = $('#n18-out');
+      const text = (out && out.style.display !== 'none') ? out.value : fullText;
+      dl(new Blob([text],{type:'text/plain;charset=utf-8'}), `${slug(metadata.title)}_text.txt`);
+    };
+  }
   
-  $('#n18-epub').onclick = buildEPUB;
-};
+  // EPUB button
+  const epubBtn = $('#n18-epub');
+  if(epubBtn) epubBtn.onclick = buildEPUB;
+}
 
   // === EPUB GENERATION ===
   async function buildEPUB() {
