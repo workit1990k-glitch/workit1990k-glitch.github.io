@@ -1,4 +1,9 @@
-
+/**
+ * Novel18 Syosetu → EPUB Exporter v6.1
+ * FIXED: Variable name typo in buildEPUB
+ * Plain text extraction (no HTML), auto-newlines, image markers, translation-safe
+ * Load via bookmarklet on novel18.syosetu.com
+ */
 
 (function() {
   'use strict';
@@ -197,119 +202,35 @@
   async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
 
   // === RESULTS UI ===
-// === RESULTS UI (Mobile-Optimized + Fixed) ===
-function showResults() {
-  const ok=chapters.filter(c=>!c.error&&c.html).length;
-  const fail=chapters.filter(c=>c.error).length;
-  const imgCnt=images.size;
-  
-  openModal('✨ Export Ready', `
-    <div style="background:#0f0f1a;padding:16px;border-radius:10px;border:1px solid #00ff9d33;margin-bottom:16px">
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center">
-        <div><div style="font-size:1.5rem;font-weight:700;color:#00ff9d">${chapters.length}</div><div style="font-size:12px;color:#888">Total</div></div>
-        <div><div style="font-size:1.5rem;font-weight:700;color:#4ade80">${ok}</div><div style="font-size:12px;color:#888">Success</div></div>
-        <div><div style="font-size:1.5rem;font-weight:700;color:#ff4757">${fail}</div><div style="font-size:12px;color:#888">Failed</div></div>
-        <div><div style="font-size:1.5rem;font-weight:700;color:#a855f7">${imgCnt}</div><div style="font-size:12px;color:#888">Images</div></div>
+  function showResults() {
+    const ok=chapters.filter(c=>!c.error&&c.html).length,fail=chapters.filter(c=>c.error).length,imgCnt=images.size;
+    openModal('✨ Export Ready', `
+      <div style="background:#0f0f1a;padding:16px;border-radius:10px;border:1px solid #00ff9d33;margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center">
+          <div><div style="font-size:1.5rem;font-weight:700;color:#00ff9d">${chapters.length}</div><div style="font-size:12px;color:#888">Total</div></div>
+          <div><div style="font-size:1.5rem;font-weight:700;color:#4ade80">${ok}</div><div style="font-size:12px;color:#888">Success</div></div>
+          <div><div style="font-size:1.5rem;font-weight:700;color:#ff4757">${fail}</div><div style="font-size:12px;color:#888">Failed</div></div>
+          <div><div style="font-size:1.5rem;font-weight:700;color:#a855f7">${imgCnt}</div><div style="font-size:12px;color:#888">Images</div></div>
+        </div>
       </div>
-    </div>
-    
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-      <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy Text</button>
-      <button id="n18-dl-txt" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 TXT File</button>
-      <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
-      <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
-    </div>
-    
-    <div id="n18-perf-warning" style="background:#fff3cd;color:#856404;padding:10px;border-radius:6px;margin-bottom:12px;font-size:12px;display:none">
-      ⚠️ Showing full text may freeze mobile. <button id="n18-hide-full" style="background:none;border:none;color:#0066cc;cursor:pointer;text-decoration:underline">Hide</button>
-    </div>
-    
-    <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">
-      💡 Translate text below. Images: %%IMG:url%%. EPUB uses translated text.
-    </div>
-    
-    <!-- Summary View (Default) -->
-    <div id="n18-summary" style="background:#0f0f1a;padding:16px;border-radius:10px;margin-bottom:12px">
-      <h4 style="color:#00ff9d;margin:0 0 12px 0">📋 Preview (First 3 Chapters)</h4>
-      <div id="n18-preview-content" style="font-family:monospace;font-size:12px;color:#00ff9d;white-space:pre-wrap;max-height:200px;overflow:auto"></div>
-      <button id="n18-show-full" style="margin-top:12px;background:#6c5ce7;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px">
-        ▶ Show Full Text (${chapters.length} chapters)
-      </button>
-    </div>
-    
-    <!-- Full Text View (Hidden by Default) -->
-    <textarea id="n18-out" style="display:none;width:100%;min-height:300px;background:#0f0f1a;color:#00ff9d;border:1px solid #00ff9d22;border-radius:10px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;content-visibility:auto;contain-intrinsic-size:0 1000px"></textarea>
-  `);
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+        <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy Text</button>
+        <button id="n18-dl-txt" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 TXT File</button>
+        <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
+        <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
+      </div>
+      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below. Images are marked as %%IMG:url%%. EPUB uses translated text automatically.</div>
+      <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></div>
+    `);
 
-  // Generate preview (first 3 chapters)
-  const previewText = chapters.slice(0,3).map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html.substring(0,300)}...`).join('\n\n');
-  const previewEl = $('#n18-preview-content');
-  if(previewEl) previewEl.textContent = previewText;
+    // Generate plain text output with markers
+    const textOut = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html}`).join('\n\n');
+    $('#n18-out').textContent = textOut;
 
-  // Generate full text (lazy-load)
-  const fullText = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html}`).join('\n\n');
-
-  // Show Full Text button
-  const showFullBtn = $('#n18-show-full');
-  if(showFullBtn) {
-    showFullBtn.onclick = () => {
-      if(window.innerWidth < 768) {
-        if(!confirm('📱 Mobile: Full text may freeze device. Continue?')) return;
-        const warn = $('#n18-perf-warning');
-        if(warn) warn.style.display = 'block';
-      }
-      const summary = $('#n18-summary');
-      const out = $('#n18-out');
-      if(summary) summary.style.display = 'none';
-      if(out) {
-        out.style.display = 'block';
-        out.value = fullText;
-      }
-    };
+    $('#n18-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#n18-out').innerText);notify('✓ Copied');}catch{notify('❌ Copy failed','error');}};
+    $('#n18-dl-txt').onclick=()=>dl(new Blob([$('#n18-out').innerText],{type:'text/plain;charset=utf-8'}),`${slug(metadata.title)}_text.txt`);
+    $('#n18-epub').onclick=buildEPUB;
   }
-  
-  // Hide Full Text button (from warning)
-  const hideFullBtn = $('#n18-hide-full');
-  if(hideFullBtn) {
-    hideFullBtn.onclick = () => {
-      const out = $('#n18-out');
-      const summary = $('#n18-summary');
-      const warn = $('#n18-perf-warning');
-      if(out) out.style.display = 'none';
-      if(summary) summary.style.display = 'block';
-      if(warn) warn.style.display = 'none';
-    };
-  }
-
-  // Copy button
-  const copyBtn = $('#n18-copy');
-  if(copyBtn) {
-    copyBtn.onclick = async () => {
-      const out = $('#n18-out');
-      const text = (out && out.style.display !== 'none') ? out.value : fullText;
-      try {
-        await navigator.clipboard.writeText(text);
-        notify('✓ Copied');
-      } catch {
-        notify('❌ Copy failed','error');
-      }
-    };
-  }
-  
-  // Download button
-  const dlBtn = $('#n18-dl-txt');
-  if(dlBtn) {
-    dlBtn.onclick = () => {
-      const out = $('#n18-out');
-      const text = (out && out.style.display !== 'none') ? out.value : fullText;
-      dl(new Blob([text],{type:'text/plain;charset=utf-8'}), `${slug(metadata.title)}_text.txt`);
-    };
-  }
-  
-  // EPUB button
-  const epubBtn = $('#n18-epub');
-  if(epubBtn) epubBtn.onclick = buildEPUB;
-}
 
   // === EPUB GENERATION ===
   async function buildEPUB() {
@@ -339,7 +260,7 @@ function showResults() {
         
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style></style></head>
+<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
 <body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
       }
 
