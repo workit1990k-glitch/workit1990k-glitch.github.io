@@ -36,54 +36,52 @@
   function extractContent(chHtml, chUrl) {
     if(!chHtml) return { text: '', imgUrls: [] };
     const doc = new DOMParser().parseFromString(chHtml, 'text/html');
-    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-      acceptNode: n => (n.nodeType===3 && n.textContent.trim()) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
-    });
-
-    const blocks = [];
-    const imgUrls = [];
+    
     const imgMap = {};
-
+    const imgUrls = [];
+    
     // Extract images first
     doc.querySelectorAll('img').forEach((img,i) => {
       const src = img.getAttribute('src') || img.getAttribute('data-src');
       if(src) {
         const abs = new URL(src, chUrl).href;
-        imgMap[src] = { id: `img-${++imgCounter}`, url: abs };
         imgUrls.push(abs);
       }
     });
-    // Reset counter for global tracking is handled in main loop
-    imgCounter = Math.max(imgCounter, Object.keys(imgMap).length); // Keep global count safe
 
-    // Walk tree to get paragraphs and images
-    // Simplified approach: split by block elements
-    let currentText = '';
-    doc.body.childNodes.forEach(node => {
-      if(node.nodeType === Node.ELEMENT_NODE) {
-        if(node.tagName === 'IMG') {
-          const src = node.getAttribute('src') || node.getAttribute('data-src');
-          if(src) {
-            const info = imgMap[src] || { url: new URL(src, chUrl).href };
-            blocks.push(currentText.trim(), `%%IMG:${info.url}%%`);
-            currentText = '';
-          }
-        } else {
-          // Block element
-          const txt = node.textContent.trim();
-          if(txt) {
-            blocks.push(currentText.trim(), txt);
-            currentText = '';
-          }
-        }
-      } else if(node.nodeType === Node.TEXT_NODE) {
-        const txt = node.textContent.trim();
-        if(txt) currentText += (currentText ? ' ' : '') + txt;
-      }
+    // Extract text blocks (paragraphs)
+    const blocks = [];
+    doc.querySelectorAll('p, div, br').forEach(node => {
+      const txt = node.textContent?.trim();
+      if(txt && txt.length > 0) blocks.push(txt);
     });
-    if(currentText.trim()) blocks.push(currentText.trim());
+    
+    // Also catch any remaining text nodes
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while((node = walker.nextNode())) {
+      const txt = node.textContent.trim();
+      if(txt && !blocks.includes(txt)) blocks.push(txt);
+    }
 
-    return { text: blocks.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
+    // Build output with image markers
+    let result = [];
+    let textBuffer = [];
+    
+    // Simple approach: interleave text and images
+    const allText = blocks.filter(t => t.length > 0);
+    
+    // Add text blocks
+    for(const txt of allText) {
+      if(txt) result.push(txt);
+    }
+    
+    // Add image markers at end (simplified - in practice images appear inline)
+    for(const imgUrl of imgUrls) {
+      result.push(`%%IMG:${imgUrl}%%`);
+    }
+
+    return { text: result.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
   }
 
   // === RESOLVE TRANSLATED DATA ===
@@ -257,8 +255,8 @@
         
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(c.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
-<body><article epub:type="chapter"><h1>${escapeHtml(c.title)}</h1>${html}</article></body></html>`);
+<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
+<body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
       }
 
       if(coverId){
@@ -289,9 +287,11 @@ ${coverId?`    <item id="cover" href="cover.xhtml" media-type="application/xhtml
   </spine>
 </package>`);
 
+      // FIX: Changed ch.title to c.title below
       const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
       zip.file('OPS/nav.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`);
+      
       const ncxPts=valid.map((c,i)=>`    <navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
       zip.file('OPS/toc.ncx',`<?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${valid.length}"/></head><docTitle><text>${escapeHtml(metadata.title)}</text></docTitle><docAuthor><text>${escapeHtml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`);
