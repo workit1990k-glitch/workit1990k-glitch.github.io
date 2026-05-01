@@ -257,8 +257,8 @@
         
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
-<body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
+<head><title>${escapeHtml(c.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
+<body><article epub:type="chapter"><h1>${escapeHtml(c.title)}</h1>${html}</article></body></html>`);
       }
 
       if(coverId){
@@ -289,7 +289,7 @@ ${coverId?`    <item id="cover" href="cover.xhtml" media-type="application/xhtml
   </spine>
 </package>`);
 
-      const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(ch.title)}</a></li>`).join('\n');
+      const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
       zip.file('OPS/nav.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`);
       const ncxPts=valid.map((c,i)=>`    <navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
