@@ -255,7 +255,7 @@
         
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
+<head><title>${escapeHtml(ch.title)}</title><style></style></head>
 <body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
       }
 
