@@ -1,8 +1,4 @@
-/**
- * Novel18 Syosetu → EPUB Exporter v5
- * Plain text output, translation-safe, WebP images, auto-cover, XML sanitization
- * Load via bookmarklet on novel18.syosetu.com
- */
+
 
 (function() {
   'use strict';
@@ -14,7 +10,6 @@
   const $ = (sel, ctx=document) => ctx?.querySelector(sel);
   const slug = s => (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'novel';
   const escapeHtml = s => (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const stripHtml = h => new DOMParser().parseFromString(h||'','text/html').body.textContent || '';
   const notify = (m,t='info') => {
     const d=document.createElement('div');d.textContent=m;
     d.style.cssText=`position:fixed;top:24px;left:50%;transform:translateX(-50%);background:${t==='error'?'#ff4757':t==='success'?'#00ff9d':'#4d7cff'};color:#fff;padding:12px 24px;border-radius:10px;z-index:9999999;font-weight:500;box-shadow:0 8px 25px rgba(0,0,0,0.3);transition:opacity .3s`;
@@ -37,7 +32,61 @@
     document.addEventListener('keydown',function esc(e){if(e.key==='Escape'){modal.remove();document.removeEventListener('keydown',esc);}});
   }
 
-  // === TRANSLATION-SAFE PARSER ===
+  // === EXTRACT TEXT & IMAGES ===
+  function extractContent(chHtml, chUrl) {
+    if(!chHtml) return { text: '', imgUrls: [] };
+    const doc = new DOMParser().parseFromString(chHtml, 'text/html');
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.nodeType===3 && n.textContent.trim()) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+    });
+
+    const blocks = [];
+    const imgUrls = [];
+    const imgMap = {};
+
+    // Extract images first
+    doc.querySelectorAll('img').forEach((img,i) => {
+      const src = img.getAttribute('src') || img.getAttribute('data-src');
+      if(src) {
+        const abs = new URL(src, chUrl).href;
+        imgMap[src] = { id: `img-${++imgCounter}`, url: abs };
+        imgUrls.push(abs);
+      }
+    });
+    // Reset counter for global tracking is handled in main loop
+    imgCounter = Math.max(imgCounter, Object.keys(imgMap).length); // Keep global count safe
+
+    // Walk tree to get paragraphs and images
+    // Simplified approach: split by block elements
+    let currentText = '';
+    doc.body.childNodes.forEach(node => {
+      if(node.nodeType === Node.ELEMENT_NODE) {
+        if(node.tagName === 'IMG') {
+          const src = node.getAttribute('src') || node.getAttribute('data-src');
+          if(src) {
+            const info = imgMap[src] || { url: new URL(src, chUrl).href };
+            blocks.push(currentText.trim(), `%%IMG:${info.url}%%`);
+            currentText = '';
+          }
+        } else {
+          // Block element
+          const txt = node.textContent.trim();
+          if(txt) {
+            blocks.push(currentText.trim(), txt);
+            currentText = '';
+          }
+        }
+      } else if(node.nodeType === Node.TEXT_NODE) {
+        const txt = node.textContent.trim();
+        if(txt) currentText += (currentText ? ' ' : '') + txt;
+      }
+    });
+    if(currentText.trim()) blocks.push(currentText.trim());
+
+    return { text: blocks.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
+  }
+
+  // === RESOLVE TRANSLATED DATA ===
   function resolveChaptersData() {
     const el = document.getElementById('n18-out');
     if(!el) return chapters;
@@ -51,24 +100,26 @@
       const block = parts[i+1] || '';
       const lines = block.trim().split('\n');
       const title = lines[0]?.trim() || `Chapter ${pageNum}`;
-      const content = lines.slice(1).join('\n').trim();
-      // Wrap paragraphs in <p> for valid EPUB XHTML
-      const html = content.split(/\n\n+/).map(p => `<p>${escapeHtml(p.trim())}</p>`).filter(Boolean).join('');
+      const contentLines = lines.slice(1);
+      
+      // Build HTML from translated text
+      let htmlParts = [];
+      contentLines.forEach(line => {
+        const trimmed = line.trim();
+        if(!trimmed) return;
+        // Check for image marker (Google Translate might add spaces)
+        const imgMatch = trimmed.match(/%%\s*IMG:\s*(.*?)\s*%%/);
+        if(imgMatch) {
+          htmlParts.push(`<img src="${escapeHtml(imgMatch[1])}" alt="image"/>`);
+        } else {
+          htmlParts.push(`<p>${escapeHtml(trimmed)}</p>`);
+        }
+      });
+
       const orig = chapters.find(c=>c.page===pageNum);
-      newData.push({page:pageNum, title, html, url:orig?.url||''});
+      newData.push({page:pageNum, title, html:htmlParts.join('\n'), url:orig?.url||''});
     }
     return newData.length>0 ? newData : chapters;
-  }
-
-  // === HTML SANITIZER (for safety) ===
-  function cleanHtmlForEpub(html) {
-    if(!html) return '';
-    const doc = new DOMParser().parseFromString(`<div xmlns="http://www.w3.org/1999/xhtml">${html}</div>`, 'text/html');
-    doc.querySelectorAll('p').forEach(p => {
-      if(p.innerHTML.trim()==='' || p.textContent.trim()==='') p.innerHTML = '<br/>';
-    });
-    let cleaned = new XMLSerializer().serializeToString(doc.body.firstChild).replace(/^<div[^>]*>|<\/div>$/g,'');
-    return cleaned.replace(/<(br|hr|img|input|link|meta|area|base|col|embed|source|track|wbr)([^>]*)(?<!\/)\s*>/gi, '<$1$2/>');
   }
 
   // === INPUT FORM ===
@@ -104,6 +155,8 @@
     openModal('⏳ Fetching', `<div style="text-align:center;padding:40px 0"><div style="font-size:2rem;margin-bottom:16px">🔄</div><div id="p-status">Starting...</div><progress id="p-bar" value="0" max="100" style="width:100%;height:8px;margin:16px 0"></progress><div id="p-stats" style="color:#888;font-size:13px"></div></div>`);
 
     const total = metadata.end - metadata.start + 1;
+    let globalImgCounter = 0;
+
     for(let i=metadata.start;i<=metadata.end;i++){
       const url=`${CONFIG.baseURL}${i}/`;
       $('#p-status').textContent=`Page ${i-metadata.start+1}/${total}`;
@@ -111,20 +164,31 @@
       try{
         const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
         const html=await res.text(),doc=new DOMParser().parseFromString(html,'text/html');
-        chapters.push({page:i,title:doc.querySelector(CONFIG.selectors.title)?.textContent?.trim()||`Ch ${i}`,html:doc.querySelector(CONFIG.selectors.content)?.innerHTML||'',url});
-      }catch(e){chapters.push({page:i,title:`Ch ${i}`,html:'',url,error:e.message});}
+        const title = doc.querySelector(CONFIG.selectors.title)?.textContent?.trim()||`Ch ${i}`;
+        const contentHtml = doc.querySelector(CONFIG.selectors.content)?.innerHTML||'';
+        
+        // Extract plain text & images
+        const extracted = extractContent(contentHtml, url);
+        chapters.push({page:i,title,html:extracted.text,imgUrls:extracted.imgUrls,url,error:null});
+      }catch(e){chapters.push({page:i,title:`Ch ${i}`,html:'',imgUrls:[],url,error:e.message});}
       await new Promise(r=>setTimeout(r,CONFIG.delayMs));
     }
 
     // Extract & Convert Images
-    $('#p-status').textContent='Extracting images...';
-    const urls=new Set();
-    for(const c of chapters) if(c.html) { const d=new DOMParser().parseFromString(c.html,'text/html'); d.querySelectorAll('img').forEach(img=>{const s=img.getAttribute('src')||img.getAttribute('data-src');if(s)urls.add(new URL(s,c.url).href);}); }
-    const arr=Array.from(urls);
+    const allUrls = new Set();
+    for(const c of chapters) if(c.imgUrls) c.imgUrls.forEach(u=>allUrls.add(u));
+    const arr=Array.from(allUrls);
+    
     if(arr.length>0){
       $('#p-status').textContent=`Converting ${arr.length} image(s) to WebP...`;$('#p-stats').textContent=`0/${arr.length}`;
       for(let i=0;i<arr.length;i++){
-        try{const res=await fetch(arr[i]);if(!res.ok)continue;const blob=await res.blob(),wb=await toWebP(blob,CONFIG.imgQuality);imgCounter++;images.set(arr[i],{id:`img-${String(imgCounter).padStart(3,'0')}`,blob:wb,isCover:imgCounter===1});}catch(e){}
+        try{
+          const res=await fetch(arr[i]);if(!res.ok)continue;
+          const blob=await res.blob(),wb=await toWebP(blob,CONFIG.imgQuality);
+          globalImgCounter++;
+          const id=`img-${String(globalImgCounter).padStart(3,'0')}`;
+          images.set(arr[i],{id,blob:wb,isCover:globalImgCounter===1});
+        }catch(e){}
         $('#p-bar').value=50+((i+1)/arr.length)*50;$('#p-stats').textContent=`${i+1}/${arr.length}`;
       }
     }
@@ -134,7 +198,7 @@
 
   async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
 
-  // === RESULTS UI (PLAIN TEXT) ===
+  // === RESULTS UI ===
   function showResults() {
     const ok=chapters.filter(c=>!c.error&&c.html).length,fail=chapters.filter(c=>c.error).length,imgCnt=images.size;
     openModal('✨ Export Ready', `
@@ -152,12 +216,12 @@
         <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
         <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
       </div>
-      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below with Google Translate. Markers will auto-sync. EPUB uses translated text.</div>
+      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below. Images are marked as %%IMG:url%%. EPUB uses translated text automatically.</div>
       <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></div>
     `);
 
-    // Generate plain text output
-    const textOut = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${stripHtml(c.html)}`).join('\n\n');
+    // Generate plain text output with markers
+    const textOut = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html}`).join('\n\n');
     $('#n18-out').textContent = textOut;
 
     $('#n18-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#n18-out').innerText);notify('✓ Copied');}catch{notify('❌ Copy failed','error');}};
@@ -178,30 +242,25 @@
       const slugT=slug(metadata.title),uuid='urn:uuid:'+crypto.randomUUID(),now=new Date().toISOString().split('T')[0];
       const coverId=images.size>0?images.values().next().value.id:null;
 
-      // 1. mimetype
       zip.file('mimetype','application/epub+zip',{compression:'STORE'});
-      // 2. container
       zip.file('META-INF/container.xml',`<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
 
-      // Image map
-      const imgMap={};images.forEach((v,u)=>imgMap[u]=`images/${v.id}.webp`);
-
-      // 3. Chapters
       const valid=data.filter(c=>c.html);
       for(const ch of valid){
-        let html=ch.html;
-        // Fix image paths if any slipped through
-        for(const[orig,nw] of Object.entries(imgMap)){
-          html=html.replace(new RegExp(`(src|data-src)=["']?${orig.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}["']?`,'gi'),`$1="${nw}"`);
-        }
-        html=cleanHtmlForEpub(html);
+        // HTML is already wrapped in <p> and <img> by resolveChaptersData()
+        // We just need to swap URLs to local paths
+        let html = ch.html;
+        images.forEach((val, origUrl) => {
+          const escaped = origUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          html = html.replace(new RegExp(escaped, 'g'), `images/${val.id}.webp`);
+        });
+        
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
+<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.8;margin:2em;color:#333;}h1{color:#222;border-bottom:2px solid #00ff9d;padding-bottom:0.5em;}p{margin:1em 0;text-align:justify;text-indent:1.5em;}img{max-width:100%;height:auto;margin:1em 0;display:block;}@media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0ff}h1{color:#00ff9d}}</style></head>
 <body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
       }
 
-      // 4. Images & Cover
       if(coverId){
         zip.file(`OPS/images/${coverId}.webp`,images.get([...images.keys()][0]).blob,{base64:false});
         zip.file('OPS/cover.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
@@ -209,7 +268,6 @@
       }
       images.forEach(v=>{if(v.id!==coverId)zip.file(`OPS/images/${v.id}.webp`,v.blob,{base64:false});});
 
-      // 5. OPF
       const mImgs=Array.from(images.values()).map(v=>`    <item id="${v.id}" href="images/${v.id}.webp" media-type="image/webp"/>`).join('\n');
       const mChs=valid.map(c=>`    <item id="ch-${c.page}" href="ch-${c.page}.xhtml" media-type="application/xhtml+xml"/>`).join('\n');
       const sChs=valid.map(c=>`    <itemref idref="ch-${c.page}"/>`).join('\n');
@@ -231,8 +289,7 @@ ${coverId?`    <item id="cover" href="cover.xhtml" media-type="application/xhtml
   </spine>
 </package>`);
 
-      // 6. NAV & NCX
-      const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
+      const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(ch.title)}</a></li>`).join('\n');
       zip.file('OPS/nav.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`);
       const ncxPts=valid.map((c,i)=>`    <navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
