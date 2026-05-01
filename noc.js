@@ -283,7 +283,7 @@ function showResults() {
   };
   
   $('#n18-epub').onclick = buildEPUB;
-}
+};
 
   // === EPUB GENERATION ===
   async function buildEPUB() {
