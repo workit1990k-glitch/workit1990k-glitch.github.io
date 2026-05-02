@@ -11,7 +11,7 @@
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
-    previewPageSize: 5       // ← NEW: 5 chapters per preview page
+    previewPageSize: 10       // ← NEW: 5 chapters per preview page
   };
   
   let modal = null, metadata = {}, chapters = [], images = new Map(), imgCounter = 0;
