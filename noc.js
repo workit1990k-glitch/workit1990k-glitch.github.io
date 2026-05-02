@@ -1,20 +1,35 @@
-
-
 (function() {
   'use strict';
 
-  const CONFIG = { maxPages: 500, delayMs: 200, imgQuality: 0.75, selectors: { title: '.p-novel__title--rensai', content: '.p-novel__body' }, epubLang: 'ja' };
+  const CONFIG = { 
+    maxPages: 500, 
+    delayMs: 200, 
+    imgQuality: 0.75, 
+    parallelFetch: 3,        // ← NEW: 3 parallel requests
+    selectors: { 
+      title: '.p-novel__title--rensai', 
+      content: '.p-novel__body' 
+    }, 
+    epubLang: 'ja',
+    previewPageSize: 5       // ← NEW: 5 chapters per preview page
+  };
+  
   let modal = null, metadata = {}, chapters = [], images = new Map(), imgCounter = 0;
+  
+  // ← NEW: Pagination state
+  let previewPage = 0, translatedCache = new Map(); 
 
   // === UTILS ===
   const $ = (sel, ctx=document) => ctx?.querySelector(sel);
   const slug = s => (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'novel';
   const escapeHtml = s => (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  
   const notify = (m,t='info') => {
     const d=document.createElement('div');d.textContent=m;
     d.style.cssText=`position:fixed;top:24px;left:50%;transform:translateX(-50%);background:${t==='error'?'#ff4757':t==='success'?'#00ff9d':'#4d7cff'};color:#fff;padding:12px 24px;border-radius:10px;z-index:9999999;font-weight:500;box-shadow:0 8px 25px rgba(0,0,0,0.3);transition:opacity .3s`;
     document.body.appendChild(d);setTimeout(()=>{d.style.opacity='0';setTimeout(()=>d.remove(),300);},2500);
   };
+  
   const dl = (b,n) => { const u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u); };
 
   // === MODAL ===
@@ -37,87 +52,53 @@
     if(!chHtml) return { text: '', imgUrls: [] };
     const doc = new DOMParser().parseFromString(chHtml, 'text/html');
     
-    const imgMap = {};
     const imgUrls = [];
-    
-    // Extract images first
-    doc.querySelectorAll('img').forEach((img,i) => {
+    doc.querySelectorAll('img').forEach(img => {
       const src = img.getAttribute('src') || img.getAttribute('data-src');
-      if(src) {
-        const abs = new URL(src, chUrl).href;
-        imgUrls.push(abs);
-      }
+      if(src) imgUrls.push(new URL(src, chUrl).href);
     });
 
-    // Extract text blocks (paragraphs)
     const blocks = [];
-    doc.querySelectorAll('p, div, br').forEach(node => {
+    doc.querySelectorAll('p, div').forEach(node => {
       const txt = node.textContent?.trim();
       if(txt && txt.length > 0) blocks.push(txt);
     });
     
-    // Also catch any remaining text nodes
-    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null);
-    let node;
-    while((node = walker.nextNode())) {
-      const txt = node.textContent.trim();
-      if(txt && !blocks.includes(txt)) blocks.push(txt);
-    }
-
-    // Build output with image markers
-    let result = [];
-    let textBuffer = [];
-    
-    // Simple approach: interleave text and images
     const allText = blocks.filter(t => t.length > 0);
-    
-    // Add text blocks
-    for(const txt of allText) {
-      if(txt) result.push(txt);
-    }
-    
-    // Add image markers at end (simplified - in practice images appear inline)
-    for(const imgUrl of imgUrls) {
+    let result = [...allText];
+    for(const imgUrl of [...new Set(imgUrls)]) {
       result.push(`%%IMG:${imgUrl}%%`);
     }
 
     return { text: result.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
   }
 
-  // === RESOLVE TRANSLATED DATA ===
-  function resolveChaptersData() {
-    const el = document.getElementById('n18-out');
-    if(!el) return chapters;
-    const raw = el.innerText.trim();
-    const regex = /%%CH:(\d+)%%/g;
-    const parts = raw.split(regex);
+  // ← NEW: PARALLEL FETCH WITH CONCURRENCY CONTROL
+  async function fetchWithConcurrency(urls, concurrency) {
+    const results = [];
+    const executing = [];
     
-    const newData = [];
-    for(let i=1; i<parts.length; i+=2) {
-      const pageNum = parseInt(parts[i]);
-      const block = parts[i+1] || '';
-      const lines = block.trim().split('\n');
-      const title = lines[0]?.trim() || `Chapter ${pageNum}`;
-      const contentLines = lines.slice(1);
-      
-      // Build HTML from translated text
-      let htmlParts = [];
-      contentLines.forEach(line => {
-        const trimmed = line.trim();
-        if(!trimmed) return;
-        // Check for image marker (Google Translate might add spaces)
-        const imgMatch = trimmed.match(/%%\s*IMG:\s*(.*?)\s*%%/);
-        if(imgMatch) {
-          htmlParts.push(`<img src="${escapeHtml(imgMatch[1])}" alt="image"/>`);
-        } else {
-          htmlParts.push(`<p>${escapeHtml(trimmed)}</p>`);
+    for(const [idx, url] of urls.entries()) {
+      const promise = (async () => {
+        try {
+          const res = await fetch(url);
+          if(!res.ok) throw new Error(`HTTP ${res.status}`);
+          const html = await res.text();
+          return { idx, html, error: null };
+        } catch(e) {
+          return { idx, html: null, error: e.message };
         }
-      });
-
-      const orig = chapters.find(c=>c.page===pageNum);
-      newData.push({page:pageNum, title, html:htmlParts.join('\n'), url:orig?.url||''});
+      })();
+      
+      results[idx] = promise;
+      const exec = promise.then(() => executing.splice(executing.indexOf(exec), 1));
+      executing.push(exec);
+      
+      if(executing.length >= concurrency) {
+        await Promise.race(executing);
+      }
     }
-    return newData.length>0 ? newData : chapters;
+    return Promise.all(results);
   }
 
   // === INPUT FORM ===
@@ -144,138 +125,322 @@
     if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
   }
 
-  // === FETCH & PROCESS ===
+  // === FETCH & PROCESS (PARALLEL) ===
   async function startProcess() {
-    metadata = { title:$('#n18-title').value.trim(), author:$('#n18-author').value.trim()||'Unknown', desc:$('#n18-desc').value.trim(), tags:$('#n18-tags').value.split(',').map(t=>t.trim()).filter(Boolean), start:parseInt($('#n18-start').value)||1, end:parseInt($('#n18-end').value) };
+    metadata = { 
+      title:$('#n18-title').value.trim(), 
+      author:$('#n18-author').value.trim()||'Unknown', 
+      desc:$('#n18-desc').value.trim(), 
+      tags:$('#n18-tags').value.split(',').map(t=>t.trim()).filter(Boolean), 
+      start:parseInt($('#n18-start').value)||1, 
+      end:parseInt($('#n18-end').value) 
+    };
+    
     if(!metadata.title||!metadata.end||metadata.end<metadata.start){notify('⚠️ Invalid input','error');return;}
-    chapters=[];images=new Map();imgCounter=0;
+    
+    chapters=[]; images=new Map(); imgCounter=0; previewPage=0; translatedCache.clear();
 
-    openModal('⏳ Fetching', `<div style="text-align:center;padding:40px 0"><div style="font-size:2rem;margin-bottom:16px">🔄</div><div id="p-status">Starting...</div><progress id="p-bar" value="0" max="100" style="width:100%;height:8px;margin:16px 0"></progress><div id="p-stats" style="color:#888;font-size:13px"></div></div>`);
+    openModal('⏳ Fetching', `
+      <div style="text-align:center;padding:40px 0">
+        <div style="font-size:2rem;margin-bottom:16px">🔄</div>
+        <div id="p-status">Starting parallel fetch...</div>
+        <progress id="p-bar" value="0" max="100" style="width:100%;height:8px;margin:16px 0"></progress>
+        <div id="p-stats" style="color:#888;font-size:13px">Concurrency: ${CONFIG.parallelFetch}x</div>
+      </div>`);
 
     const total = metadata.end - metadata.start + 1;
-    let globalImgCounter = 0;
-
-    for(let i=metadata.start;i<=metadata.end;i++){
-      const url=`${CONFIG.baseURL}${i}/`;
-      $('#p-status').textContent=`Page ${i-metadata.start+1}/${total}`;
-      $('#p-bar').value=((i-metadata.start)/total)*100;
-      try{
-        const res=await fetch(url);if(!res.ok)throw new Error(`HTTP ${res.status}`);
-        const html=await res.text(),doc=new DOMParser().parseFromString(html,'text/html');
-        const title = doc.querySelector(CONFIG.selectors.title)?.textContent?.trim()||`Ch ${i}`;
-        const contentHtml = doc.querySelector(CONFIG.selectors.content)?.innerHTML||'';
-        
-        // Extract plain text & images
-        const extracted = extractContent(contentHtml, url);
-        chapters.push({page:i,title,html:extracted.text,imgUrls:extracted.imgUrls,url,error:null});
-      }catch(e){chapters.push({page:i,title:`Ch ${i}`,html:'',imgUrls:[],url,error:e.message});}
-      await new Promise(r=>setTimeout(r,CONFIG.delayMs));
+    const urls = [];
+    for(let i=metadata.start; i<=metadata.end; i++) {
+      urls.push({ page:i, url:`${CONFIG.baseURL}${i}/` });
     }
 
-    // Extract & Convert Images
+    // ← PARALLEL FETCH
+    const results = await fetchWithConcurrency(urls.map(u=>u.url), CONFIG.parallelFetch);
+    
+    for(let i=0; i<results.length; i++) {
+      const { idx, html, error } = results[i];
+      const { page, url } = urls[idx];
+      
+      $('#p-bar').value = (idx/total)*50;
+      $('#p-stats').textContent = `Fetched ${idx+1}/${total} • ${error?'❌':'✅'}`;
+      
+      if(error || !html) {
+        chapters.push({page,title:`Ch ${page}`,html:'',imgUrls:[],url,error});
+        continue;
+      }
+      
+      const doc = new DOMParser().parseFromString(html,'text/html');
+      const title = doc.querySelector(CONFIG.selectors.title)?.textContent?.trim()||`Ch ${page}`;
+      const contentHtml = doc.querySelector(CONFIG.selectors.content)?.innerHTML||'';
+      const extracted = extractContent(contentHtml, url);
+      
+      chapters.push({
+        page, title, 
+        html: extracted.text, 
+        imgUrls: extracted.imgUrls, 
+        url, 
+        error: null
+      });
+      
+      await new Promise(r=>setTimeout(r, CONFIG.delayMs/2)); // Reduced delay for parallel
+    }
+
+    // Image processing (keep sequential to avoid rate limits)
     const allUrls = new Set();
     for(const c of chapters) if(c.imgUrls) c.imgUrls.forEach(u=>allUrls.add(u));
-    const arr=Array.from(allUrls);
+    const arr = Array.from(allUrls);
     
     if(arr.length>0){
-      $('#p-status').textContent=`Converting ${arr.length} image(s) to WebP...`;$('#p-stats').textContent=`0/${arr.length}`;
+      $('#p-status').textContent=`Converting ${arr.length} image(s) to WebP...`;
       for(let i=0;i<arr.length;i++){
         try{
           const res=await fetch(arr[i]);if(!res.ok)continue;
           const blob=await res.blob(),wb=await toWebP(blob,CONFIG.imgQuality);
-          globalImgCounter++;
-          const id=`img-${String(globalImgCounter).padStart(3,'0')}`;
-          images.set(arr[i],{id,blob:wb,isCover:globalImgCounter===1});
+          imgCounter++;
+          const id=`img-${String(imgCounter).padStart(3,'0')}`;
+          images.set(arr[i],{id,blob:wb,isCover:imgCounter===1});
         }catch(e){}
-        $('#p-bar').value=50+((i+1)/arr.length)*50;$('#p-stats').textContent=`${i+1}/${arr.length}`;
+        $('#p-bar').value=50+((i+1)/arr.length)*50;
+        $('#p-stats').textContent=`Images: ${i+1}/${arr.length}`;
       }
     }
 
-    showResults();
+    showResults(); // ← Now shows paginated preview
   }
 
   async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
 
-  // === RESULTS UI ===
+  // ← NEW: PAGINATED PREVIEW + TRANSLATION WORKFLOW
   function showResults() {
-    const ok=chapters.filter(c=>!c.error&&c.html).length,fail=chapters.filter(c=>c.error).length,imgCnt=images.size;
+    const ok=chapters.filter(c=>!c.error&&c.html).length;
+    const totalPages = Math.ceil(chapters.length / CONFIG.previewPageSize);
+    
     openModal('✨ Export Ready', `
       <div style="background:#0f0f1a;padding:16px;border-radius:10px;border:1px solid #00ff9d33;margin-bottom:16px">
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center">
           <div><div style="font-size:1.5rem;font-weight:700;color:#00ff9d">${chapters.length}</div><div style="font-size:12px;color:#888">Total</div></div>
           <div><div style="font-size:1.5rem;font-weight:700;color:#4ade80">${ok}</div><div style="font-size:12px;color:#888">Success</div></div>
-          <div><div style="font-size:1.5rem;font-weight:700;color:#ff4757">${fail}</div><div style="font-size:12px;color:#888">Failed</div></div>
-          <div><div style="font-size:1.5rem;font-weight:700;color:#a855f7">${imgCnt}</div><div style="font-size:12px;color:#888">Images</div></div>
+          <div><div style="font-size:1.5rem;font-weight:700;color:#a855f7">${images.size}</div><div style="font-size:12px;color:#888">Images</div></div>
+          <div><div style="font-size:1.5rem;font-weight:700;color:#fbbf24">${translatedCache.size}</div><div style="font-size:12px;color:#888">Translated</div></div>
         </div>
       </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-        <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy Text</button>
+      
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+        <button id="n18-copy" style="background:#00ff9d;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">📋 Copy Page</button>
         <button id="n18-dl-txt" style="background:#4d7cff;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 TXT File</button>
         <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
-        <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Status: Original</span>
+        <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Page ${previewPage+1}/${totalPages}</span>
       </div>
-      <div style="background:#0f0f1a;padding:8px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#888">💡 Translate the text below. Images are marked as %%IMG:url%%. EPUB uses translated text automatically.</div>
-       <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:250px;border:1px solid #00ff9d22;cursor:text"></div>
+      
+      <div style="background:#0f0f1a;padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#888">
+        💡 <strong>Workflow:</strong> Translate the 5 chapters below with Google Translate → Paste back → Click "Next" → Repeat → Export EPUB (uses translated text)
+      </div>
+      
+      <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:300px;border:1px solid #00ff9d22;cursor:text"></div>
+      
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
+        <button id="n18-prev" ${previewPage===0?'disabled style="opacity:0.5"':''} style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer">⬅️ Prev</button>
+        <button id="n18-next" ${previewPage>=totalPages-1?'disabled style="opacity:0.5"':''} style="background:#00ff9d;color:#000;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Next ➡️</button>
+        <button id="n18-save-trans" style="background:#4d7cff;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer">💾 Save Translation</button>
+      </div>
     `);
 
-    // Generate plain text output with markers
-    const textOut = chapters.map(c => `%%CH:${c.page}%%\n${c.title}\n\n${c.html}`).join('\n\n');
-    $('#n18-out').textContent = textOut;
-
-    $('#n18-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('#n18-out').innerText);notify('✓ Copied');}catch{notify('❌ Copy failed','error');}};
-    $('#n18-dl-txt').onclick=()=>dl(new Blob([$('#n18-out').innerText],{type:'text/plain;charset=utf-8'}),`${slug(metadata.title)}_text.txt`);
+    renderPreviewPage();
+    
+    // Event listeners
+    $('#n18-copy').onclick=async()=>{
+      try{
+        await navigator.clipboard.writeText($('#n18-out').innerText);
+        notify('✓ Page copied');
+      }catch{notify('❌ Copy failed','error');}
+    };
+    
+    $('#n18-dl-txt').onclick=()=>{
+      const fullText = chapters.map(c => {
+        const translated = translatedCache.get(c.page);
+        return `%%CH:${c.page}%%\n${c.title}\n\n${translated || c.html}`;
+      }).join('\n\n');
+      dl(new Blob([fullText],{type:'text/plain;charset=utf-8'}),`${slug(metadata.title)}_full.txt`);
+    };
+    
     $('#n18-epub').onclick=buildEPUB;
+    
+    $('#n18-prev').onclick=()=>{
+      if(previewPage>0){previewPage--;renderPreviewPage();}
+    };
+    
+    $('#n18-next').onclick=()=>{
+      // Save current page translations before moving
+      saveCurrentPageTranslations();
+      if(previewPage < totalPages-1){previewPage++;renderPreviewPage();}
+    };
+    
+    $('#n18-save-trans').onclick=()=>{
+      saveCurrentPageTranslations();
+      notify('✓ Translations saved for this page');
+    };
   }
 
-  // === EPUB GENERATION ===
+  // ← Render only 5 chapters for current preview page
+  function renderPreviewPage() {
+    const start = previewPage * CONFIG.previewPageSize;
+    const end = Math.min(start + CONFIG.previewPageSize, chapters.length);
+    const pageChapters = chapters.slice(start, end);
+    
+    const textOut = pageChapters.map(c => {
+      // Use translated version if available, else original
+      const content = translatedCache.get(c.page) || c.html;
+      return `%%CH:${c.page}%%\n${c.title}\n\n${content}`;
+    }).join('\n\n');
+    
+    $('#n18-out').textContent = textOut;
+    $('#n18-trans-status').textContent = `🌐 Page ${previewPage+1}/${Math.ceil(chapters.length/CONFIG.previewPageSize)} • ${translatedCache.size} translated`;
+    
+    // Update button states
+    $('#n18-prev').disabled = previewPage===0;
+    $('#n18-prev').style.opacity = previewPage===0?'0.5':'1';
+    $('#n18-next').disabled = previewPage>=Math.ceil(chapters.length/CONFIG.previewPageSize)-1;
+    $('#n18-next').style.opacity = previewPage>=Math.ceil(chapters.length/CONFIG.previewPageSize)-1?'0.5':'1';
+  }
+
+  // ← Save translations from current preview page to cache
+  function saveCurrentPageTranslations() {
+    const start = previewPage * CONFIG.previewPageSize;
+    const end = Math.min(start + CONFIG.previewPageSize, chapters.length);
+    const pageChapters = chapters.slice(start, end);
+    
+    // Parse the textarea content to extract translated chapters
+    const raw = $('#n18-out').innerText.trim();
+    const regex = /%%CH:(\d+)%%/g;
+    let match;
+    
+    while((match = regex.exec(raw)) !== null) {
+      const pageNum = parseInt(match[1]);
+      const chapter = chapters.find(c => c.page === pageNum);
+      if(!chapter) continue;
+      
+      // Extract content for this chapter (from marker to next marker or end)
+      const nextMarker = raw.indexOf('%%CH:', match.index + match[0].length);
+      const content = raw.substring(
+        match.index + match[0].length, 
+        nextMarker === -1 ? raw.length : nextMarker
+      ).trim();
+      
+      // Parse title and body
+      const lines = content.split('\n');
+      const title = lines[0]?.trim() || chapter.title;
+      const bodyLines = lines.slice(1);
+      
+      // Rebuild HTML with image markers preserved
+      let htmlParts = [];
+      bodyLines.forEach(line => {
+        const trimmed = line.trim();
+        if(!trimmed) return;
+        const imgMatch = trimmed.match(/%%\s*IMG:\s*(.*?)\s*%%/);
+        if(imgMatch) {
+          htmlParts.push(`<img src="${escapeHtml(imgMatch[1])}" alt="image"/>`);
+        } else {
+          htmlParts.push(`<p>${escapeHtml(trimmed)}</p>`);
+        }
+      });
+      
+      translatedCache.set(pageNum, htmlParts.join('\n'));
+    }
+  }
+
+  // === EPUB GENERATION (USES TRANSLATED TEXT) ===
   async function buildEPUB() {
     const btn=$('#n18-epub');btn.disabled=true;btn.innerHTML='⏳ Packaging...';
+    
     try{
       const {JSZip}=await loadJSZip(),zip=new JSZip();
-      const data = resolveChaptersData();
-      const statusEl=$('#n18-trans-status');
-      statusEl.textContent = data!==chapters ? '🌐 Using Translated' : '🌐 Using Original';
-      statusEl.style.color = data!==chapters ? '#00ff9d' : '#fbbf24';
-
+      
+      // ← CRITICAL: Merge translated content into chapter data for EPUB
+      const epubChapters = chapters.map(c => ({
+        ...c,
+        html: translatedCache.get(c.page) || c.html  // Use translated if available
+      }));
+      
+      const valid = epubChapters.filter(c => c.html && !c.error);
       const slugT=slug(metadata.title),uuid='urn:uuid:'+crypto.randomUUID(),now=new Date().toISOString().split('T')[0];
       const coverId=images.size>0?images.values().next().value.id:null;
 
+      // Static EPUB files
       zip.file('mimetype','application/epub+zip',{compression:'STORE'});
       zip.file('META-INF/container.xml',`<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
 
-      const valid=data.filter(c=>c.html);
+      // Process chapters with image URL replacement
       for(const ch of valid){
-        // HTML is already wrapped in <p> and <img> by resolveChaptersData()
-        // We just need to swap URLs to local paths
         let html = ch.html;
-        images.forEach((val, origUrl) => {
-          const escaped = origUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          html = html.replace(new RegExp(escaped, 'g'), `images/${val.id}.webp`);
-        });
-        
-        zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style></style></head>
-<body><article epub:type="chapter"><h1>${escapeHtml(ch.title)}</h1>${html}</article></body></html>`);
+        for(const [origUrl, val] of images) {
+          if(html.includes(origUrl)) {
+            const re = new RegExp(origUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            html = html.replace(re, `images/${val.id}.webp`);
+          }
+        }
+        zip.file(`OPS/ch-${ch.page}.xhtml`, buildChapterXHTML(ch.title, html, CONFIG.epubLang));
       }
 
+      // Cover & images
       if(coverId){
-        zip.file(`OPS/images/${coverId}.webp`,images.get([...images.keys()][0]).blob,{base64:false});
-        zip.file('OPS/cover.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title><style>body{margin:0;text-align:center;background:#fff;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body><img src="images/${coverId}.webp" alt="Cover"/></body></html>`);
+        const firstImg = images.get([...images.keys()][0]);
+        zip.file(`OPS/images/${coverId}.webp`, firstImg.blob, {base64:false});
+        zip.file('OPS/cover.xhtml', buildCoverXHTML(coverId));
       }
-      images.forEach(v=>{if(v.id!==coverId)zip.file(`OPS/images/${v.id}.webp`,v.blob,{base64:false});});
+      for(const [url, val] of images){
+        if(val.id!==coverId) zip.file(`OPS/images/${val.id}.webp`, val.blob, {base64:false});
+      }
 
+      // Manifest & metadata
       const mImgs=Array.from(images.values()).map(v=>`    <item id="${v.id}" href="images/${v.id}.webp" media-type="image/webp"/>`).join('\n');
       const mChs=valid.map(c=>`    <item id="ch-${c.page}" href="ch-${c.page}.xhtml" media-type="application/xhtml+xml"/>`).join('\n');
       const sChs=valid.map(c=>`    <itemref idref="ch-${c.page}"/>`).join('\n');
       const tags=metadata.tags.map(t=>`<dc:subject>${escapeHtml(t)}</dc:subject>`).join('\n      ');
       const coverMeta=coverId?`<meta property="cover-image" id="cover-img" refines="#${coverId}"/>`:'';
-      zip.file('OPS/content.opf',`<?xml version="1.0" encoding="UTF-8"?>
+      
+      zip.file('OPS/content.opf', buildContentOpf(uuid, now, coverId, coverMeta, tags, mImgs, mChs, sChs));
+      zip.file('OPS/nav.xhtml', buildNavXHTML(valid));
+      zip.file('OPS/toc.ncx', buildTocNcx(uuid, valid));
+
+      const blob = await zip.generateAsync({
+        type:'blob',
+        mimeType:'application/epub+zip',
+        compression:'DEFLATE',
+        compressionOptions:{level:3},
+        streamFiles:true
+      });
+      
+      dl(blob, `${slugT}_${metadata.start}-${metadata.end}_translated.epub`);
+      notify(`✓ EPUB downloaded! (${valid.length} chapters, ${translatedCache.size} translated)`,'success');
+      
+    }catch(e){
+      console.error(e);
+      notify('❌ EPUB Error: '+e.message,'error');
+    }finally{
+      btn.disabled=false;
+      btn.innerHTML='📕 Create EPUB';
+    }
+  }
+
+  // Helper functions for EPUB XML generation
+  function buildChapterXHTML(title, content, lang) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${lang}">
+<head><title>${escapeHtml(title)}</title></head>
+<body><article epub:type="chapter"><h1>${escapeHtml(title)}</h1>${content}</article></body></html>`;
+  }
+  
+  function buildCoverXHTML(coverId) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title><style>body{margin:0;text-align:center;background:#fff;}img{max-width:100%;max-height:100vh;object-fit:contain;}</style></head><body><img src="images/${coverId}.webp" alt="Cover"/></body></html>`;
+  }
+  
+  function buildContentOpf(uuid, date, coverId, coverMeta, tags, mImgs, mChs, sChs) {
+    return `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uid">${uuid}</dc:identifier><dc:title>${escapeHtml(metadata.title)}</dc:title><dc:creator>${escapeHtml(metadata.author)}</dc:creator>
-    <dc:language>${CONFIG.epubLang}</dc:language><dc:date>${now}</dc:date>${metadata.desc?`<dc:description>${escapeHtml(metadata.desc)}</dc:description>`:''}
+    <dc:language>${CONFIG.epubLang}</dc:language><dc:date>${date}</dc:date>${metadata.desc?`<dc:description>${escapeHtml(metadata.desc)}</dc:description>`:''}
     ${tags}${coverMeta}<meta property="dcterms:modified">${new Date().toISOString()}</meta>
   </metadata>
   <manifest>
@@ -285,21 +450,19 @@ ${coverId?`    <item id="cover" href="cover.xhtml" media-type="application/xhtml
   </manifest>
   <spine toc="ncx">${coverId?'<itemref idref="cover"/>':''}${sChs}
   </spine>
-</package>`);
-
-      // FIX: Changed ch.title to c.title below
-      const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
-      zip.file('OPS/nav.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`);
-      
-      const ncxPts=valid.map((c,i)=>`    <navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
-      zip.file('OPS/toc.ncx',`<?xml version="1.0" encoding="UTF-8"?>
-<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${valid.length}"/></head><docTitle><text>${escapeHtml(metadata.title)}</text></docTitle><docAuthor><text>${escapeHtml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`);
-
-      dl(await zip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:6}}),`${slugT}_${metadata.start}-${metadata.end}.epub`);
-      notify('✓ EPUB downloaded!','success');
-    }catch(e){console.error(e);notify('❌ EPUB Error: '+e.message,'error');}
-    finally{btn.disabled=false;btn.innerHTML='📕 Create EPUB';}
+</package>`;
+  }
+  
+  function buildNavXHTML(valid) {
+    const navLs=valid.map(c=>`        <li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`;
+  }
+  
+  function buildTocNcx(uuid, valid) {
+    const ncxPts=valid.map((c,i)=>`    <navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${valid.length}"/></head><docTitle><text>${escapeHtml(metadata.title)}</text></docTitle><docAuthor><text>${escapeHtml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`;
   }
 
   async function loadJSZip(){if(window.JSZip)return{JSZip:window.JSZip};return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';s.onload=()=>res({JSZip:window.JSZip});s.onerror=()=>rej(new Error('JSZip load failed'));document.head.appendChild(s);});}
