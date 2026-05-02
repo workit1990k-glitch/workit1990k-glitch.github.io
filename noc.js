@@ -13,7 +13,13 @@
   // === UTILS ===
   const $ = (sel, ctx=document) => ctx?.querySelector(sel);
   const slug = s => (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'novel';
-  const escapeHtml = s => (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  
+  // 🔒 Robust XML/HTML Escaper (strips control chars, normalizes UTF-8, escapes entities)
+  const escapeXml = s => {
+    if (!s) return '';
+    let clean = s.normalize('NFC').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE-\uFFFF]/g, '');
+    return clean.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[m]));
+  };
   
   const notify = (m,t='info') => {
     const d=document.createElement('div');d.textContent=m;
@@ -30,7 +36,7 @@
     modal.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;z-index:2147483647;font-family:system-ui,sans-serif;';
     modal.innerHTML=`<div style="background:#1a1a2e;color:#e0e0ff;border-radius:16px;padding:24px;max-width:95vw;max-height:95vh;width:700px;display:flex;flex-direction:column;border:2px solid #00ff9d;box-shadow:0 20px 60px rgba(0,255,157,0.15);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #00ff9d33">
-        <h2 style="margin:0;color:#00ff9d">${title}</h2>
+        <h2 style="margin:0;color:#00ff9d">${escapeXml(title)}</h2>
         <button onclick="document.getElementById('n18-modal').remove()" style="background:none;border:none;color:#ff6b6b;font-size:28px;cursor:pointer">&times;</button>
       </div><div style="overflow-y:auto;flex:1;padding-right:8px">${html}</div></div>`;
     document.body.appendChild(modal);
@@ -58,7 +64,7 @@
     return { text: result.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
   }
 
-  // === PARALLEL FETCH WITH CONCURRENCY CONTROL ===
+  // === PARALLEL FETCH ===
   async function fetchWithConcurrency(urls, concurrency) {
     const results = [];
     const executing = [];
@@ -67,7 +73,9 @@
         try {
           const res = await fetch(url);
           if(!res.ok) throw new Error(`HTTP ${res.status}`);
-          const html = await res.text();
+          // 🔒 Guarantee valid UTF-8
+          const buf = await res.arrayBuffer();
+          const html = new TextDecoder('utf-8', {fatal: true}).decode(buf);
           return { idx, html, error: null };
         } catch(e) { return { idx, html: null, error: e.message }; }
       })();
@@ -113,13 +121,7 @@
     if(!metadata.title||!metadata.end||metadata.end<metadata.start){notify('⚠️ Invalid input','error');return;}
     chapters=[]; images=new Map(); imgCounter=0; previewPage=0; translatedCache.clear();
 
-    openModal('⏳ Fetching', `
-      <div style="text-align:center;padding:40px 0">
-        <div style="font-size:2rem;margin-bottom:16px">🔄</div>
-        <div id="p-status">Starting parallel fetch...</div>
-        <progress id="p-bar" value="0" max="100" style="width:100%;height:8px;margin:16px 0"></progress>
-        <div id="p-stats" style="color:#888;font-size:13px">Concurrency: ${CONFIG.parallelFetch}x</div>
-      </div>`);
+    openModal('⏳ Fetching', `<div style="text-align:center;padding:40px 0"><div style="font-size:2rem;margin-bottom:16px">🔄</div><div id="p-status">Starting parallel fetch...</div><progress id="p-bar" value="0" max="100" style="width:100%;height:8px;margin:16px 0"></progress><div id="p-stats" style="color:#888;font-size:13px">Concurrency: ${CONFIG.parallelFetch}x</div></div>`);
 
     const total = metadata.end - metadata.start + 1;
     const urls = [];
@@ -140,7 +142,6 @@
       await new Promise(r=>setTimeout(r, CONFIG.delayMs/2));
     }
 
-    // Image processing
     const allUrls = new Set();
     for(const c of chapters) if(c.imgUrls) c.imgUrls.forEach(u=>allUrls.add(u));
     const arr = Array.from(allUrls);
@@ -183,9 +184,7 @@
         <button id="n18-epub" style="background:#a855f7;color:#fff;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:700;box-shadow:0 4px 15px rgba(168,85,247,0.4)">📕 Create EPUB</button>
         <span id="n18-trans-status" style="margin-left:auto;font-size:12px;color:#888">🌐 Page ${previewPage+1}/${totalPages}</span>
       </div>
-      <div style="background:#0f0f1a;padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#888">
-        💡 <strong>Auto-Save Enabled:</strong> Translate → Click Next/Prev or wait 1.5s. EPUB uses all saved translations.
-      </div>
+      <div style="background:#0f0f1a;padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px;color:#888">💡 <strong>Auto-Save Enabled:</strong> Translate → Click Next/Prev or wait 1.5s. EPUB uses all saved translations.</div>
       <div id="n18-out" style="flex:1;overflow:auto;background:#0f0f1a;border-radius:10px;padding:16px;font-family:monospace;font-size:13px;color:#00ff9d;white-space:pre-wrap;word-break:break-word;min-height:300px;border:1px solid #00ff9d22;cursor:text;outline:none"></div>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
         <button id="n18-prev" disabled style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;opacity:0.5">⬅️ Prev</button>
@@ -245,21 +244,20 @@
       const lines = block.split('\n').filter(l => l.trim() !== '');
       if(lines.length === 0) continue;
 
-      // Strip status emoji (✅/🔄) from title line
       let titleLine = lines[0].replace(/^[✅🔄]\s*/,'').trim();
       if(!titleLine) titleLine = chapter.title;
       
       const bodyLines = lines.slice(1);
-      let htmlParts = [`<h2 style="text-align:center;margin-top:0;margin-bottom:1.5em;">${escapeHtml(titleLine)}</h2>`];
+      let htmlParts = [`<h2 style="text-align:center;margin-top:0;margin-bottom:1.5em;">${escapeXml(titleLine)}</h2>`];
       
       bodyLines.forEach(line => {
         const t = line.trim();
         if(!t) return;
         const imgMatch = t.match(/%%\s*IMG:\s*(.*?)\s*%%/);
         if(imgMatch) {
-          htmlParts.push(`<img src="${escapeHtml(imgMatch[1])}" alt="image" style="max-width:100%;height:auto;display:block;margin:1em auto;"/>`);
+          htmlParts.push(`<img src="${escapeXml(imgMatch[1])}" alt="image" style="max-width:100%;height:auto;display:block;margin:1em auto;"/>`);
         } else {
-          htmlParts.push(`<p style="text-indent:1em;margin:0.5em 0;">${escapeHtml(t)}</p>`);
+          htmlParts.push(`<p style="text-indent:1em;margin:0.5em 0;">${escapeXml(t)}</p>`);
         }
       });
       translatedCache.set(pageNum, htmlParts.join('\n'));
@@ -271,7 +269,7 @@
   async function buildEPUB() {
     const btn=$('#n18-epub');btn.disabled=true;btn.innerHTML='⏳ Packaging...';
     try{
-      saveCurrentPageTranslations(); // Final save
+      saveCurrentPageTranslations();
       const {JSZip}=await loadJSZip(),zip=new JSZip();
       
       const epubChapters = chapters.map(c => ({...c, html:translatedCache.get(c.page)||c.html})).filter(c=>c.html&&!c.error);
@@ -291,7 +289,7 @@
         }
         zip.file(`OPS/ch-${ch.page}.xhtml`,`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${CONFIG.epubLang}">
-<head><title>${escapeHtml(ch.title)}</title><style>body{font-family:serif;line-height:1.6;}img{max-width:100%;height:auto;}</style></head>
+<head><title>${escapeXml(ch.title)}</title><style>body{font-family:serif;line-height:1.6;}img{max-width:100%;height:auto;}</style></head>
 <body><article epub:type="chapter">${html}</article></body></html>`);
       }
 
@@ -306,31 +304,33 @@
       const mImgs=Array.from(images.values()).map(v=>`    <item id="${v.id}" href="images/${v.id}.webp" media-type="image/webp"/>`).join('\n');
       const mChs=epubChapters.map(c=>`    <item id="ch-${c.page}" href="ch-${c.page}.xhtml" media-type="application/xhtml+xml"/>`).join('\n');
       const sChs=epubChapters.map(c=>`    <itemref idref="ch-${c.page}"/>`).join('\n');
-      const tags=metadata.tags.map(t=>`<dc:subject>${escapeHtml(t)}</dc:subject>`).join('\n      ');
+      const tags=metadata.tags.map(t=>`<dc:subject>${escapeXml(t)}</dc:subject>`).join('\n      ');
       const coverMeta=coverId?`<meta property="cover-image" id="cover-img" refines="#${coverId}"/>`:'';
       
       zip.file('OPS/content.opf',`<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="uid">${uuid}</dc:identifier><dc:title>${escapeHtml(metadata.title)}</dc:title><dc:creator>${escapeHtml(metadata.author)}</dc:creator>
-    <dc:language>${CONFIG.epubLang}</dc:language><dc:date>${now}</dc:date>${metadata.desc?`<dc:description>${escapeHtml(metadata.desc)}</dc:description>`:''}
+    <dc:identifier id="uid">${uuid}</dc:identifier><dc:title>${escapeXml(metadata.title)}</dc:title><dc:creator>${escapeXml(metadata.author)}</dc:creator>
+    <dc:language>${CONFIG.epubLang}</dc:language><dc:date>${now}</dc:date>${metadata.desc?`<dc:description>${escapeXml(metadata.desc)}</dc:description>`:''}
     ${tags}${coverMeta}<meta property="dcterms:modified">${new Date().toISOString()}</meta>
   </metadata>
   <manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${coverId?`<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>`:''}${mImgs}${mChs}</manifest>
   <spine toc="ncx">${coverId?'<itemref idref="cover"/>':''}${sChs}</spine></package>`);
 
-      const navLs=epubChapters.map(c=>`<li><a href="ch-${c.page}.xhtml">${escapeHtml(c.title)}</a></li>`).join('\n');
+      const navLs=epubChapters.map(c=>`<li><a href="ch-${c.page}.xhtml">${escapeXml(c.title)}</a></li>`).join('\n');
       zip.file('OPS/nav.xhtml',`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>TOC</title><style>nav ol{list-style:none;padding:0}nav li{margin:0.5em 0}</style></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navLs}</ol></nav></body></html>`);
       
-      const ncxPts=epubChapters.map((c,i)=>`<navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeHtml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
+      const ncxPts=epubChapters.map((c,i)=>`<navPoint id="nav-${i+1}" playOrder="${i+1}"><navLabel><text>${escapeXml(c.title)}</text></navLabel><content src="ch-${c.page}.xhtml"/></navPoint>`).join('\n');
       zip.file('OPS/toc.ncx',`<?xml version="1.0" encoding="UTF-8"?>
-<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${epubChapters.length}"/></head><docTitle><text>${escapeHtml(metadata.title)}</text></docTitle><docAuthor><text>${escapeHtml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`);
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${epubChapters.length}"/></head><docTitle><text>${escapeXml(metadata.title)}</text></docTitle><docAuthor><text>${escapeXml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`);
 
       dl(await zip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:3},streamFiles:true}),`${slugT}_${metadata.start}-${metadata.end}.epub`);
       notify(`✓ EPUB downloaded! (${epubChapters.length} chapters, ${translatedCache.size} translated)`,'success');
-    }catch(e){console.error(e);notify('❌ EPUB Error: '+e.message,'error');}
-    finally{btn.disabled=false;btn.innerHTML='📕 Create EPUB';}
+    }catch(e){
+      console.error('EPUB Build Error:', e);
+      notify(`❌ XML Encoding Error: ${e.message}. Check console for details.`,'error');
+    }finally{btn.disabled=false;btn.innerHTML='📕 Create EPUB';}
   }
 
   async function loadJSZip(){if(window.JSZip)return{JSZip:window.JSZip};return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';s.onload=()=>res({JSZip:window.JSZip});s.onerror=()=>rej(new Error('JSZip load failed'));document.head.appendChild(s);});}
