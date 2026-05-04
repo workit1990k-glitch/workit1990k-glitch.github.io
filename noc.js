@@ -7,7 +7,7 @@
     imgQuality: 0.75, 
     parallelFetch: 3,
     selectors: { 
-      title: '#novel_color > div:nth-child(2) > h1', 
+      title: '.title', 
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
@@ -119,8 +119,8 @@
         </div>
       </form>`);
     $('#n18-form').onsubmit = e => { e.preventDefault(); startProcess(); };
-    const pt = $(CONFIG.selectors.title)?.textContent?.trim();
-    if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
+const pt = $(CONFIG.selectors.title)?.textContent?.trim();
+if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
   }
 
   // === FETCH & PROCESS (PARALLEL) ===
