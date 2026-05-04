@@ -2,7 +2,7 @@
   'use strict';
 
   const CONFIG = { 
-    maxPages: 500, 
+    maxPages: 1000, 
     delayMs: 200, 
     imgQuality: 0.75, 
     parallelFetch: 3,
@@ -11,7 +11,7 @@
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
-    previewPageSize: 10
+    previewPageSize: 100
   };
   
   let modal = null, metadata = {}, chapters = [], images = new Map(), imgCounter = 0;
