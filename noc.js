@@ -7,7 +7,7 @@
     imgQuality: 0.75, 
     parallelFetch: 3,
     selectors: { 
-      title: '.p-novel__title--rensai', 
+      title: '.p-novel__title', 
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
