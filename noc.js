@@ -5,18 +5,16 @@
     maxPages: 500, 
     delayMs: 200, 
     imgQuality: 0.75, 
-    parallelFetch: 3,        // ← NEW: 3 parallel requests
+    parallelFetch: 3,
     selectors: { 
       title: '.p-novel__title--rensai', 
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
-    previewPageSize: 10       // ← NEW: 5 chapters per preview page
+    previewPageSize: 10
   };
   
   let modal = null, metadata = {}, chapters = [], images = new Map(), imgCounter = 0;
-  
-  // ← NEW: Pagination state
   let previewPage = 0, translatedCache = new Map(); 
 
   // === UTILS ===
@@ -73,7 +71,7 @@
     return { text: result.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
   }
 
-  // ← NEW: PARALLEL FETCH WITH CONCURRENCY CONTROL
+  // === PARALLEL FETCH WITH CONCURRENCY CONTROL ===
   async function fetchWithConcurrency(urls, concurrency) {
     const results = [];
     const executing = [];
@@ -154,7 +152,7 @@
       urls.push({ page:i, url:`${CONFIG.baseURL}${i}/` });
     }
 
-    // ← PARALLEL FETCH
+    // PARALLEL FETCH
     const results = await fetchWithConcurrency(urls.map(u=>u.url), CONFIG.parallelFetch);
     
     for(let i=0; i<results.length; i++) {
@@ -182,10 +180,10 @@
         error: null
       });
       
-      await new Promise(r=>setTimeout(r, CONFIG.delayMs/2)); // Reduced delay for parallel
+      await new Promise(r=>setTimeout(r, CONFIG.delayMs/2));
     }
 
-    // Image processing (keep sequential to avoid rate limits)
+    // === Image processing WITH REFERER HEADER ===
     const allUrls = new Set();
     for(const c of chapters) if(c.imgUrls) c.imgUrls.forEach(u=>allUrls.add(u));
     const arr = Array.from(allUrls);
@@ -194,23 +192,61 @@
       $('#p-status').textContent=`Converting ${arr.length} image(s) to WebP...`;
       for(let i=0;i<arr.length;i++){
         try{
-          const res=await fetch(arr[i]);if(!res.ok)continue;
-          const blob=await res.blob(),wb=await toWebP(blob,CONFIG.imgQuality);
+          // ← NEW: Fetch with novel18.syosetu.com referrer
+          const blob = await fetchImageWithReferer(arr[i]);
+          const wb = await toWebP(blob, CONFIG.imgQuality);
           imgCounter++;
           const id=`img-${String(imgCounter).padStart(3,'0')}`;
           images.set(arr[i],{id,blob:wb,isCover:imgCounter===1});
-        }catch(e){}
+        }catch(e){
+          console.warn(`⚠️ Image failed: ${arr[i]}`, e.message);
+          // Continue processing other images instead of stopping
+        }
         $('#p-bar').value=50+((i+1)/arr.length)*50;
         $('#p-stats').textContent=`Images: ${i+1}/${arr.length}`;
       }
     }
 
-    showResults(); // ← Now shows paginated preview
+    showResults();
   }
 
-  async function toWebP(blob,q){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);c.toBlob(b=>{URL.revokeObjectURL(img.src);res(b);},'image/webp',q);};img.onerror=()=>{URL.revokeObjectURL(img.src);rej(new Error('Decode failed'));};img.src=URL.createObjectURL(blob);});}
+  // === NEW: Image fetch with Referer header for mitemin.net ===
+  async function fetchImageWithReferer(url) {
+    return fetch(url, {
+      referrer: 'https://novel18.syosetu.com/',
+      referrerPolicy: 'unsafe-url',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'force-cache'
+    }).then(async res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.blob();
+    });
+  }
 
-  // ← NEW: PAGINATED PREVIEW + TRANSLATION WORKFLOW
+  async function toWebP(blob,q){
+    return new Promise((res,rej)=>{
+      const img=new Image();
+      img.crossOrigin='anonymous';
+      img.onload=()=>{
+        const c=document.createElement('canvas');
+        c.width=img.naturalWidth;
+        c.height=img.naturalHeight;
+        c.getContext('2d').drawImage(img,0,0);
+        c.toBlob(b=>{
+          URL.revokeObjectURL(img.src);
+          res(b);
+        },'image/webp',q);
+      };
+      img.onerror=()=>{
+        URL.revokeObjectURL(img.src);
+        rej(new Error('Decode failed'));
+      };
+      img.src=URL.createObjectURL(blob);
+    });
+  }
+
+  // === PAGINATED PREVIEW + TRANSLATION WORKFLOW ===
   function showResults() {
     const ok=chapters.filter(c=>!c.error&&c.html).length;
     const totalPages = Math.ceil(chapters.length / CONFIG.previewPageSize);
@@ -246,7 +282,6 @@
 
     renderPreviewPage();
     
-    // Event listeners
     $('#n18-copy').onclick=async()=>{
       try{
         await navigator.clipboard.writeText($('#n18-out').innerText);
@@ -273,21 +308,14 @@
       saveCurrentPageTranslations();
       if(previewPage < totalPages-1){previewPage++;renderPreviewPage();}
     };
-    
-    $('#n18-save-trans').onclick=()=>{
-      saveCurrentPageTranslations();
-      notify('✓ Translations saved for this page');
-    };
   }
 
-  // ← Render only 5 chapters for current preview page
   function renderPreviewPage() {
     const start = previewPage * CONFIG.previewPageSize;
     const end = Math.min(start + CONFIG.previewPageSize, chapters.length);
     const pageChapters = chapters.slice(start, end);
     
     const textOut = pageChapters.map(c => {
-      // Use translated version if available, else original
       const content = translatedCache.get(c.page) || c.html;
       return `%%CH:${c.page}%%\n${c.title}\n\n${content}`;
     }).join('\n\n');
@@ -295,20 +323,17 @@
     $('#n18-out').textContent = textOut;
     $('#n18-trans-status').textContent = `🌐 Page ${previewPage+1}/${Math.ceil(chapters.length/CONFIG.previewPageSize)} • ${translatedCache.size} translated`;
     
-    // Update button states
     $('#n18-prev').disabled = previewPage===0;
     $('#n18-prev').style.opacity = previewPage===0?'0.5':'1';
     $('#n18-next').disabled = previewPage>=Math.ceil(chapters.length/CONFIG.previewPageSize)-1;
     $('#n18-next').style.opacity = previewPage>=Math.ceil(chapters.length/CONFIG.previewPageSize)-1?'0.5':'1';
   }
 
-  // ← Save translations from current preview page to cache
   function saveCurrentPageTranslations() {
     const start = previewPage * CONFIG.previewPageSize;
     const end = Math.min(start + CONFIG.previewPageSize, chapters.length);
     const pageChapters = chapters.slice(start, end);
     
-    // Parse the textarea content to extract translated chapters
     const raw = $('#n18-out').innerText.trim();
     const regex = /%%CH:(\d+)%%/g;
     let match;
@@ -318,19 +343,16 @@
       const chapter = chapters.find(c => c.page === pageNum);
       if(!chapter) continue;
       
-      // Extract content for this chapter (from marker to next marker or end)
       const nextMarker = raw.indexOf('%%CH:', match.index + match[0].length);
       const content = raw.substring(
         match.index + match[0].length, 
         nextMarker === -1 ? raw.length : nextMarker
       ).trim();
       
-      // Parse title and body
       const lines = content.split('\n');
       const title = lines[0]?.trim() || chapter.title;
       const bodyLines = lines.slice(1);
       
-      // Rebuild HTML with image markers preserved
       let htmlParts = [];
       bodyLines.forEach(line => {
         const trimmed = line.trim();
@@ -347,28 +369,25 @@
     }
   }
 
-  // === EPUB GENERATION (USES TRANSLATED TEXT) ===
+  // === EPUB GENERATION ===
   async function buildEPUB() {
     const btn=$('#n18-epub');btn.disabled=true;btn.innerHTML='⏳ Packaging...';
     
     try{
       const {JSZip}=await loadJSZip(),zip=new JSZip();
       
-      // ← CRITICAL: Merge translated content into chapter data for EPUB
       const epubChapters = chapters.map(c => ({
         ...c,
-        html: translatedCache.get(c.page) || c.html  // Use translated if available
+        html: translatedCache.get(c.page) || c.html
       }));
       
       const valid = epubChapters.filter(c => c.html && !c.error);
       const slugT=slug(metadata.title),uuid='urn:uuid:'+crypto.randomUUID(),now=new Date().toISOString().split('T')[0];
       const coverId=images.size>0?images.values().next().value.id:null;
 
-      // Static EPUB files
       zip.file('mimetype','application/epub+zip',{compression:'STORE'});
       zip.file('META-INF/container.xml',`<?xml version="1.0" encoding="UTF-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
 
-      // Process chapters with image URL replacement
       for(const ch of valid){
         let html = ch.html;
         for(const [origUrl, val] of images) {
@@ -380,7 +399,6 @@
         zip.file(`OPS/ch-${ch.page}.xhtml`, buildChapterXHTML(ch.title, html, CONFIG.epubLang));
       }
 
-      // Cover & images
       if(coverId){
         const firstImg = images.get([...images.keys()][0]);
         zip.file(`OPS/images/${coverId}.webp`, firstImg.blob, {base64:false});
@@ -390,7 +408,6 @@
         if(val.id!==coverId) zip.file(`OPS/images/${val.id}.webp`, val.blob, {base64:false});
       }
 
-      // Manifest & metadata
       const mImgs=Array.from(images.values()).map(v=>`    <item id="${v.id}" href="images/${v.id}.webp" media-type="image/webp"/>`).join('\n');
       const mChs=valid.map(c=>`    <item id="ch-${c.page}" href="ch-${c.page}.xhtml" media-type="application/xhtml+xml"/>`).join('\n');
       const sChs=valid.map(c=>`    <itemref idref="ch-${c.page}"/>`).join('\n');
@@ -421,7 +438,6 @@
     }
   }
 
-  // Helper functions for EPUB XML generation
   function buildChapterXHTML(title, content, lang) {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${lang}">
@@ -464,7 +480,16 @@ ${coverId?`    <item id="cover" href="cover.xhtml" media-type="application/xhtml
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="${valid.length}"/></head><docTitle><text>${escapeHtml(metadata.title)}</text></docTitle><docAuthor><text>${escapeHtml(metadata.author)}</text></docAuthor><navMap>${ncxPts}</navMap></ncx>`;
   }
 
-  async function loadJSZip(){if(window.JSZip)return{JSZip:window.JSZip};return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';s.onload=()=>res({JSZip:window.JSZip});s.onerror=()=>rej(new Error('JSZip load failed'));document.head.appendChild(s);});}
+  async function loadJSZip(){
+    if(window.JSZip)return{JSZip:window.JSZip};
+    return new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+      s.onload=()=>res({JSZip:window.JSZip});
+      s.onerror=()=>rej(new Error('JSZip load failed'));
+      document.head.appendChild(s);
+    });
+  }
 
   // === INIT ===
   const m=location.href.match(/(https:\/\/novel18\.syosetu\.com\/[a-z0-9]+\/)/i);
