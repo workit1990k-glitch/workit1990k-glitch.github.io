@@ -7,7 +7,7 @@
     imgQuality: 0.75, 
     parallelFetch: 3,
     selectors: { 
-      title: '.p-novel__title', 
+      title: '.p-novel__title, p-novel__subtitle-episode', 
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
@@ -49,26 +49,25 @@
   function extractContent(chHtml, chUrl) {
     if(!chHtml) return { text: '', imgUrls: [] };
     const doc = new DOMParser().parseFromString(chHtml, 'text/html');
-    
+    const container = doc.body;
     const imgUrls = [];
-    doc.querySelectorAll('img').forEach(img => {
-      const src = img.getAttribute('src') || img.getAttribute('data-src');
-      if(src) imgUrls.push(new URL(src, chUrl).href);
-    });
-
-    const blocks = [];
-    doc.querySelectorAll('p, div').forEach(node => {
-      const txt = node.textContent?.trim();
-      if(txt && txt.length > 0) blocks.push(txt);
-    });
     
-    const allText = blocks.filter(t => t.length > 0);
-    let result = [...allText];
-    for(const imgUrl of [...new Set(imgUrls)]) {
-      result.push(`%%IMG:${imgUrl}%%`);
-    }
+    // Replace each <img> with a text-node marker at its exact DOM position
+    container.querySelectorAll('img').forEach(img => {
+      const src = img.getAttribute('src') || img.getAttribute('data-src');
+      if(src) {
+        const url = new URL(src, chUrl).href;
+        imgUrls.push(url);
+        const marker = doc.createTextNode(`\n\n%%IMG:${url}%%\n\n`);
+        img.parentNode.replaceChild(marker, img);
+      }
+    });
 
-    return { text: result.filter(Boolean).join('\n\n'), imgUrls: [...new Set(imgUrls)] };
+    // innerText respects block layout, so paragraphs stay separated
+    let text = container.innerText || container.textContent || '';
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+
+    return { text, imgUrls: [...new Set(imgUrls)] };
   }
 
   // === PARALLEL FETCH WITH CONCURRENCY CONTROL ===
@@ -350,6 +349,7 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
       
       const lines = content.split('\n');
       const title = lines[0]?.trim() || chapter.title;
+      chapter.title = title;
       const bodyLines = lines.slice(1);
       
       let htmlParts = [];
