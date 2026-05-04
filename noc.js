@@ -275,6 +275,7 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
       <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">
         <button id="n18-prev" ${previewPage===0?'disabled style="opacity:0.5"':''} style="background:#444;color:#fff;border:none;padding:10px 20px;border-radius:8px;cursor:pointer">⬅️ Prev</button>
         <button id="n18-next" ${previewPage>=totalPages-1?'disabled style="opacity:0.5"':''} style="background:#00ff9d;color:#000;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600">Next ➡️</button>
+        <button id="n18-save" style="background:#f59e0b;color:#000;border:none;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:600">💾 Save</button>
       </div>
     `);
 
@@ -306,6 +307,7 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
       saveCurrentPageTranslations();
       if(previewPage < totalPages-1){previewPage++;renderPreviewPage();}
     };
+    $('#n18-save').onclick = () => { saveCurrentPageTranslations();};
   }
 
   function renderPreviewPage() {
