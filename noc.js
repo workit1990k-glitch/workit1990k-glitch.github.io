@@ -210,10 +210,9 @@
     showResults();
   }
 
-  // === NEW: Image fetch with Referer header for mitemin.net ===
   async function fetchImageWithReferer(url) {
     return fetch(url, {
-      referrer: 'https://novel18.syosetu.com/',
+      referrer: 'https://mitemin.net/',
       referrerPolicy: 'unsafe-url',
       mode: 'cors',
       credentials: 'omit',
