@@ -3,7 +3,7 @@
 
   const CONFIG = { 
     maxPages: 1000, 
-    delayMs: 200, 
+    delayMs: 0, 
     imgQuality: 0.75, 
     parallelFetch: 3,
     selectors: { 
@@ -11,7 +11,7 @@
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
-    previewPageSize: 100
+    previewPageSize: 10
   };
   
   let modal = null, metadata = {}, chapters = [], images = new Map(), imgCounter = 0;
