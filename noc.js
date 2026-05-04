@@ -7,7 +7,7 @@
     imgQuality: 0.75, 
     parallelFetch: 3,
     selectors: { 
-      title: 'document.title', 
+      title: '.title', 
       content: '.p-novel__body' 
     }, 
     epubLang: 'ja',
