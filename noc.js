@@ -439,12 +439,23 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
     }
   }
 
-  function buildChapterXHTML(title, content, lang) {
-    return `<?xml version="1.0" encoding="UTF-8"?>
+function buildChapterXHTML(title, content, lang) {
+  const fontCSS = `
+    <style>
+      body { 
+        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      }
+    </style>
+  `;
+  
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="${lang}">
-<head><title>${escapeHtml(title)}</title></head>
+<head>
+  <title>${escapeHtml(title)}</title>
+  ${fontCSS}
+</head>
 <body><article epub:type="chapter"><h1>${escapeHtml(title)}</h1>${content}</article></body></html>`;
-  }
+}
   
   function buildCoverXHTML(coverId) {
     return `<?xml version="1.0" encoding="UTF-8"?>
