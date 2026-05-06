@@ -6,6 +6,7 @@
     delayMs: 0, 
     imgQuality: 0.75, 
     parallelFetch: 3,
+    parallelImageConvert: 5,
     selectors: { 
       title: '.p-novel__title, .p-novel__subtitle-episode', 
       content: '.p-novel__body' 
@@ -187,24 +188,23 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
     for(const c of chapters) if(c.imgUrls) c.imgUrls.forEach(u=>allUrls.add(u));
     const arr = Array.from(allUrls);
     
-    if(arr.length>0){
-      $('#p-status').textContent=`Converting ${arr.length} image(s) to WebP...`;
-      for(let i=0;i<arr.length;i++){
-        try{
-          // ← NEW: Fetch with novel18.syosetu.com referrer
-          const blob = await fetchImageWithReferer(arr[i]);
-          const wb = await toWebP(blob, CONFIG.imgQuality);
-          imgCounter++;
-          const id=`img-${String(imgCounter).padStart(3,'0')}`;
-          images.set(arr[i],{id,blob:wb,isCover:imgCounter===1});
-        }catch(e){
-          console.warn(`⚠️ Image failed: ${arr[i]}`, e.message);
-          // Continue processing other images instead of stopping
-        }
-        $('#p-bar').value=50+((i+1)/arr.length)*50;
-        $('#p-stats').textContent=`Images: ${i+1}/${arr.length}`;
-      }
+// === NEW: Parallel Image Conversion ===
+if(arr.length > 0) {
+  $('#p-status').textContent = `Converting ${arr.length} image(s) to WebP...`;
+  
+  const results = await convertImagesParallel(arr, CONFIG.parallelImageConvert || 1);
+  
+  // Populate images Map with results
+  for(const {url, blob, error} of results) {
+    if(!error && blob) {
+      imgCounter++;
+      const id = `img-${String(imgCounter).padStart(3,'0')}`;
+      images.set(url, {id, blob, isCover: imgCounter === 1});
+    } else {
+      console.warn(`⚠️ Image failed: ${url}`, error);
     }
+  }
+}
 
     showResults();
   }
@@ -244,6 +244,44 @@ if(pt) $('#n18-title').value = pt.replace(/\s*[\-～~]\s*\d+$/, '').trim();
     });
   }
 
+// === PARALLEL IMAGE CONVERSION WITH CONCURRENCY CONTROL ===
+async function convertImagesParallel(urls, concurrency) {
+  const results = new Array(urls.length);
+  const executing = [];
+  
+  for(const [idx, url] of urls.entries()) {
+    const promise = (async () => {
+      try {
+        // Fetch with referer
+        const blob = await fetchImageWithReferer(url);
+        // Convert to WebP
+        const webpBlob = await toWebP(blob, CONFIG.imgQuality);
+        return { idx, url, blob: webpBlob, error: null };
+      } catch(e) {
+        return { idx, url, blob: null, error: e.message };
+      }
+    })();
+    
+    results[idx] = promise;
+    
+    // Concurrency control
+    const exec = promise.then(() => {
+      executing.splice(executing.indexOf(exec), 1);
+      // Update progress (optional, may cause flicker with high concurrency)
+      const completed = results.filter(r => r && r.status !== 'pending').length;
+      $('#p-stats').textContent = `Images: ${completed}/${urls.length}`;
+      $('#p-bar').value = 50 + (completed/urls.length)*50;
+    });
+    executing.push(exec);
+    
+    if(executing.length >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  
+  return Promise.all(results);
+}
+  
   // === PAGINATED PREVIEW + TRANSLATION WORKFLOW ===
   function showResults() {
     const ok=chapters.filter(c=>!c.error&&c.html).length;
