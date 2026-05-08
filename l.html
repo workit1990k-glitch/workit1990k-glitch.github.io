@@ -334,30 +334,72 @@
     saveToJsonBtn.onclick = saveJsonToGoogleDrive;
 
     // ==== CRAWLER LOGIC ====
-    function authorStoryLinks(doc) {
-      return [...doc.querySelectorAll('a[href*="https://www.literotica.com/s/"], a[href^="/s/"]')]
-        .map(a => {
-          let href = a.href;
-          if (href.startsWith('/s/')) href = 'https://www.literotica.com' + href;
-          href = href.split('?')[0].trim();
-          const title = a.textContent.trim() || a.title?.trim() || 'Untitled';
-          return { href, title };
-        })
-        .filter(item => isValidLiteroticaUrl(item.href));
-    }
+/* Extract ONLY links with href containing https://www.literotica.com/s/ */
+function authorStoryLinks(doc) {
+  return [...doc.querySelectorAll('a[href*="/s/"]')]
+    .map(a => {
+      // FIX: Use getAttribute for raw href value
+      let rawHref = a.getAttribute('href') || '';
+      
+      // Normalize to full literotica.com URL
+      let href;
+      if (rawHref.startsWith('https://www.literotica.com/s/')) {
+        href = rawHref.split('?')[0]; // strip query params
+      } else if (rawHref.startsWith('/s/')) {
+        href = 'https://www.literotica.com' + rawHref.split('?')[0];
+      } else {
+        return null; // skip non-matching links
+      }
+      
+      const title = a.textContent.trim() || a.getAttribute('title')?.trim() || 'Untitled';
+      return { href, title };
+    })
+    .filter(item => item && item.href && /^https:\/\/www\.literotica\.com\/s\//.test(item.href));
+}
 
-    function getPaginationUrls(doc, baseUrl) {
-      const pagination = doc.querySelector('div.panel.clearfix._pagination_nqq7s_1, .b-pager, [class*="pagination"]');
-      if (!pagination) return [baseUrl];
-      const pageLinks = [...pagination.querySelectorAll('a[href*="?page="]')].map(a => a.href).filter(h => h.includes('?page='));
-      if (!pageLinks.length) return [baseUrl];
-      const pages = pageLinks.map(href => {
-        try { const u = new URL(href); const p = parseInt(u.searchParams.get('page'),10); return {page:p, href: href.split('?')[0]+'?page='+p}; } catch { return null; }
-      }).filter(p => p && !isNaN(p.page)).sort((a,b)=>a.page-b.page);
-      const urls = [baseUrl];
-      for (const p of pages) if (p.page > 1 && !urls.includes(p.href)) urls.push(p.href);
-      return urls;
-    }
+/* Extract pagination URLs from class="panel clearfix _pagination_nqq7s_1" */
+function getPaginationUrls(doc, baseUrl) {
+  const pagination = doc.querySelector('div.panel.clearfix._pagination_nqq7s_1, .b-pager, [class*="pagination"]');
+  if (!pagination) return [baseUrl];
+  
+  const pageLinks = [...pagination.querySelectorAll('a[href*="?page="]')]
+    .map(a => {
+      // FIX: Use getAttribute to get raw href, then normalize to literotica.com
+      let rawHref = a.getAttribute('href') || a.href;
+      
+      // If it's a relative path starting with /s/, prepend the domain
+      if (rawHref.startsWith('/s/')) {
+        return 'https://www.literotica.com' + rawHref;
+      }
+      // If it's already a full literotica.com URL, return as-is
+      if (rawHref.startsWith('https://www.literotica.com/s/')) {
+        return rawHref.split('?')[0]; // strip any existing query to rebuild cleanly
+      }
+      // Fallback: return original (may still be wrong, but safest)
+      return rawHref;
+    })
+    .filter(h => h && h.includes('?page='));
+  
+  if (!pageLinks.length) return [baseUrl];
+  
+  // Extract page numbers and sort
+  const pages = pageLinks.map(href => {
+    try {
+      const url = new URL(href);
+      const page = parseInt(url.searchParams.get('page'), 10);
+      // Rebuild clean URL with proper domain
+      const cleanUrl = `https://www.literotica.com${url.pathname}?page=${page}`;
+      return { page, href: cleanUrl };
+    } catch { return null; }
+  }).filter(p => p && !isNaN(p.page)).sort((a,b) => a.page - b.page);
+  
+  // Return sorted URLs including base (page=1)
+  const urls = [baseUrl];
+  for (const p of pages) {
+    if (p.page > 1 && !urls.includes(p.href)) urls.push(p.href);
+  }
+  return urls;
+}
 
     async function processCompleteStory(url, chapterTitle) {
       try {
