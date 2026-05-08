@@ -80,10 +80,18 @@
       if (!unsafe) return '';
       return String(unsafe).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
     }
-    function escapeAttr(val) {
-      if (!val) return '';
-      return String(val).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
-    }
+  function escapeAttr(val) {
+  if (!val) return '';
+  return String(val)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .replace(/\t/g, '&#x9;')
+    .replace(/\n/g, '&#xA;')
+    .replace(/\r/g, '&#xD;');
+}
     function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
     
     // Validate URL is from literotica.com
@@ -233,19 +241,65 @@
         oebps.file('toc.ncx', this.generateNcx(metadata, chapterFiles));
         return await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
       }
-      escapeHtmlContent(html) {
-        if (!html) return '';
-        return html
-          .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;')
-          .replace(/<([^\/\s>!]+)([^>]*)>/g, (match, tag, attrs) => {
-            const t = tag.toLowerCase();
-            const selfClose = ['br','hr','img','input','meta','link','col','base','param','source','track','wbr'];
-            let attrStr = attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi, (m, sp, name, eq, q, val) => `${sp}${name.toLowerCase()}${eq}"${escapeAttr(val)}"`);
-            return selfClose.includes(t) ? `<${t}${attrStr} />` : `<${t}${attrStr}>`;
-          })
-          .replace(/<\/([^>]+)>/g, (m, tag) => `</${tag.toLowerCase()}>`)
-          .replace(/>([^<]+)</g, (m, txt) => `>${escapeXml(txt)}<`);
-      }
+// Escape HTML content for strict XHTML/EPUB (Lithium-compatible)
+escapeHtmlContent(html) {
+  if (!html) return '';
+  
+  // Step 1: Escape all raw text content (outside of tags)
+  // Split by tags, escape text between them, then rejoin
+  return html
+    // First, protect existing valid entities
+    .replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/g, '___ENTITY_PLACEHOLDER___$1;')
+    
+    // Escape bare ampersands that aren't part of entities
+    .replace(/&/g, '&amp;')
+    
+    // Restore protected entities
+    .replace(/___ENTITY_PLACEHOLDER___/g, '&')
+    
+    // Step 2: Process all HTML tags for XHTML compliance
+    .replace(/<([^\/\s>!]+)([^>]*)>(.*?)<\/\1>/gs, (match, tagName, attrs, content) => {
+      const tag = tagName.toLowerCase();
+      const escapedContent = content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+      const escapedAttrs = this.escapeAttributes(attrs);
+      return `<${tag}${escapedAttrs}>${escapedContent}</${tag}>`;
+    })
+    
+    // Handle self-closing tags
+    .replace(/<([^\/\s>!]+)([^>]*)\/?>/gs, (match, tagName, attrs) => {
+      const tag = tagName.toLowerCase();
+      const selfClose = ['br','hr','img','input','meta','link','col','base','param','source','track','wbr','area','embed','keygen','command'];
+      const escapedAttrs = this.escapeAttributes(attrs);
+      return selfClose.includes(tag) 
+        ? `<${tag}${escapedAttrs} />` 
+        : `<${tag}${escapedAttrs}></${tag}>`;
+    });
+}
+
+// Helper: Escape attribute string for XHTML
+escapeAttributes(attrString) {
+  if (!attrString || !attrString.trim()) return '';
+  
+  // Parse and escape each attribute individually
+  return attrString.replace(/([a-z-]+)(\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi, 
+    (match, name, eq, doubleVal, singleVal, bareVal) => {
+      const attrName = name.toLowerCase();
+      const rawVal = doubleVal || singleVal || bareVal || '';
+      // Escape XML entities in attribute value
+      const escapedVal = String(rawVal)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+      return ` ${attrName}="${escapedVal}"`;
+    });
+}
       generateOpf(meta, chapters) {
         const manifest = chapters.map(c => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`).join('\n    ');
         const spine = chapters.map(c => `<itemref idref="${c.id}"/>`).join('\n    ');
@@ -279,7 +333,7 @@
       if (!generatedEpubBlob) throw new Error('No EPUB');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(generatedEpubBlob);
-      const fname = novelData.metadata?.author ? `._${novelData.metadata.author}` : 'novel';
+      const fname = novelData.metadata?.author ? `${novelData.metadata.author}` : 'novel';
       a.download = `${fname.replace(/[^a-z0-9]/gi, '_')}.epub`;
       a.click(); URL.revokeObjectURL(a.href);
       log('EPUB download started');
