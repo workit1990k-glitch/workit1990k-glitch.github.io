@@ -55,49 +55,99 @@
     const statusText = document.getElementById('statusText');
     const editMetadataBtn = document.getElementById('editMetadataBtn');
     const fetchLitBtn = document.getElementById('fetchLitBtn');
+    
+    // ==== config ====
     const WORKER_URL = 'https://curly-pond-9050.yuush.workers.dev';
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 1000;
+    const REQUEST_DELAY_MS = 300; // Delay between requests to avoid rate limiting
 
     // ==== helpers ====
     function log(msg, color = '') {
       const el = document.createElement('div');
-      el.textContent = msg;
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
       if (color) { el.style.color = color; el.style.fontWeight = 'bold'; }
       consoleOutput.appendChild(el);
       consoleOutput.scrollTop = consoleOutput.scrollHeight;
+      console.log(msg);
     }
     function updateProgress(current, total) {
       const pct = Math.round((current / total) * 100);
       progressBar.value = pct;
       statusText.textContent = `Processing ${current}/${total} (${pct}%)`;
     }
-    // Strict XML/HTML escaping for Lithium compatibility
     function escapeXml(unsafe) {
       if (!unsafe) return '';
-      return String(unsafe)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
+      return String(unsafe).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
     }
-    // Escape attribute values in HTML
     function escapeAttr(val) {
       if (!val) return '';
       return String(val).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+    }
+    function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+    
+    // Validate URL is from literotica.com
+    function isValidLiteroticaUrl(url) {
+      try {
+        const u = new URL(url);
+        return u.hostname === 'www.literotica.com' || u.hostname === 'literotica.com';
+      } catch { return false; }
     }
 
     // ==== data store ====
     let novelData = { metadata: null, chapters: [] };
     let failedStories = []; 
 
-    // ==== fetch raw html via worker ====
-    async function fetchRawHTML(targetUrl) {
-      const res = await fetch(`${WORKER_URL}/api/raw?url=${encodeURIComponent(targetUrl)}`);
-      if (!res.ok) throw new Error(`raw fetch ${res.status}`);
-      return res.text();
+    // ==== fetch raw html via worker WITH RETRIES AND HEADERS ====
+    async function fetchRawHTML(targetUrl, retryCount = 0) {
+      // Validate URL to prevent redirect hijacking
+      if (!isValidLiteroticaUrl(targetUrl)) {
+        throw new Error(`Invalid domain: ${targetUrl}`);
+      }
+      
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        
+        const res = await fetch(`${WORKER_URL}/api/raw?url=${encodeURIComponent(targetUrl)}`, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.literotica.com/'
+          },
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        
+        if (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) {
+          if (retryCount < MAX_RETRIES) {
+            log(`⚠ Worker error ${res.status}, retrying ${retryCount+1}/${MAX_RETRIES}...`, 'orange');
+            await sleep(RETRY_DELAY_MS * (retryCount + 1)); // Exponential backoff
+            return fetchRawHTML(targetUrl, retryCount + 1);
+          }
+          throw new Error(`Worker failed after ${MAX_RETRIES} retries (status ${res.status})`);
+        }
+        if (!res.ok) throw new Error(`fetch ${res.status} ${res.statusText}`);
+        return res.text();
+      } catch (err) {
+        if (err.name === 'AbortError') throw new Error('Request timeout');
+        if (retryCount < MAX_RETRIES && (err.message.includes('500') || err.message.includes('network'))) {
+          log(`⚠ Network error, retrying ${retryCount+1}/${MAX_RETRIES}...`, 'orange');
+          await sleep(RETRY_DELAY_MS * (retryCount + 1));
+          return fetchRawHTML(targetUrl, retryCount + 1);
+        }
+        throw err;
+      }
     }
+
     async function getDoc(url) {
       const html = await fetchRawHTML(url);
+      // Verify the fetched content is from literotica
+      if (!html.includes('literotica') && !html.includes('Literotica')) {
+        log(`⚠ Fetched content may not be from Literotica: ${url}`, 'orange');
+      }
       return new DOMParser().parseFromString(html, 'text/html');
     }
 
@@ -155,302 +205,189 @@
       finally { saveToJsonBtn.disabled = false; }
     }
 
-    // ==== EPUB Generator (Lithium-compatible, strict XHTML) ====
+    // ==== EPUB Generator (Lithium-compatible) ====
     class EpubGenerator {
       constructor(data) { this.data = data; }
-      
       async generate(logFn) {
         const zip = new JSZip();
         const { metadata, chapters } = this.data;
         const safeTitle = (metadata.title || 'novel').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-        const epubFilename = `._${safeTitle}`; // EPUB name format: ._{author}
         
-        // mimetype (first, uncompressed)
         zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
-        
-        // META-INF/container.xml
         zip.file('META-INF/container.xml', `<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n  <rootfiles>\n    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>\n  </rootfiles>\n</container>`);
         
         const oebps = zip.folder('OEBPS');
         const chapterFiles = [];
         
-        // Generate well-formed XHTML chapters with escaped content
         for (let i = 0; i < chapters.length; i++) {
           const ch = chapters[i];
           const safeChTitle = (ch.title || `Chapter ${i+1}`).replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0,50);
           const filename = `chap_${String(i+1).padStart(3,'0')}_${safeChTitle}.xhtml`;
-          
-          // Escape ALL content for strict XHTML compliance (Lithium fix)
           const escapedTitle = escapeXml(ch.title);
           const escapedContent = this.escapeHtmlContent(ch.content);
-          
           const xhtml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">\n<head>\n  <title>${escapedTitle}</title>\n  <meta charset="UTF-8"/>\n</head>\n<body>\n  <h1>${escapedTitle}</h1>\n  <div class="chapter-content">\n${escapedContent}\n  </div>\n</body>\n</html>`;
-          
           oebps.file(filename, xhtml);
           chapterFiles.push({ id: `chap${i+1}`, href: filename, title: ch.title });
         }
-        
-        // content.opf
-        const opf = this.generateOpf(metadata, chapterFiles);
-        oebps.file('content.opf', opf);
-        
-        // toc.ncx
-        const ncx = this.generateNcx(metadata, chapterFiles);
-        oebps.file('toc.ncx', ncx);
-        
+        oebps.file('content.opf', this.generateOpf(metadata, chapterFiles));
+        oebps.file('toc.ncx', this.generateNcx(metadata, chapterFiles));
         return await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
       }
-      
-      // Escape HTML content while preserving structure for Lithium
       escapeHtmlContent(html) {
         if (!html) return '';
-        // First, escape all raw text that's not already in tags
         return html
-          // Escape ampersands that aren't part of entities
           .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;')
-          // Ensure all tags are properly closed and lowercase for XHTML
           .replace(/<([^\/\s>!]+)([^>]*)>/g, (match, tag, attrs) => {
             const t = tag.toLowerCase();
-            // Self-closing tags in XHTML
             const selfClose = ['br','hr','img','input','meta','link','col','base','param','source','track','wbr'];
-            let attrStr = attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi, 
-              (m, sp, name, eq, q, val) => `${sp}${name.toLowerCase()}${eq}"${escapeAttr(val)}"`);
-            if (selfClose.includes(t)) {
-              return `<${t}${attrStr} />`;
-            }
-            return `<${t}${attrStr}>`;
+            let attrStr = attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi, (m, sp, name, eq, q, val) => `${sp}${name.toLowerCase()}${eq}"${escapeAttr(val)}"`);
+            return selfClose.includes(t) ? `<${t}${attrStr} />` : `<${t}${attrStr}>`;
           })
-          // Close unclosed tags properly
           .replace(/<\/([^>]+)>/g, (m, tag) => `</${tag.toLowerCase()}>`)
-          // Ensure proper entity escaping in text nodes (simplified)
           .replace(/>([^<]+)</g, (m, txt) => `>${escapeXml(txt)}<`);
       }
-      
       generateOpf(meta, chapters) {
-        const manifest = chapters.map((c,i) => 
-          `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`
-        ).join('\n    ');
+        const manifest = chapters.map(c => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`).join('\n    ');
         const spine = chapters.map(c => `<itemref idref="${c.id}"/>`).join('\n    ');
-        const safeTitle = escapeXml(meta.title || 'Novel');
-        const safeAuthor = escapeXml(meta.author || 'Unknown');
-        const safeDesc = escapeXml(meta.description || '');
-        return `<?xml version="1.0" encoding="UTF-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="BookId">\n  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">\n    <dc:identifier id="BookId">urn:uuid:${this.uuid()}</dc:identifier>\n    <dc:title>${safeTitle}</dc:title>\n    <dc:creator opf:role="aut">${safeAuthor}</dc:creator>\n    <dc:language>en</dc:language>\n    <dc:description>${safeDesc}</dc:description>\n  </metadata>\n  <manifest>\n    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n    ${manifest}\n  </manifest>\n  <spine toc="ncx">\n    ${spine}\n  </spine>\n</package>`;
+        return `<?xml version="1.0" encoding="UTF-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="BookId">\n  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">\n    <dc:identifier id="BookId">urn:uuid:${this.uuid()}</dc:identifier>\n    <dc:title>${escapeXml(meta.title||'Novel')}</dc:title>\n    <dc:creator opf:role="aut">${escapeXml(meta.author||'Unknown')}</dc:creator>\n    <dc:language>en</dc:language>\n    <dc:description>${escapeXml(meta.description||'')}</dc:description>\n  </metadata>\n  <manifest>\n    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n    ${manifest}\n  </manifest>\n  <spine toc="ncx">\n    ${spine}\n  </spine>\n</package>`;
       }
-      
       generateNcx(meta, chapters) {
-        const navPoints = chapters.map((c,i) => 
-          `<navPoint id="${c.id}" playOrder="${i+1}">\n      <navLabel><text>${escapeXml(c.title)}</text></navLabel>\n      <content src="${c.href}"/>\n    </navPoint>`
-        ).join('\n    ');
+        const navPoints = chapters.map((c,i) => `<navPoint id="${c.id}" playOrder="${i+1}">\n      <navLabel><text>${escapeXml(c.title)}</text></navLabel>\n      <content src="${c.href}"/>\n    </navPoint>`).join('\n    ');
         return `<?xml version="1.0" encoding="UTF-8"?>\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n  <head>\n    <meta name="dtb:uid" content="urn:uuid:${this.uuid()}"/>\n    <meta name="dtb:depth" content="1"/>\n    <meta name="dtb:totalPageCount" content="0"/>\n    <meta name="dtb:maxPageNumber" content="0"/>\n  </head>\n  <docTitle><text>${escapeXml(meta.title||'Novel')}</text></docTitle>\n  <navMap>\n    ${navPoints}\n  </navMap>\n</ncx>`;
       }
-      
-      uuid() { 
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
-          const r=Math.random()*16|0, v=c=='x'?r:(r&0x3|0x8);
-          return v.toString(16);
-        }); 
-      }
+      uuid() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c=='x'?r:(r&0x3|0x8);return v.toString(16);}); }
     }
 
     let generatedEpubBlob = null;
-    const createEpubBtn = document.createElement('button');
-    createEpubBtn.textContent = 'Create EPUB'; createEpubBtn.disabled = true;
-    const downloadEpubBtn = document.createElement('button');
-    downloadEpubBtn.textContent = 'Download EPUB'; downloadEpubBtn.disabled = true;
-    const saveEpubBtn = document.createElement('button');
-    saveEpubBtn.textContent = 'Save EPUB'; saveEpubBtn.disabled = true;
-    document.querySelector('.container').appendChild(createEpubBtn);
-    document.querySelector('.container').appendChild(downloadEpubBtn);
-    document.querySelector('.container').appendChild(saveEpubBtn);
+    const createEpubBtn = Object.assign(document.createElement('button'), {textContent:'Create EPUB', disabled:true});
+    const downloadEpubBtn = Object.assign(document.createElement('button'), {textContent:'Download EPUB', disabled:true});
+    const saveEpubBtn = Object.assign(document.createElement('button'), {textContent:'Save EPUB', disabled:true});
+    document.querySelector('.container').append(createEpubBtn, downloadEpubBtn, saveEpubBtn);
 
     async function createEpub() {
-      if (!novelData.metadata?.title || !novelData.chapters?.length) throw new Error('No chapter data available');
+      if (!novelData.metadata?.title || !novelData.chapters?.length) throw new Error('No chapter data');
       try {
         createEpubBtn.disabled = true;
         log('Generating EPUB...');
-        const generator = new EpubGenerator(novelData);
-        generatedEpubBlob = await generator.generate(log);
-        log('✓ EPUB created successfully (Lithium-compatible)', 'green');
-        downloadEpubBtn.disabled = false;
-        saveEpubBtn.disabled = false;
-        return generatedEpubBlob;
-      } catch (err) {
-        log(`EPUB generation error: ${err.message}`, 'red');
-        throw err;
-      } finally { createEpubBtn.disabled = false; }
+        generatedEpubBlob = await new EpubGenerator(novelData).generate(log);
+        log('✓ EPUB created (Lithium-compatible)', 'green');
+        downloadEpubBtn.disabled = saveEpubBtn.disabled = false;
+      } catch (err) { log(`EPUB error: ${err.message}`, 'red'); throw err; }
+      finally { createEpubBtn.disabled = false; }
     }
-
     function downloadEpub() {
-      if (!generatedEpubBlob) throw new Error('No EPUB generated yet');
+      if (!generatedEpubBlob) throw new Error('No EPUB');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(generatedEpubBlob);
-      // EPUB filename: ._{author}
       const fname = novelData.metadata?.author ? `._${novelData.metadata.author}` : 'novel';
       a.download = `${fname.replace(/[^a-z0-9]/gi, '_')}.epub`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      log('EPUB download started.');
+      a.click(); URL.revokeObjectURL(a.href);
+      log('EPUB download started');
     }
-
     async function saveEpubToDrive() {
-      if (!generatedEpubBlob) throw new Error('No EPUB generated yet');
+      if (!generatedEpubBlob) throw new Error('No EPUB');
       try {
         saveEpubBtn.disabled = true;
-        log('Uploading EPUB to Google Drive...');
-        const formData = new FormData();
+        log('Uploading EPUB...');
+        const fd = new FormData();
         const fname = novelData.metadata?.author ? `._${novelData.metadata.author}` : 'novel';
-        formData.append('file', generatedEpubBlob, `${fname}.epub`);
-        formData.append('folder', '1_P5VjIMg8PTp6_4en8d23hngim4NXED6');
-        const response = await fetch(`${WORKER_URL}/api/saveEpubToGoogleDrive`, { method: 'POST', body: formData });
-        const result = await response.json();
-        if (!response.ok || !result.success) throw new Error(result.error || 'Upload failed');
-        log(`✓ Successfully saved EPUB to Google Drive`, 'green');
-        log(`File: ${result.webViewLink}`);
-        return result;
-      } catch (error) {
-        log(`Error: ${error.message}`, 'red');
-        throw error;
-      } finally { saveEpubBtn.disabled = false; }
+        fd.append('file', generatedEpubBlob, `${fname}.epub`);
+        fd.append('folder', '1_P5VjIMg8PTp6_4en8d23hngim4NXED6');
+        const res = await fetch(`${WORKER_URL}/api/saveEpubToGoogleDrive`, {method:'POST', body:fd});
+        const result = await res.json();
+        if (!res.ok || !result.success) throw new Error(result.error||'Upload failed');
+        log(`✓ EPUB saved: ${result.webViewLink}`, 'green');
+      } catch(e) { log(`Error: ${e.message}`, 'red'); throw e; }
+      finally { saveEpubBtn.disabled = false; }
     }
-
-    createEpubBtn.addEventListener('click', async () => { try { await createEpub(); } catch(e){console.error(e);} });
-    downloadEpubBtn.addEventListener('click', () => { try { downloadEpub(); } catch(e){log(`Download error: ${e.message}`);} });
-    saveEpubBtn.addEventListener('click', async () => { try { await saveEpubToDrive(); } catch(e){console.error(e);} });
+    createEpubBtn.onclick = async () => { try{await createEpub()}catch(e){console.error(e)} };
+    downloadEpubBtn.onclick = () => { try{downloadEpub()}catch(e){log(e.message)} };
+    saveEpubBtn.onclick = async () => { try{await saveEpubToDrive()}catch(e){console.error(e)} };
 
     // ==== Edit metadata ====
     function showEditMetadataForm() {
-      const metadata = novelData.metadata;
-      if (!metadata) return alert('No metadata available to edit');
-      const formHTML = `
-        <div id="metadataForm" style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999">
-          <form style="background:#fff;padding:25px;border-radius:8px;width:400px;max-width:90%">
-            <div class="form-group"><label>Title:</label><input type="text" name="title" value="${escapeAttr(metadata.title)}" required></div>
-            <div class="form-group"><label>Author:</label><input type="text" name="author" value="${escapeAttr(metadata.author||'')}"></div>
-            <div class="form-group"><label>Cover URL:</label><input type="text" name="cover" value="${escapeAttr(metadata.cover||'')}"></div>
-            <div class="form-group"><label>Status:</label><input type="text" name="status" value="${escapeAttr(metadata.status||'')}"></div>
-            <div class="form-group"><label>Source:</label><input type="text" name="source" value="${escapeAttr(metadata.source||'')}"></div>
-            <div class="form-group"><label>Description:</label><textarea name="description" rows="4">${escapeXml(metadata.description||'')}</textarea></div>
-            <button type="submit">Save</button>
-            <button type="button" id="cancelMeta">Cancel</button>
-          </form>
-        </div>`;
-      document.body.insertAdjacentHTML('beforeend', formHTML);
-      document.querySelector('#metadataForm form').addEventListener('submit', e => {
+      const m = novelData.metadata;
+      if (!m) return alert('No metadata');
+      const div = document.createElement('div');
+      div.id = 'metadataForm';
+      div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+      div.innerHTML = `<form style="background:#fff;padding:25px;border-radius:8px;width:400px;max-width:90%">
+        <div class="form-group"><label>Title:</label><input type="text" name="title" value="${escapeAttr(m.title)}" required></div>
+        <div class="form-group"><label>Author:</label><input type="text" name="author" value="${escapeAttr(m.author||'')}"></div>
+        <div class="form-group"><label>Cover:</label><input type="text" name="cover" value="${escapeAttr(m.cover||'')}"></div>
+        <div class="form-group"><label>Status:</label><input type="text" name="status" value="${escapeAttr(m.status||'')}"></div>
+        <div class="form-group"><label>Source:</label><input type="text" name="source" value="${escapeAttr(m.source||'')}"></div>
+        <div class="form-group"><label>Description:</label><textarea name="description" rows="4">${escapeXml(m.description||'')}</textarea></div>
+        <button type="submit">Save</button><button type="button" id="cancelMeta">Cancel</button></form>`;
+      document.body.appendChild(div);
+      div.querySelector('form').onsubmit = e => {
         e.preventDefault();
         const fd = new FormData(e.target);
-        novelData.metadata = {
-          title: fd.get('title'), author: fd.get('author'), cover: fd.get('cover'),
-          status: fd.get('status'), source: fd.get('source'), description: fd.get('description')
-        };
-        log('Metadata updated', 'green');
-        document.getElementById('metadataForm').remove();
-      });
-      document.getElementById('cancelMeta').onclick = () => document.getElementById('metadataForm').remove();
+        novelData.metadata = {title:fd.get('title'),author:fd.get('author'),cover:fd.get('cover'),status:fd.get('status'),source:fd.get('source'),description:fd.get('description')};
+        log('Metadata updated','green'); div.remove();
+      };
+      div.querySelector('#cancelMeta').onclick = () => div.remove();
     }
-    editMetadataBtn.addEventListener('click', showEditMetadataForm);
-    saveMetadataBtn.addEventListener('click', async () => { await saveMetadata(); });
-    downloadBtn.addEventListener('click', downloadJson);
-    saveToJsonBtn.addEventListener('click', saveJsonToGoogleDrive);
+    editMetadataBtn.onclick = showEditMetadataForm;
+    saveMetadataBtn.onclick = async () => { await saveMetadata(); };
+    downloadBtn.onclick = downloadJson;
+    saveToJsonBtn.onclick = saveJsonToGoogleDrive;
 
-    // ==== AUTHOR PAGE CRAWLER ====
-    
-    /* Extract ONLY links with href containing https://www.literotica.com/s/ */
+    // ==== CRAWLER LOGIC ====
     function authorStoryLinks(doc) {
       return [...doc.querySelectorAll('a[href*="https://www.literotica.com/s/"], a[href^="/s/"]')]
         .map(a => {
           let href = a.href;
           if (href.startsWith('/s/')) href = 'https://www.literotica.com' + href;
           href = href.split('?')[0].trim();
-          const title = a.textContent.trim() || a.getAttribute('title')?.trim() || 'Untitled';
+          const title = a.textContent.trim() || a.title?.trim() || 'Untitled';
           return { href, title };
         })
-        .filter(item => item.href && /^https:\/\/www\.literotica\.com\/s\//.test(item.href));
+        .filter(item => isValidLiteroticaUrl(item.href));
     }
 
-    /* Extract pagination URLs from class="panel clearfix _pagination_nqq7s_1" */
     function getPaginationUrls(doc, baseUrl) {
       const pagination = doc.querySelector('div.panel.clearfix._pagination_nqq7s_1, .b-pager, [class*="pagination"]');
       if (!pagination) return [baseUrl];
-      
-      const pageLinks = [...pagination.querySelectorAll('a[href*="?page="]')]
-        .map(a => a.href)
-        .filter(h => h.includes('?page='));
-      
+      const pageLinks = [...pagination.querySelectorAll('a[href*="?page="]')].map(a => a.href).filter(h => h.includes('?page='));
       if (!pageLinks.length) return [baseUrl];
-      
-      // Extract page numbers and sort
       const pages = pageLinks.map(href => {
-        try {
-          const url = new URL(href);
-          const page = parseInt(url.searchParams.get('page'), 10);
-          return { page, href: href.split('?')[0] + '?page=' + page };
-        } catch { return null; }
-      }).filter(p => p && !isNaN(p.page)).sort((a,b) => a.page - b.page);
-      
-      // Return sorted URLs including base (page=1)
+        try { const u = new URL(href); const p = parseInt(u.searchParams.get('page'),10); return {page:p, href: href.split('?')[0]+'?page='+p}; } catch { return null; }
+      }).filter(p => p && !isNaN(p.page)).sort((a,b)=>a.page-b.page);
       const urls = [baseUrl];
-      for (const p of pages) {
-        if (p.page > 1 && !urls.includes(p.href)) urls.push(p.href);
-      }
+      for (const p of pages) if (p.page > 1 && !urls.includes(p.href)) urls.push(p.href);
       return urls;
     }
 
-    /* Process a single story: fetch all paginated pages, combine content */
     async function processCompleteStory(url, chapterTitle) {
       try {
+        if (!isValidLiteroticaUrl(url)) throw new Error(`Invalid URL domain: ${url}`);
         const doc = await getDoc(url);
-        
-        // Get all page URLs using the specific pagination class
         const pageUrls = getPaginationUrls(doc, url);
-        
         let fullContent = '', title = chapterTitle, authorHtml = '', tags = '', info = '';
         
         for (let i = 0; i < pageUrls.length; i++) {
+          await sleep(REQUEST_DELAY_MS); // Rate limiting delay
           const pageDoc = await getDoc(pageUrls[i]);
           
           if (i === 0) {
-            // Extract metadata from first page only
             if (!title) title = pageDoc.querySelector('h1.j_bm, h1.story-title, h1')?.textContent.trim() || 'Untitled';
-            
             const authorA = pageDoc.querySelector('.clearfix.panel.y_eP a.y_eU, a[class*="author"], .author-link');
-            if (authorA) {
-              const authorName = escapeXml(authorA.textContent.trim());
-              const authorHref = escapeAttr(authorA.href);
-              authorHtml = `<p><strong>Author:</strong> <a href="${authorHref}">${authorName}</a></p>\n`;
-            }
-            
+            if (authorA) authorHtml = `<p><strong>Author:</strong> <a href="${escapeAttr(authorA.href)}">${escapeXml(authorA.textContent.trim())}</a></p>\n`;
             const tagLinks = pageDoc.querySelectorAll('.bn_Q a.av_as, .tags a, [class*="tag"] a');
-            if (tagLinks.length) {
-              const tagHtml = [...tagLinks].map(a => {
-                const t = escapeXml(a.textContent.trim());
-                const h = escapeAttr(a.href);
-                return `<a href="${h}">${t}</a>`;
-              }).join(', ');
-              tags = `<p><strong>Tags:</strong> ${tagHtml}</p>\n`;
-            }
-            
+            if (tagLinks.length) tags = `<p><strong>Tags:</strong> ${[...tagLinks].map(a=>`<a href="${escapeAttr(a.href)}">${escapeXml(a.textContent.trim())}</a>`).join(', ')}</p>\n`;
             const desc = pageDoc.querySelector('#tabpanel-info .bn_B, .story-description, .description');
             if (desc) info = `<p><em>${escapeXml(desc.textContent.trim())}</em></p>\n`;
           }
-          
-          // Extract content paragraphs - try multiple selectors
           const selectors = ['.panel.article p', '.story-content p', '.article-content p', 'article p', '.content p'];
           let pageContent = '';
           for (const sel of selectors) {
             const els = pageDoc.querySelectorAll(sel);
             if (els.length) {
               pageContent = [...els].map(p => {
-                // Escape the paragraph content properly for XHTML
-                const inner = p.innerHTML
-                  .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;')
-                  .replace(/<([^\/\s>!]+)([^>]*)>/g, (m, tag, attrs) => {
-                    const t = tag.toLowerCase();
-                    const selfClose = ['br','hr','img','input','meta','link','col','base','param','source','track','wbr'];
-                    let attrStr = attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi, 
-                      (mm, sp, name, eq, q, val) => `${sp}${name.toLowerCase()}${eq}"${escapeAttr(val)}"`);
-                    return selfClose.includes(t) ? `<${t}${attrStr} />` : `<${t}${attrStr}>`;
-                  })
-                  .replace(/<\/([^>]+)>/g, (m, tag) => `</${tag.toLowerCase()}>`);
+                const inner = p.innerHTML.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi,'&amp;')
+                  .replace(/<([^\/\s>!]+)([^>]*)>/g,(m,tag,attrs)=>{const t=tag.toLowerCase();const sc=['br','hr','img','input','meta','link','col','base','param','source','track','wbr'];let a=attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi,(mm,sp,n,eq,q,v)=>`${sp}${n.toLowerCase()}${eq}"${escapeAttr(v)}"`);return sc.includes(t)?`<${t}${a} />`:`<${t}${a}>`;})
+                  .replace(/<\/([^>]+)>/g,(m,tag)=>`</${tag.toLowerCase()}>`);
                 return `<p>${inner}</p>`;
               }).join('\n');
               break;
@@ -459,65 +396,39 @@
           fullContent += pageContent + '\n';
           if (i < pageUrls.length - 1) fullContent += '<hr class="page-break"/>\n';
         }
-        
-        const content = [authorHtml, tags, info, fullContent].filter(Boolean).join('\n');
-        return { title, content, url, success: true };
+        return { title, content: [authorHtml,tags,info,fullContent].filter(Boolean).join('\n'), url, success: true };
       } catch (err) {
         console.error(`Failed: ${url}`, err);
         return { url, title: chapterTitle, success: false, error: err.message };
       }
     }
 
-    /* Concurrent job runner */
     async function runConcurrent(jobs, concurrency, worker) {
-      const results = new Array(jobs.length);
-      let idx = 0;
-      const exec = async () => {
-        while (idx < jobs.length) {
-          const i = idx++;
-          try { results[i] = await worker(jobs[i], i); }
-          catch(e) { console.error(`Job ${i} error:`, e); results[i] = null; }
-        }
-      };
-      await Promise.all(Array.from({length: concurrency}, exec));
+      const results = new Array(jobs.length); let idx = 0;
+      const exec = async () => { while (idx < jobs.length) { const i = idx++; try { results[i] = await worker(jobs[i], i); } catch(e) { console.error(`Job ${i}:`,e); results[i]=null; } } };
+      await Promise.all(Array.from({length:concurrency}, exec));
       return results;
     }
 
-    /* Range dialog */
     async function askRange(total) {
       return new Promise(resolve => {
-        const dialog = document.createElement('div');
-        dialog.id = 'rangeDialog';
-        dialog.innerHTML = `
-          <div>
-            <label>Found ${total} stories</label>
-            <label>Download range (e.g. 1-10, all):</label>
-            <input type="text" id="rangeInput" value="1-10"/>
-            <div><button id="rangeOk">OK</button><button id="rangeCancel">Cancel</button></div>
-          </div>`;
+        const dialog = document.createElement('div'); dialog.id='rangeDialog';
+        dialog.innerHTML = `<div><label>Found ${total} stories</label><label>Range (e.g. 1-10, all):</label><input type="text" id="rangeInput" value="1-10"/><div><button id="rangeOk">OK</button><button id="rangeCancel">Cancel</button></div></div>`;
         document.body.appendChild(dialog);
-        dialog.querySelector('#rangeOk').onclick = () => {
-          dialog.remove();
-          resolve(parseRange(dialog.querySelector('#rangeInput').value.trim(), total));
-        };
+        dialog.querySelector('#rangeOk').onclick = () => { dialog.remove(); resolve(parseRange(dialog.querySelector('#rangeInput').value.trim(), total)); };
         dialog.querySelector('#rangeCancel').onclick = () => { dialog.remove(); resolve(null); };
       });
     }
-
     function parseRange(str, total) {
-      if (str.toLowerCase() === 'all') return [...Array(total).keys()];
-      const m = str.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/);
-      if (!m) return null;
-      let [, from, to] = m.map(Number);
-      from = Math.max(1, from); to = Math.min(total, to);
-      if (from > to) return null;
-      return [...Array(to - from + 1).keys()].map(i => i + from - 1);
+      if (str.toLowerCase()==='all') return [...Array(total).keys()];
+      const m = str.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/); if (!m) return null;
+      let [,from,to] = m.map(Number); from=Math.max(1,from); to=Math.min(total,to); if (from>to) return null;
+      return [...Array(to-from+1).keys()].map(i=>i+from-1);
     }
 
-    /* ==== MAIN: Fetch from author page ==== */
     async function fetchLitAuthorPage() {
       const startURL = novelUrlInput.value.trim();
-      if (!startURL) return alert('Enter a Literotica author works URL');
+      if (!startURL || !isValidLiteroticaUrl(startURL)) return alert('Enter a valid Literotica author works URL');
 
       try {
         fetchLitBtn.disabled = true;
@@ -526,18 +437,10 @@
 
         const doc = await getDoc(startURL);
         let stories = authorStoryLinks(doc);
-        
-        // Dedupe by href
         const seen = new Set();
-        stories = stories.filter(s => {
-          if (seen.has(s.href)) return false;
-          seen.add(s.href); return true;
-        });
+        stories = stories.filter(s => { if (seen.has(s.href)) return false; seen.add(s.href); return true; });
         
-        if (!stories.length) {
-          log('⚠ No /s/ links found on this page', 'orange');
-          return;
-        }
+        if (!stories.length) { log('⚠ No /s/ links found', 'orange'); return; }
         log(`Found ${stories.length} unique stories`);
 
         const indices = await askRange(stories.length);
@@ -546,19 +449,16 @@
         novelData.chapters = []; failedStories = [];
         let done = 0, total = indices.length;
 
-        const results = await runConcurrent(indices, 20, async (idx) => {
+        const results = await runConcurrent(indices, 10, async (idx) => { // Lower concurrency for stability
           const s = stories[idx];
+          log(`Fetching: ${s.title}`);
           const res = await processCompleteStory(s.href, s.title);
           updateProgress(++done, total);
           return res;
         });
 
-        for (const r of results) {
-          if (r?.success) novelData.chapters.push(r);
-          else if (r) failedStories.push(r);
-        }
+        for (const r of results) { if (r?.success) novelData.chapters.push(r); else if (r) failedStories.push(r); }
 
-        // Retry failures one-by-one
         if (failedStories.length) {
           log(`\nRetrying ${failedStories.length} failed...`, 'orange');
           for (let i=0; i<failedStories.length; i++) {
@@ -569,27 +469,17 @@
               if (retry.success) { novelData.chapters.push(retry); log('✓ OK','green'); }
               else log(`✗ ${retry.error}`,'red');
             } catch(e) { log(`✗ ${e.message}`,'red'); }
+            await sleep(500);
           }
         }
 
-        // EPUB filename: ._{author}
         const urlParts = new URL(startURL).pathname.split('/');
         const author = urlParts[urlParts.indexOf('authors')+1] || 'author';
-        novelData.metadata = {
-          title: author,      // For display
-          author: author,     // For EPUB filename: ._{author}
-          status: 'Complete',
-          source: startURL,
-          description: `${novelData.chapters.length} stories from author page`
-        };
+        novelData.metadata = { title: author, author: author, status: 'Complete', source: startURL, description: `${novelData.chapters.length} stories from author page` };
 
         log(`\n✓ Done: ${novelData.chapters.length} stories loaded`, 'green');
-        downloadBtn.disabled = false;
-        saveToJsonBtn.disabled = false;
-        editMetadataBtn.disabled = false;
-        createEpubBtn.disabled = false;
-        downloadEpubBtn.disabled = false;
-        saveEpubBtn.disabled = false;
+        downloadBtn.disabled = saveToJsonBtn.disabled = editMetadataBtn.disabled = false;
+        createEpubBtn.disabled = downloadEpubBtn.disabled = saveEpubBtn.disabled = false;
 
       } catch (err) {
         log(`Error: ${err.message}`, 'red');
@@ -599,7 +489,6 @@
         progressContainer.style.display = 'none';
       }
     }
-
     fetchLitBtn.addEventListener('click', fetchLitAuthorPage);
   </script>
 </body>
