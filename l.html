@@ -96,84 +96,57 @@
     // Convert raw HTML string to well-formed XHTML string (Lithium-compatible)
 function htmlToXhtml(html) {
   if (!html) return '';
-  
   try {
-    // Parse HTML in a sandboxed document
     const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+    const doc = parser.parseFromString(`<div id="root" xmlns="http://www.w3.org/1999/xhtml">${html}</div>`, 'text/html');
     const root = doc.getElementById('root');
     
-    // Fix common issues:
-    // 1. Remove <p> tags that contain block elements (invalid in XHTML)
+    // ✅ Fix 1: Only unwrap <p> if it contains block-level *children*
     root.querySelectorAll('p').forEach(p => {
-      const hasBlock = p.querySelector('div,p,ul,ol,table,blockquote,hr,h1,h2,h3,h4,h5,h6,pre,section,article,aside,header,footer,nav');
-      if (hasBlock) {
-        // Unwrap: replace <p> with its children
+      const hasBlockChild = [...p.children].some(c => 
+        ['div','p','ul','ol','table','blockquote','hr','h1','h2','h3','h4','h5','h6','pre','section','article','aside','header','footer','nav'].includes(c.tagName.toLowerCase())
+      );
+      if (hasBlockChild) {
         while (p.firstChild) p.parentNode.insertBefore(p.firstChild, p);
         p.remove();
       }
     });
     
-    // 2. Ensure all elements have proper XHTML namespace
-    root.querySelectorAll('*').forEach(el => {
-      // Convert tag names to lowercase
-      if (el.tagName !== el.tagName.toLowerCase()) {
-        const newEl = doc.createElementNS('http://www.w3.org/1999/xhtml', el.tagName.toLowerCase());
-        // Copy attributes (escaped)
-        for (const {name, value} of el.attributes) {
-          newEl.setAttribute(name, 
-            String(value)
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&apos;')
-          );
+    // ✅ Fix 2: Ensure all elements use XHTML namespace
+    const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
+        const newX = doc.createElementNS('http://www.w3.org/1999/xhtml', node.localName);
+        for (const {name, value} of node.attributes) {
+          newX.setAttribute(name, value);
         }
-        // Move children
-        while (el.firstChild) newEl.appendChild(el.firstChild);
-        el.parentNode.replaceChild(newEl, el);
+        while (node.firstChild) newX.appendChild(node.firstChild);
+        node.parentNode.replaceChild(newX, node);
       }
-    });
+    }
     
-    // 3. Self-close void elements
-    const voidEls = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
-    voidEls.forEach(tag => {
-      root.querySelectorAll(tag).forEach(el => {
-        // DOMParser already handles this, but ensure no closing tag
-        if (el.innerHTML) el.innerHTML = '';
-      });
-    });
+    // ✅ Fix 3: Escape text nodes (not raw HTML)
+    const textWalker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let textNode;
+    while (textNode = textWalker.nextNode()) {
+      textNode.textContent = textNode.textContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
     
-    // Serialize to XHTML string
+    // ✅ Serialize with XHTML MIME type awareness
     const serializer = new XMLSerializer();
     let xhtml = serializer.serializeToString(root);
     
-    // Extract inner content (remove wrapper div)
-    xhtml = xhtml
-      .replace(/^<div[^>]*id="root"[^>]*>/i, '')
-      .replace(/<\/div>$/i, '')
-      // Ensure proper entity escaping in text nodes
-      .replace(/>([^<]+)</g, (m, txt) => {
-        return '>' + txt
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;') + '<';
-      });
+    // Remove wrapper
+    xhtml = xhtml.replace(/^<div[^>]*id="root"[^>]*>/i, '').replace(/<\/div>$/i, '');
     
     return xhtml;
-    
   } catch (e) {
-    console.warn('XHTML conversion failed, falling back to basic escape:', e);
-    // Fallback: basic escaping if DOM parsing fails
-    return String(html)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
+    console.warn('XHTML conversion failed:', e);
+    return String(html).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
   }
 }
     
