@@ -104,7 +104,7 @@ function htmlToXhtml(html) {
     // ✅ Fix 1: Only unwrap <p> if it contains block-level *children*
     root.querySelectorAll('p').forEach(p => {
       const hasBlockChild = [...p.children].some(c => 
-        ['div','p','ul','ol','table','blockquote','hr','h1','h2','h3','h4','h5','h6','pre','section','article','aside','header','footer','nav'].includes(c.tagName.toLowerCase())
+        ['div','ul','ol','table','blockquote','hr','h1','h2','h3','h4','h5','h6','pre','section','article','aside','header','footer','nav'].includes(c.tagName.toLowerCase())
       );
       if (hasBlockChild) {
         while (p.firstChild) p.parentNode.insertBefore(p.firstChild, p);
