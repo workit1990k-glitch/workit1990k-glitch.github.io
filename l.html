@@ -96,37 +96,78 @@
     // Convert raw HTML string to well-formed XHTML string (Lithium-compatible)
 function htmlToXhtml(html) {
   if (!html) return '';
+  
   try {
+    // Parse HTML in a sandboxed document
     const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div xmlns="http://www.w3.org/1999/xhtml">${html}</div>`, 'application/xhtml+xml');
-    const root = doc.documentElement;
+    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+    const root = doc.getElementById('root');
     
-    // Remove scripts/styles
-    root.querySelectorAll('script,style').forEach(el => el.remove());
+    // Fix common issues:
+    // 1. Remove <p> tags that contain block elements (invalid in XHTML)
+    root.querySelectorAll('p').forEach(p => {
+      const hasBlock = p.querySelector('div,p,ul,ol,table,blockquote,hr,h1,h2,h3,h4,h5,h6,pre,section,article,aside,header,footer,nav');
+      if (hasBlock) {
+        // Unwrap: replace <p> with its children
+        while (p.firstChild) p.parentNode.insertBefore(p.firstChild, p);
+        p.remove();
+      }
+    });
     
-    // Convert tag names to lowercase
+    // 2. Ensure all elements have proper XHTML namespace
     root.querySelectorAll('*').forEach(el => {
+      // Convert tag names to lowercase
       if (el.tagName !== el.tagName.toLowerCase()) {
         const newEl = doc.createElementNS('http://www.w3.org/1999/xhtml', el.tagName.toLowerCase());
+        // Copy attributes (escaped)
         for (const {name, value} of el.attributes) {
-          newEl.setAttribute(name, value);
+          newEl.setAttribute(name, 
+            String(value)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;')
+          );
         }
+        // Move children
         while (el.firstChild) newEl.appendChild(el.firstChild);
         el.parentNode.replaceChild(newEl, el);
       }
     });
     
+    // 3. Self-close void elements
+    const voidEls = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
+    voidEls.forEach(tag => {
+      root.querySelectorAll(tag).forEach(el => {
+        // DOMParser already handles this, but ensure no closing tag
+        if (el.innerHTML) el.innerHTML = '';
+      });
+    });
+    
+    // Serialize to XHTML string
     const serializer = new XMLSerializer();
     let xhtml = serializer.serializeToString(root);
     
-    // Remove wrapper, preserve entities
-    return xhtml
-      .replace(/^<div[^>]*xmlns="[^"]*"[^>]*>/i, '')
+    // Extract inner content (remove wrapper div)
+    xhtml = xhtml
+      .replace(/^<div[^>]*id="root"[^>]*>/i, '')
       .replace(/<\/div>$/i, '')
-      .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;');
-      
+      // Ensure proper entity escaping in text nodes
+      .replace(/>([^<]+)</g, (m, txt) => {
+        return '>' + txt
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;') + '<';
+      });
+    
+    return xhtml;
+    
   } catch (e) {
-    console.warn('XHTML conversion failed:', e);
+    console.warn('XHTML conversion failed, falling back to basic escape:', e);
+    // Fallback: basic escaping if DOM parsing fails
     return String(html)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
