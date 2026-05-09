@@ -92,89 +92,72 @@
     .replace(/\n/g, '&#xA;')
     .replace(/\r/g, '&#xD;');
 }
-
+// Ensures every paragraph is wrapped in <p> and starts on a new line
+function formatParagraphsForEpub(html) {
+  if (!html || !html.trim()) return '';
+  
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+  const root = doc.getElementById('root');
+  const paragraphs = [];
+  
+  // Extract or create <p> tags from the DOM
+  const processNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent.trim();
+      if (text) paragraphs.push(`<p>${escapeXml(text)}</p>`);
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = node.tagName.toLowerCase();
+      if (tag === 'p' || tag === 'div' || tag === 'section' || tag === 'blockquote') {
+        // Process children recursively to preserve inline formatting (<strong>, <em>, <a>, etc.)
+        Array.from(node.childNodes).forEach(processNode);
+      } else if (tag === 'br' || tag === 'hr') {
+        // Skip standalone line breaks (handled by <p> structure)
+      } else {
+        // For other elements, wrap their content in <p>
+        const inner = node.innerHTML.trim();
+        if (inner) paragraphs.push(`<p>${inner}</p>`);
+      }
+    }
+  };
+  
+  Array.from(root.childNodes).forEach(processNode);
+  
+  // Join with newlines and remove empty paragraphs
+  return paragraphs
+    .join('\n')
+    .replace(/(<p>\s*<\/p>\s*)+/gi, '')
+    .trim();
+}
     // Convert raw HTML string to well-formed XHTML string (Lithium-compatible)
+// Only handles attribute escaping & XHTML self-closing (structure already handled)
 function htmlToXhtml(html) {
   if (!html) return '';
   
-  try {
-    // Parse HTML in a sandboxed document
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
-    const root = doc.getElementById('root');
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+  const root = doc.getElementById('root');
+  
+  // Escape all attributes safely
+  root.querySelectorAll('*').forEach(el => {
+    const newEl = doc.createElementNS('http://www.w3.org/1999/xhtml', el.tagName.toLowerCase());
+    for (const {name, value} of el.attributes) {
+      newEl.setAttribute(name, escapeAttr(value));
+    }
+    while (el.firstChild) newEl.appendChild(el.firstChild);
+    el.parentNode.replaceChild(newEl, el);
+  });
+  
+  const serializer = new XMLSerializer();
+  let xhtml = serializer.serializeToString(root);
+  
+  // Unwrap container & add newlines before <p> tags for clean source
+  xhtml = xhtml
+    .replace(/^<div[^>]*id="root"[^>]*>/i, '')
+    .replace(/<\/div>$/i, '')
+    .replace(/<p/g, '\n<p');
     
-    // Fix common issues:
-    // 1. Remove <p> tags that contain block elements (invalid in XHTML)
-    root.querySelectorAll('p').forEach(p => {
-      const hasBlock = p.querySelector('div,p,ul,ol,table,blockquote,hr,h1,h2,h3,h4,h5,h6,pre,section,article,aside,header,footer,nav');
-      if (hasBlock) {
-        // Unwrap: replace <p> with its children
-        while (p.firstChild) p.parentNode.insertBefore(p.firstChild, p);
-        p.remove();
-      }
-    });
-    
-    // 2. Ensure all elements have proper XHTML namespace
-    root.querySelectorAll('*').forEach(el => {
-      // Convert tag names to lowercase
-      if (el.tagName !== el.tagName.toLowerCase()) {
-        const newEl = doc.createElementNS('http://www.w3.org/1999/xhtml', el.tagName.toLowerCase());
-        // Copy attributes (escaped)
-        for (const {name, value} of el.attributes) {
-          newEl.setAttribute(name, 
-            String(value)
-              .replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&apos;')
-          );
-        }
-        // Move children
-        while (el.firstChild) newEl.appendChild(el.firstChild);
-        el.parentNode.replaceChild(newEl, el);
-      }
-    });
-    
-    // 3. Self-close void elements
-    const voidEls = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
-    voidEls.forEach(tag => {
-      root.querySelectorAll(tag).forEach(el => {
-        // DOMParser already handles this, but ensure no closing tag
-        if (el.innerHTML) el.innerHTML = '';
-      });
-    });
-    
-    // Serialize to XHTML string
-    const serializer = new XMLSerializer();
-    let xhtml = serializer.serializeToString(root);
-    
-    // Extract inner content (remove wrapper div)
-    xhtml = xhtml
-      .replace(/^<div[^>]*id="root"[^>]*>/i, '')
-      .replace(/<\/div>$/i, '')
-      // Ensure proper entity escaping in text nodes
-      .replace(/>([^<]+)</g, (m, txt) => {
-        return '>' + txt
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;') + '<';
-      });
-    
-    return xhtml;
-    
-  } catch (e) {
-    console.warn('XHTML conversion failed, falling back to basic escape:', e);
-    // Fallback: basic escaping if DOM parsing fails
-    return String(html)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  }
+  return xhtml.trim();
 }
     
     function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
@@ -318,7 +301,23 @@ function htmlToXhtml(html) {
           const filename = `chap_${String(i+1).padStart(3,'0')}_${safeChTitle}.xhtml`;
           const escapedTitle = escapeXml(ch.title);
           const escapedContent = this.escapeHtmlContent(ch.content);
-       const xhtml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">\n<head>\n  <title>${escapedTitle}</title>\n  <meta charset="UTF-8"/>\n</head>\n<body>\n  <h1>${escapedTitle}</h1>\n  <section class="chapter-content">\n${escapedContent}\n  </section>\n</body>\n</html>`;
+    const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+  <title>${escapedTitle}</title>
+  <meta charset="UTF-8"/>
+  <style>
+    p { margin: 0 0 1em 0; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>${escapedTitle}</h1>
+  <section class="chapter-content">
+${escapedContent}
+  </section>
+</body>
+</html>`;
           oebps.file(filename, xhtml);
           chapterFiles.push({ id: `chap${i+1}`, href: filename, title: ch.title });
         }
@@ -531,19 +530,19 @@ function getPaginationUrls(doc, baseUrl) {
             const desc = pageDoc.querySelector('#tabpanel-info .bn_B, .story-description, .description');
             if (desc) info = `<p><em>${escapeXml(desc.textContent.trim())}</em></p>\n`;
           }
-          const selectors = ['.panel.article p', '.story-content p', '.article-content p', 'article p', '.content p'];
-          let pageContent = '';
-// NEW CODE - use DOM to extract and convert content safely
+let pageContent = '';
+const selectors = ['.panel.article', '.story-content', '.article-content', 'article', '.content'];
+
 for (const sel of selectors) {
-  const els = pageDoc.querySelectorAll(sel);
-  if (els.length) {
-    // Extract innerHTML from each element, then convert to safe XHTML
-    const rawHtml = [...els].map(el => el.innerHTML).join('\n');
-    pageContent = htmlToXhtml(rawHtml);
+  const container = pageDoc.querySelector(sel);
+  if (container) {
+    // Format all paragraphs properly for EPUB
+    pageContent = formatParagraphsForEpub(container.innerHTML);
     break;
   }
 }
-          fullContent += pageContent + '\n';
+
+fullContent += pageContent + '\n';
           if (i < pageUrls.length - 1) fullContent += '<hr class="page-break"/>\n';
         }
         return { title, content: [authorHtml,tags,info,fullContent].filter(Boolean).join('\n'), url, success: true };
