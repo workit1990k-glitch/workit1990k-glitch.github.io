@@ -511,7 +511,7 @@ for (const sel of selectors) {
   const els = pageDoc.querySelectorAll(sel);
   if (els.length) {
     // Extract innerHTML from each element, then convert to safe XHTML
-    const rawHtml = [...els].map(el => el.innerHTML).join('\n');
+const rawHtml = [...els].map(el => el.outerHTML).join('\n');
     pageContent = htmlToXhtml(rawHtml);
     break;
   }
