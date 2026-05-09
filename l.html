@@ -92,6 +92,91 @@
     .replace(/\n/g, '&#xA;')
     .replace(/\r/g, '&#xD;');
 }
+
+    // Convert raw HTML string to well-formed XHTML string (Lithium-compatible)
+function htmlToXhtml(html) {
+  if (!html) return '';
+  
+  try {
+    // Parse HTML in a sandboxed document
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(`<div id="root">${html}</div>`, 'text/html');
+    const root = doc.getElementById('root');
+    
+    // Fix common issues:
+    // 1. Remove <p> tags that contain block elements (invalid in XHTML)
+    root.querySelectorAll('p').forEach(p => {
+      const hasBlock = p.querySelector('div,p,ul,ol,table,blockquote,hr,h1,h2,h3,h4,h5,h6,pre,section,article,aside,header,footer,nav');
+      if (hasBlock) {
+        // Unwrap: replace <p> with its children
+        while (p.firstChild) p.parentNode.insertBefore(p.firstChild, p);
+        p.remove();
+      }
+    });
+    
+    // 2. Ensure all elements have proper XHTML namespace
+    root.querySelectorAll('*').forEach(el => {
+      // Convert tag names to lowercase
+      if (el.tagName !== el.tagName.toLowerCase()) {
+        const newEl = doc.createElementNS('http://www.w3.org/1999/xhtml', el.tagName.toLowerCase());
+        // Copy attributes (escaped)
+        for (const {name, value} of el.attributes) {
+          newEl.setAttribute(name, 
+            String(value)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;')
+          );
+        }
+        // Move children
+        while (el.firstChild) newEl.appendChild(el.firstChild);
+        el.parentNode.replaceChild(newEl, el);
+      }
+    });
+    
+    // 3. Self-close void elements
+    const voidEls = ['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'];
+    voidEls.forEach(tag => {
+      root.querySelectorAll(tag).forEach(el => {
+        // DOMParser already handles this, but ensure no closing tag
+        if (el.innerHTML) el.innerHTML = '';
+      });
+    });
+    
+    // Serialize to XHTML string
+    const serializer = new XMLSerializer();
+    let xhtml = serializer.serializeToString(root);
+    
+    // Extract inner content (remove wrapper div)
+    xhtml = xhtml
+      .replace(/^<div[^>]*id="root"[^>]*>/i, '')
+      .replace(/<\/div>$/i, '')
+      // Ensure proper entity escaping in text nodes
+      .replace(/>([^<]+)</g, (m, txt) => {
+        return '>' + txt
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;') + '<';
+      });
+    
+    return xhtml;
+    
+  } catch (e) {
+    console.warn('XHTML conversion failed, falling back to basic escape:', e);
+    // Fallback: basic escaping if DOM parsing fails
+    return String(html)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+}
+    
     function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
     
     // Validate URL is from literotica.com
@@ -233,7 +318,7 @@
           const filename = `chap_${String(i+1).padStart(3,'0')}_${safeChTitle}.xhtml`;
           const escapedTitle = escapeXml(ch.title);
           const escapedContent = this.escapeHtmlContent(ch.content);
-          const xhtml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">\n<head>\n  <title>${escapedTitle}</title>\n  <meta charset="UTF-8"/>\n</head>\n<body>\n  <h1>${escapedTitle}</h1>\n  <div class="chapter-content">\n${escapedContent}\n  </div>\n</body>\n</html>`;
+       const xhtml = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">\n<head>\n  <title>${escapedTitle}</title>\n  <meta charset="UTF-8"/>\n</head>\n<body>\n  <h1>${escapedTitle}</h1>\n  <section class="chapter-content">\n${escapedContent}\n  </section>\n</body>\n</html>`;
           oebps.file(filename, xhtml);
           chapterFiles.push({ id: `chap${i+1}`, href: filename, title: ch.title });
         }
@@ -242,43 +327,14 @@
         return await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
       }
 // Escape HTML content for strict XHTML/EPUB (Lithium-compatible)
+// Minimal escaping - content is already pre-processed by htmlToXhtml()
 escapeHtmlContent(html) {
   if (!html) return '';
-  
-  // Step 1: Escape all raw text content (outside of tags)
-  // Split by tags, escape text between them, then rejoin
-  return html
-    // First, protect existing valid entities
-    .replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/g, '___ENTITY_PLACEHOLDER___$1;')
-    
-    // Escape bare ampersands that aren't part of entities
-    .replace(/&/g, '&amp;')
-    
-    // Restore protected entities
-    .replace(/___ENTITY_PLACEHOLDER___/g, '&')
-    
-    // Step 2: Process all HTML tags for XHTML compliance
-    .replace(/<([^\/\s>!]+)([^>]*)>(.*?)<\/\1>/gs, (match, tagName, attrs, content) => {
-      const tag = tagName.toLowerCase();
-      const escapedContent = content
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-      const escapedAttrs = this.escapeAttributes(attrs);
-      return `<${tag}${escapedAttrs}>${escapedContent}</${tag}>`;
-    })
-    
-    // Handle self-closing tags
-    .replace(/<([^\/\s>!]+)([^>]*)\/?>/gs, (match, tagName, attrs) => {
-      const tag = tagName.toLowerCase();
-      const selfClose = ['br','hr','img','input','meta','link','col','base','param','source','track','wbr','area','embed','keygen','command'];
-      const escapedAttrs = this.escapeAttributes(attrs);
-      return selfClose.includes(tag) 
-        ? `<${tag}${escapedAttrs} />` 
-        : `<${tag}${escapedAttrs}></${tag}>`;
-    });
+  // Final safety pass for any stray entities
+  return String(html)
+    .replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi, '&amp;')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // remove scripts
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');  // remove styles
 }
 
 // Helper: Escape attribute string for XHTML
@@ -477,18 +533,16 @@ function getPaginationUrls(doc, baseUrl) {
           }
           const selectors = ['.panel.article p', '.story-content p', '.article-content p', 'article p', '.content p'];
           let pageContent = '';
-          for (const sel of selectors) {
-            const els = pageDoc.querySelectorAll(sel);
-            if (els.length) {
-              pageContent = [...els].map(p => {
-                const inner = p.innerHTML.replace(/&(?!(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);)/gi,'&amp;')
-                  .replace(/<([^\/\s>!]+)([^>]*)>/g,(m,tag,attrs)=>{const t=tag.toLowerCase();const sc=['br','hr','img','input','meta','link','col','base','param','source','track','wbr'];let a=attrs.replace(/(\s+)([a-z-]+)(\s*=\s*)(["']?)([^"'>]*)\4/gi,(mm,sp,n,eq,q,v)=>`${sp}${n.toLowerCase()}${eq}"${escapeAttr(v)}"`);return sc.includes(t)?`<${t}${a} />`:`<${t}${a}>`;})
-                  .replace(/<\/([^>]+)>/g,(m,tag)=>`</${tag.toLowerCase()}>`);
-                return `<p>${inner}</p>`;
-              }).join('\n');
-              break;
-            }
-          }
+// NEW CODE - use DOM to extract and convert content safely
+for (const sel of selectors) {
+  const els = pageDoc.querySelectorAll(sel);
+  if (els.length) {
+    // Extract innerHTML from each element, then convert to safe XHTML
+    const rawHtml = [...els].map(el => el.innerHTML).join('\n');
+    pageContent = htmlToXhtml(rawHtml);
+    break;
+  }
+}
           fullContent += pageContent + '\n';
           if (i < pageUrls.length - 1) fullContent += '<hr class="page-break"/>\n';
         }
