@@ -83,6 +83,14 @@
         .delete-btn:hover {
             background-color: #da190b;
         }
+        #epubButton {
+            background-color: #673AB7;
+            margin-bottom: 10px;
+            display: none;
+        }
+        #epubButton:hover {
+            background-color: #512DA8;
+        }
         #message {
             margin-top: 20px;
             padding: 10px;
@@ -147,6 +155,7 @@
     <hr>
     <h2>Read Later List</h2>
     <button id="loadListButton">Load Read Later List</button>
+    <button id="epubButton">📚 Export All as EPUB</button>
     <input type="text" id="searchInput" placeholder="Search saved items..." style="width: 100%; padding: 8px; margin-bottom: 10px; display: none;">
     <button id="toggleOrderBtn" style="margin-bottom: 10px; display: none;">Show Newest First</button>
     <div id="readLaterList" style="margin-top: 20px;"></div>
@@ -157,6 +166,9 @@
         <div id="blogContent" style="margin-top: 15px; line-height: 1.6;"></div>
         <button id="backToList" style="margin-top: 20px;">← Back to List</button>
     </div>
+
+    <!-- JSZip for building the EPUB (which is a ZIP file) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -169,10 +181,7 @@
             const messageDiv = document.getElementById('message');
             const faviconContainer = document.getElementById('faviconContainer');
 
-            // Local storage key
             const STORAGE_KEY = 'readLaterItems';
-
-            // Track the ID of the item currently being edited (null if creating new)
             let editingId = null;
 
             // ---------- Storage helpers ----------
@@ -255,7 +264,6 @@
                     const items = getStoredItems();
 
                     if (editingId) {
-                        // UPDATE existing item
                         const index = items.findIndex(i => i.id === editingId);
                         if (index === -1) throw new Error('Item not found for editing.');
 
@@ -270,7 +278,6 @@
                         showMessage(`Updated "${title}".`, 'success');
                         exitEditMode();
                     } else {
-                        // CREATE new item
                         const newItem = {
                             id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
                             title,
@@ -283,21 +290,13 @@
                         showMessage(`Saved "${title}".`, 'success');
                     }
 
-                    // Clear form (only on create, and after edit exit)
-                    if (!editingId) {
-                        titleInput.value = '';
-                        linkInput.value = '';
-                        contentInput.innerText = '';
-                        faviconContainer.innerHTML = '';
-                    } else {
-                        // exitEditMode already cleared fields, but just in case:
-                        titleInput.value = '';
-                        linkInput.value = '';
-                        contentInput.innerText = '';
-                        faviconContainer.innerHTML = '';
-                    }
+                    // Clear form
+                    titleInput.value = '';
+                    linkInput.value = '';
+                    contentInput.innerText = '';
+                    faviconContainer.innerHTML = '';
 
-                    // If list is currently visible, refresh it
+                    // Refresh list if visible
                     if (readLaterList.style.display !== 'none' && originalItems.length > 0) {
                         originalItems = getStoredItems();
                         renderList();
@@ -326,7 +325,6 @@
                 saveButton.textContent = 'Update Article';
                 cancelEditButton.style.display = 'inline-block';
 
-                // Scroll to form
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             }
 
@@ -357,6 +355,7 @@
             const backToListBtn = document.getElementById('backToList');
             const searchInput = document.getElementById('searchInput');
             const toggleOrderBtn = document.getElementById('toggleOrderBtn');
+            const epubButton = document.getElementById('epubButton');
 
             let originalItems = [];
             let isReversed = true;
@@ -372,9 +371,11 @@
                         readLaterList.innerHTML = '<p>No items saved yet.</p>';
                         searchInput.style.display = 'none';
                         toggleOrderBtn.style.display = 'none';
+                        epubButton.style.display = 'none';
                     } else {
                         searchInput.style.display = 'block';
                         toggleOrderBtn.style.display = 'block';
+                        epubButton.style.display = 'inline-block';
                         toggleOrderBtn.textContent = isReversed ? 'Show Oldest First' : 'Show Newest First';
                         renderList();
                     }
@@ -386,7 +387,6 @@
                 }
             });
 
-            // Extract first image URL from content
             function extractFirstImageUrl(content) {
                 if (!content) return null;
                 const imgTagMatch = content.match(/<img[^>]+src=["']([^"']+\.(?:webp|jpe?g|png))["'][^>]*>/i);
@@ -406,7 +406,6 @@
             function renderList() {
                 let displayedItems = [...originalItems];
 
-                // Search filter
                 const searchTerm = searchInput.value.trim().toLowerCase();
                 if (searchTerm) {
                     displayedItems = displayedItems.filter(item =>
@@ -415,7 +414,6 @@
                     );
                 }
 
-                // Sort
                 if (isReversed) displayedItems = [...displayedItems].reverse();
 
                 if (displayedItems.length === 0) {
@@ -425,7 +423,6 @@
                     return;
                 }
 
-                // Build list
                 const listHtml = displayedItems.map(item => {
                     const originalIndex = originalItems.indexOf(item);
                     const firstImgUrl = extractFirstImageUrl(item.content);
@@ -452,7 +449,6 @@
 
                 readLaterList.innerHTML = listHtml;
 
-                // Attach view handlers
                 document.querySelectorAll('.readLaterItem').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const idx = parseInt(btn.getAttribute('data-original-index'), 10);
@@ -461,24 +457,22 @@
                     });
                 });
 
-                // Attach edit handlers
                 document.querySelectorAll('[data-action="edit"]').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const id = btn.getAttribute('data-item-id');
                         const item = originalItems.find(i => i.id === id);
                         if (item) {
                             enterEditMode(item);
-                            // Optionally hide list to focus on form
                             blogPostView.style.display = 'none';
                             readLaterList.style.display = 'none';
                             loadListButton.style.display = 'none';
                             searchInput.style.display = 'none';
                             toggleOrderBtn.style.display = 'none';
+                            epubButton.style.display = 'none';
                         }
                     });
                 });
 
-                // Attach delete handlers
                 document.querySelectorAll('[data-action="delete"]').forEach(btn => {
                     btn.addEventListener('click', () => {
                         const id = btn.getAttribute('data-item-id');
@@ -487,7 +481,6 @@
                 });
             }
 
-            // Simple HTML escape for safety
             function escapeHtml(str) {
                 if (!str) return '';
                 return String(str)
@@ -498,7 +491,6 @@
                     .replace(/'/g, '&#39;');
             }
 
-            // ---------- Delete ----------
             function deleteItem(id) {
                 const item = originalItems.find(i => i.id === id);
                 if (!item) return;
@@ -507,20 +499,19 @@
                 if (!confirmed) return;
 
                 try {
-                    // If currently editing this item, exit edit mode
                     if (editingId === id) exitEditMode();
 
                     const items = getStoredItems();
                     const filtered = items.filter(i => i.id !== id);
                     setStoredItems(filtered);
 
-                    // Refresh originalItems and view
                     originalItems = filtered;
 
                     if (originalItems.length === 0) {
                         readLaterList.innerHTML = '<p>No items saved yet.</p>';
                         searchInput.style.display = 'none';
                         toggleOrderBtn.style.display = 'none';
+                        epubButton.style.display = 'none';
                     } else {
                         renderList();
                     }
@@ -531,7 +522,6 @@
                 }
             }
 
-            // ---------- View single post ----------
             function showBlogPost(item) {
                 blogTitle.textContent = item.title || '(No title)';
                 blogLink.textContent = item.link || '';
@@ -542,6 +532,7 @@
                 loadListButton.style.display = 'none';
                 searchInput.style.display = 'none';
                 toggleOrderBtn.style.display = 'none';
+                epubButton.style.display = 'none';
                 blogPostView.style.display = 'block';
             }
 
@@ -553,21 +544,230 @@
                 if (originalItems.length > 0) {
                     searchInput.style.display = 'block';
                     toggleOrderBtn.style.display = 'block';
+                    epubButton.style.display = 'inline-block';
                     renderList();
                 } else {
                     searchInput.style.display = 'none';
                     toggleOrderBtn.style.display = 'none';
+                    epubButton.style.display = 'none';
                     readLaterList.innerHTML = '<p>No items saved yet.</p>';
                 }
             });
 
-            // Search & toggle
             searchInput.addEventListener('input', () => renderList());
             toggleOrderBtn.addEventListener('click', () => {
                 isReversed = !isReversed;
                 toggleOrderBtn.textContent = isReversed ? 'Show Oldest First' : 'Show Newest First';
                 renderList();
             });
+
+            // ============================================================
+            // EPUB EXPORT
+            // ============================================================
+            epubButton.addEventListener('click', async () => {
+                const items = getStoredItems();
+                if (!items.length) {
+                    showMessage('No items to export.', 'error');
+                    return;
+                }
+
+                epubButton.disabled = true;
+                showMessage('Building EPUB...', 'processing');
+
+                try {
+                    const blob = await buildEpub(items);
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Favorites and data.epub';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showMessage(`EPUB exported with ${items.length} article(s).`, 'success');
+                } catch (err) {
+                    console.error('EPUB export failed:', err);
+                    showMessage(`EPUB error: ${err.message}`, 'error');
+                } finally {
+                    epubButton.disabled = false;
+                }
+            });
+
+            // -------- EPUB builder --------
+            async function buildEpub(items) {
+                const zip = new JSZip();
+                const uuid = generateUuid();
+                const bookId = `urn:uuid:${uuid}`;
+                const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+
+                // ----- mimetype (must be first, uncompressed) -----
+                zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+                // ----- META-INF/container.xml -----
+                zip.folder('META-INF').file('container.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`);
+
+                // ----- OEBPS folder -----
+                const oebps = zip.folder('OEBPS');
+                const css = `
+body { font-family: Georgia, serif; line-height: 1.6; margin: 1em; }
+h1, h2 { font-family: Arial, sans-serif; }
+a { color: #0066cc; word-break: break-all; }
+.meta { color: #666; font-size: 0.9em; margin-bottom: 1em; }
+.content { margin-top: 1em; white-space: pre-wrap; }
+img { max-width: 100%; height: auto; }
+`;
+                oebps.file('styles.css', css);
+
+                // ----- Chapters -----
+                const chapterFiles = [];
+                items.forEach((item, idx) => {
+                    const fileName = `chapter${idx + 1}.xhtml`;
+                    chapterFiles.push(fileName);
+                    const safeTitle = escapeXml(item.title || `Article ${idx + 1}`);
+                    const safeLink = item.link ? escapeXml(item.link) : '';
+                    const contentHtml = renderContentToHtml(item.content || '');
+
+                    const linkHtml = safeLink
+                        ? `<p class="meta"><strong>Link:</strong> <a href="${safeLink}">${safeLink}</a></p>`
+                        : '';
+
+                    const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${safeTitle}</title>
+  <link rel="stylesheet" type="text/css" href="styles.css"/>
+</head>
+<body>
+  <h1>${safeTitle}</h1>
+  ${linkHtml}
+  <div class="content">${contentHtml}</div>
+</body>
+</html>`;
+                    oebps.file(fileName, xhtml);
+                });
+
+                // ----- Table of Contents (nav.xhtml) -----
+                const tocEntries = items.map((item, idx) => {
+                    const t = escapeXml(item.title || `Article ${idx + 1}`);
+                    return `      <li><a href="chapter${idx + 1}.xhtml">${t}</a></li>`;
+                }).join('\n');
+
+                const navXhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Favorites and data</title>
+  <link rel="stylesheet" type="text/css" href="styles.css"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Favorites and data</h1>
+    <ol>
+${tocEntries}
+    </ol>
+  </nav>
+</body>
+</html>`;
+                oebps.file('nav.xhtml', navXhtml);
+
+                // ----- NCX (for EPUB 2 compatibility) -----
+                const ncxPoints = items.map((item, idx) => {
+                    const t = escapeXml(item.title || `Article ${idx + 1}`);
+                    return `    <navPoint id="navPoint-${idx + 1}" playOrder="${idx + 1}">
+      <navLabel><text>${t}</text></navLabel>
+      <content src="chapter${idx + 1}.xhtml"/>
+    </navPoint>`;
+                }).join('\n');
+
+                const ncx = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="${bookId}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+  </head>
+  <docTitle><text>Favorites and data</text></docTitle>
+  <navMap>
+${ncxPoints}
+  </navMap>
+</ncx>`;
+                oebps.file('toc.ncx', ncx);
+
+                // ----- content.opf -----
+                const manifestItems = items.map((_, idx) =>
+                    `    <item id="chapter${idx + 1}" href="chapter${idx + 1}.xhtml" media-type="application/xhtml+xml"/>`
+                ).join('\n');
+
+                const spineItems = items.map((_, idx) =>
+                    `    <itemref idref="chapter${idx + 1}"/>`
+                ).join('\n');
+
+                const opf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">${bookId}</dc:identifier>
+    <dc:title>Favorites and data</dc:title>
+    <dc:language>en</dc:language>
+    <dc:creator>Read Later</dc:creator>
+    <meta property="dcterms:modified">${now}</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="css" href="styles.css" media-type="text/css"/>
+${manifestItems}
+  </manifest>
+  <spine toc="ncx">
+${spineItems}
+  </spine>
+</package>`;
+                oebps.file('content.opf', opf);
+
+                // ----- Generate blob -----
+                return await zip.generateAsync({
+                    type: 'blob',
+                    mimeType: 'application/epub+zip',
+                    compression: 'DEFLATE'
+                });
+            }
+
+            // Render stored content into XHTML-safe HTML
+            function renderContentToHtml(content) {
+                if (!content) return '';
+                // Escape first
+                let escaped = escapeXml(content);
+                // If it looks like it contains HTML tags originally, this will have escaped them.
+                // We want basic text with line breaks preserved.
+                return escaped.replace(/\n/g, '<br/>');
+            }
+
+            function escapeXml(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+            }
+
+            function generateUuid() {
+                if (crypto && crypto.randomUUID) return crypto.randomUUID();
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            }
         });
     </script>
 </body>
