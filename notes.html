@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Save to Read Later · LocalStorage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        div#contentInput {
+            width: 100%;
+            max-height: 150px;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            overflow: auto;
+            background: white;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: 1.4;
+        }
+        div#contentInput:empty:before {
+            content: attr(placeholder);
+            color: #999;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        button.readLaterItem {
+            color: black;
+        }
+        .action-btn {
+            padding: 6px 12px;
+            font-size: 13px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            margin-left: 6px;
+            color: white;
+        }
+        .edit-btn {
+            background-color: #2196F3;
+        }
+        .edit-btn:hover {
+            background-color: #0b7dda;
+        }
+        .delete-btn {
+            background-color: #f44336;
+        }
+        .delete-btn:hover {
+            background-color: #da190b;
+        }
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+        .error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+        .processing {
+            color: #31708f;
+            background-color: #d9edf7;
+            border-color: #bce8f1;
+        }
+        #faviconContainer img {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            vertical-align: middle;
+        }
+        .item-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .item-row .readLaterItem {
+            flex: 1;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Save to Read Later</h1>
+    <div class="form-group">
+        <label for="titleInput">Title:</label>
+        <input type="text" id="titleInput" placeholder="Enter the title..." required>
+    </div>
+    <div class="form-group">
+        <label for="linkInput">Link:</label>
+        <div id="faviconContainer"></div>
+        <input type="text" id="linkInput" placeholder="Enter the link (e.g., https://example.com)...">
+    </div>
+    <div class="form-group">
+        <label for="contentInput">Content:</label>
+        <div id="contentInput" contenteditable="true" 
+             style="width: 100%; max-height: 150px; padding: 8px; box-sizing: border-box; 
+                    border: 1px solid #ccc; border-radius: 4px; overflow: auto;"
+             placeholder="Enter the content..."></div>
+    </div>
+    <button id="saveButton">Save to Read Later</button>
+    <button id="cancelEditButton" style="display: none; background-color: #777;">Cancel Edit</button>
+
+    <div id="message"></div>
+    <hr>
+    <h2>Read Later List</h2>
+    <button id="loadListButton">Load Read Later List</button>
+    <input type="text" id="searchInput" placeholder="Search saved items..." style="width: 100%; padding: 8px; margin-bottom: 10px; display: none;">
+    <button id="toggleOrderBtn" style="margin-bottom: 10px; display: none;">Show Newest First</button>
+    <div id="readLaterList" style="margin-top: 20px;"></div>
+
+    <div id="blogPostView" style="display: none; margin-top: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background: #f9f9f9;">
+        <h2 id="blogTitle"></h2>
+        <p><strong>Link:</strong> <a id="blogLink" target="_blank"></a></p>
+        <div id="blogContent" style="margin-top: 15px; line-height: 1.6;"></div>
+        <button id="backToList" style="margin-top: 20px;">← Back to List</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM elements
+            const titleInput = document.getElementById('titleInput');
+            const linkInput = document.getElementById('linkInput');
+            const contentInput = document.getElementById('contentInput');
+            const saveButton = document.getElementById('saveButton');
+            const cancelEditButton = document.getElementById('cancelEditButton');
+            const messageDiv = document.getElementById('message');
+            const faviconContainer = document.getElementById('faviconContainer');
+
+            // Local storage key
+            const STORAGE_KEY = 'readLaterItems';
+
+            // Track the ID of the item currently being edited (null if creating new)
+            let editingId = null;
+
+            // ---------- Storage helpers ----------
+            function getStoredItems() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_KEY);
+                    if (!raw) return [];
+                    const parsed = JSON.parse(raw);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch (e) {
+                    console.error('Failed to parse localStorage data', e);
+                    return [];
+                }
+            }
+
+            function setStoredItems(items) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+            }
+
+            // ---------- URL auto-fill ----------
+            const urlParams = new URLSearchParams(window.location.search);
+            const initialTitle = urlParams.get('title');
+            const initialLink = urlParams.get('link');
+            const initialContentB64 = urlParams.get('content_b64');
+
+            if (initialTitle) titleInput.value = decodeURIComponent(initialTitle);
+            if (initialLink) {
+                linkInput.value = decodeURIComponent(initialLink);
+                updateFavicon(linkInput.value);
+            }
+            if (initialContentB64) {
+                try {
+                    const decoded = decodeURIComponent(atob(initialContentB64));
+                    contentInput.innerText = decoded;
+                } catch (e) {
+                    console.error('Failed to decode Base64 content:', e);
+                    contentInput.innerText = 'Failed to load description.';
+                }
+            }
+
+            // ---------- Favicon ----------
+            function updateFavicon(url) {
+                if (!url) {
+                    faviconContainer.innerHTML = '';
+                    return;
+                }
+                try {
+                    const urlObj = new URL(url);
+                    const domain = urlObj.hostname;
+                    faviconContainer.innerHTML = `
+                        <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32" 
+                             alt="Favicon">
+                    `;
+                } catch (e) {
+                    faviconContainer.innerHTML = '';
+                }
+            }
+
+            let faviconTimeout;
+            linkInput.addEventListener('input', () => {
+                clearTimeout(faviconTimeout);
+                faviconTimeout = setTimeout(() => updateFavicon(linkInput.value), 500);
+            });
+
+            // ---------- Save / Update ----------
+            saveButton.addEventListener('click', () => {
+                const title = titleInput.value.trim();
+                const link = linkInput.value.trim();
+                const content = contentInput.innerText.trim();
+
+                if (!title) {
+                    showMessage('Please fill in title.', 'error');
+                    return;
+                }
+
+                saveButton.disabled = true;
+                showMessage(editingId ? 'Updating...' : 'Saving...', 'processing');
+
+                try {
+                    const items = getStoredItems();
+
+                    if (editingId) {
+                        // UPDATE existing item
+                        const index = items.findIndex(i => i.id === editingId);
+                        if (index === -1) throw new Error('Item not found for editing.');
+
+                        items[index] = {
+                            ...items[index],
+                            title,
+                            link,
+                            content,
+                            updatedAt: new Date().toISOString()
+                        };
+                        setStoredItems(items);
+                        showMessage(`Updated "${title}".`, 'success');
+                        exitEditMode();
+                    } else {
+                        // CREATE new item
+                        const newItem = {
+                            id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
+                            title,
+                            link,
+                            content,
+                            savedAt: new Date().toISOString()
+                        };
+                        items.push(newItem);
+                        setStoredItems(items);
+                        showMessage(`Saved "${title}".`, 'success');
+                    }
+
+                    // Clear form (only on create, and after edit exit)
+                    if (!editingId) {
+                        titleInput.value = '';
+                        linkInput.value = '';
+                        contentInput.innerText = '';
+                        faviconContainer.innerHTML = '';
+                    } else {
+                        // exitEditMode already cleared fields, but just in case:
+                        titleInput.value = '';
+                        linkInput.value = '';
+                        contentInput.innerText = '';
+                        faviconContainer.innerHTML = '';
+                    }
+
+                    // If list is currently visible, refresh it
+                    if (readLaterList.style.display !== 'none' && originalItems.length > 0) {
+                        originalItems = getStoredItems();
+                        renderList();
+                    }
+                } catch (error) {
+                    console.error('Error saving:', error);
+                    showMessage(`Error: ${error.message}`, 'error');
+                } finally {
+                    saveButton.disabled = false;
+                }
+            });
+
+            // ---------- Cancel edit ----------
+            cancelEditButton.addEventListener('click', () => {
+                exitEditMode();
+                showMessage('Edit cancelled.', 'processing');
+            });
+
+            function enterEditMode(item) {
+                editingId = item.id;
+                titleInput.value = item.title || '';
+                linkInput.value = item.link || '';
+                contentInput.innerText = item.content || '';
+                updateFavicon(item.link || '');
+
+                saveButton.textContent = 'Update Article';
+                cancelEditButton.style.display = 'inline-block';
+
+                // Scroll to form
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+
+            function exitEditMode() {
+                editingId = null;
+                titleInput.value = '';
+                linkInput.value = '';
+                contentInput.innerText = '';
+                faviconContainer.innerHTML = '';
+                saveButton.textContent = 'Save to Read Later';
+                cancelEditButton.style.display = 'none';
+            }
+
+            function showMessage(text, type) {
+                messageDiv.textContent = text;
+                messageDiv.className = '';
+                if (type) messageDiv.classList.add(type);
+                messageDiv.style.display = text ? 'block' : 'none';
+            }
+
+            // ========== READ LATER LIST UI ==========
+            const loadListButton = document.getElementById('loadListButton');
+            const readLaterList = document.getElementById('readLaterList');
+            const blogPostView = document.getElementById('blogPostView');
+            const blogTitle = document.getElementById('blogTitle');
+            const blogLink = document.getElementById('blogLink');
+            const blogContent = document.getElementById('blogContent');
+            const backToListBtn = document.getElementById('backToList');
+            const searchInput = document.getElementById('searchInput');
+            const toggleOrderBtn = document.getElementById('toggleOrderBtn');
+
+            let originalItems = [];
+            let isReversed = true;
+
+            loadListButton.addEventListener('click', () => {
+                loadListButton.disabled = true;
+                readLaterList.innerHTML = '<p>Loading...</p>';
+
+                try {
+                    originalItems = getStoredItems();
+
+                    if (!Array.isArray(originalItems) || originalItems.length === 0) {
+                        readLaterList.innerHTML = '<p>No items saved yet.</p>';
+                        searchInput.style.display = 'none';
+                        toggleOrderBtn.style.display = 'none';
+                    } else {
+                        searchInput.style.display = 'block';
+                        toggleOrderBtn.style.display = 'block';
+                        toggleOrderBtn.textContent = isReversed ? 'Show Oldest First' : 'Show Newest First';
+                        renderList();
+                    }
+                } catch (error) {
+                    console.error('Failed to load list:', error);
+                    readLaterList.innerHTML = `<p style="color: red;">Error loading list: ${error.message}</p>`;
+                } finally {
+                    loadListButton.disabled = false;
+                }
+            });
+
+            // Extract first image URL from content
+            function extractFirstImageUrl(content) {
+                if (!content) return null;
+                const imgTagMatch = content.match(/<img[^>]+src=["']([^"']+\.(?:webp|jpe?g|png))["'][^>]*>/i);
+                if (imgTagMatch && imgTagMatch[1]) {
+                    try { return new URL(imgTagMatch[1], window.location.href).href; }
+                    catch (e) { return imgTagMatch[1]; }
+                }
+                const urlRegex = /\bhttps?:\/\/[^\s<>"']+\.(?:webp|jpe?g|png)\b/ig;
+                const plainUrlMatch = content.match(urlRegex);
+                if (plainUrlMatch && plainUrlMatch[0]) {
+                    try { return new URL(plainUrlMatch[0], window.location.href).href; }
+                    catch (e) { return plainUrlMatch[0]; }
+                }
+                return null;
+            }
+
+            function renderList() {
+                let displayedItems = [...originalItems];
+
+                // Search filter
+                const searchTerm = searchInput.value.trim().toLowerCase();
+                if (searchTerm) {
+                    displayedItems = displayedItems.filter(item =>
+                        (item.title && item.title.toLowerCase().includes(searchTerm)) ||
+                        (item.content && item.content.toLowerCase().includes(searchTerm))
+                    );
+                }
+
+                // Sort
+                if (isReversed) displayedItems = [...displayedItems].reverse();
+
+                if (displayedItems.length === 0) {
+                    readLaterList.innerHTML = searchTerm
+                        ? '<p>No matching items found.</p>'
+                        : '<p>No items saved yet.</p>';
+                    return;
+                }
+
+                // Build list
+                const listHtml = displayedItems.map(item => {
+                    const originalIndex = originalItems.indexOf(item);
+                    const firstImgUrl = extractFirstImageUrl(item.content);
+                    const imgHtml = firstImgUrl
+                        ? `<img src="${firstImgUrl}" alt="" width="32" height="32" loading="lazy"
+                                style="margin-left: 10px; border-radius: 4px; object-fit: cover;">`
+                        : '';
+
+                    return `
+                        <div class="item-row" data-item-id="${item.id}">
+                            <button class="readLaterItem" data-original-index="${originalIndex}"
+                                style="text-align: left; padding: 10px; border: 1px solid #ccc; 
+                                       border-radius: 4px; background: white; cursor: pointer; 
+                                       display: flex; align-items: center; justify-content: space-between;">
+                                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    ${escapeHtml(item.title) || '(No title)'}
+                                </span>
+                                ${imgHtml}
+                            </button>
+                            <button class="action-btn edit-btn" data-action="edit" data-item-id="${item.id}">Edit</button>
+                            <button class="action-btn delete-btn" data-action="delete" data-item-id="${item.id}">Delete</button>
+                        </div>`;
+                }).join('');
+
+                readLaterList.innerHTML = listHtml;
+
+                // Attach view handlers
+                document.querySelectorAll('.readLaterItem').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const idx = parseInt(btn.getAttribute('data-original-index'), 10);
+                        const item = originalItems[idx];
+                        if (item) showBlogPost(item);
+                    });
+                });
+
+                // Attach edit handlers
+                document.querySelectorAll('[data-action="edit"]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = btn.getAttribute('data-item-id');
+                        const item = originalItems.find(i => i.id === id);
+                        if (item) {
+                            enterEditMode(item);
+                            // Optionally hide list to focus on form
+                            blogPostView.style.display = 'none';
+                            readLaterList.style.display = 'none';
+                            loadListButton.style.display = 'none';
+                            searchInput.style.display = 'none';
+                            toggleOrderBtn.style.display = 'none';
+                        }
+                    });
+                });
+
+                // Attach delete handlers
+                document.querySelectorAll('[data-action="delete"]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const id = btn.getAttribute('data-item-id');
+                        deleteItem(id);
+                    });
+                });
+            }
+
+            // Simple HTML escape for safety
+            function escapeHtml(str) {
+                if (!str) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            // ---------- Delete ----------
+            function deleteItem(id) {
+                const item = originalItems.find(i => i.id === id);
+                if (!item) return;
+
+                const confirmed = confirm(`Delete "${item.title}"? This cannot be undone.`);
+                if (!confirmed) return;
+
+                try {
+                    // If currently editing this item, exit edit mode
+                    if (editingId === id) exitEditMode();
+
+                    const items = getStoredItems();
+                    const filtered = items.filter(i => i.id !== id);
+                    setStoredItems(filtered);
+
+                    // Refresh originalItems and view
+                    originalItems = filtered;
+
+                    if (originalItems.length === 0) {
+                        readLaterList.innerHTML = '<p>No items saved yet.</p>';
+                        searchInput.style.display = 'none';
+                        toggleOrderBtn.style.display = 'none';
+                    } else {
+                        renderList();
+                    }
+                    showMessage(`Deleted "${item.title}".`, 'success');
+                } catch (error) {
+                    console.error('Delete failed:', error);
+                    showMessage(`Error deleting: ${error.message}`, 'error');
+                }
+            }
+
+            // ---------- View single post ----------
+            function showBlogPost(item) {
+                blogTitle.textContent = item.title || '(No title)';
+                blogLink.textContent = item.link || '';
+                blogLink.href = item.link || '#';
+                blogContent.innerHTML = item.content ? item.content.replace(/\n/g, '<br>') : '(No content)';
+
+                readLaterList.style.display = 'none';
+                loadListButton.style.display = 'none';
+                searchInput.style.display = 'none';
+                toggleOrderBtn.style.display = 'none';
+                blogPostView.style.display = 'block';
+            }
+
+            backToListBtn.addEventListener('click', () => {
+                blogPostView.style.display = 'none';
+                readLaterList.style.display = 'block';
+                loadListButton.style.display = 'inline-block';
+
+                if (originalItems.length > 0) {
+                    searchInput.style.display = 'block';
+                    toggleOrderBtn.style.display = 'block';
+                    renderList();
+                } else {
+                    searchInput.style.display = 'none';
+                    toggleOrderBtn.style.display = 'none';
+                    readLaterList.innerHTML = '<p>No items saved yet.</p>';
+                }
+            });
+
+            // Search & toggle
+            searchInput.addEventListener('input', () => renderList());
+            toggleOrderBtn.addEventListener('click', () => {
+                isReversed = !isReversed;
+                toggleOrderBtn.textContent = isReversed ? 'Show Oldest First' : 'Show Newest First';
+                renderList();
+            });
+        });
+    </script>
+</body>
+</html>
