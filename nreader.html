@@ -9,7 +9,7 @@
 
         body {
             font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            background: #2b2b38;
+            background: #f2f3f4;
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -23,7 +23,6 @@
             height: 92vh;
             background: #f5f1e8;  /* warm paper tone */
             border-radius: 16px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -37,7 +36,7 @@
             align-items: center;
             gap: 8px;
             padding: 12px 18px;
-            background: #efe9dc;
+            background: #fff;
             border-bottom: 1px solid #d9d0bd;
             z-index: 5;
         }
@@ -69,8 +68,8 @@
         }
 
         .file-label {
-            background: #7a5c3e;
-            color: #fff8ec;
+            background: #2b77eb;
+            color: #fff;
             border: none;
             box-shadow: 0 2px 6px rgba(122, 92, 62, 0.3);
         }
@@ -97,16 +96,15 @@
         #viewer {
             flex: 1;
             overflow-y: auto;
-            background: #f5f1e8;
+            background: #fff;
             position: relative;
             scroll-behavior: smooth;
         }
 
         /* Novel-style content container */
         .novel-content {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 48px 32px 80px;
+            max-width: 900px;
+            margin: 0 10px;
             font-family: 'Georgia', 'Noto Serif SC', 'Noto Serif JP', 'Songti SC', 'SimSun', serif;
             font-size: 1.05rem;
             line-height: 2;
@@ -214,7 +212,6 @@
             height: 100%;
             background: #fbf8f1;
             border-left: 1px solid #d9d0bd;
-            box-shadow: -8px 0 24px rgba(0,0,0,0.12);
             transform: translateX(100%);
             transition: transform 0.25s ease;
             z-index: 20;
