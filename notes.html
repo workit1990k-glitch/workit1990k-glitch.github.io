@@ -579,8 +579,8 @@
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = 'Favorites and data.epub';
-                    document.body.appendChild(a);
+const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+a.download = `Favorites ${ts}.epub`;                    document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
