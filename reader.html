@@ -23,7 +23,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #tools .slider-row input { flex: 1; }
 #tools .slider-row span { min-width: 40px; text-align: right; font-size: 11px; color: #aaa; }
 #tools select, #tools button { width: 100%; margin-top: 5px; }
-#toggleTools, #addFilesBtn, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn {
+#toggleTools, #addFilesBtn, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #libraryBtn {
   position: fixed; bottom: 20px; background: #444; border: none; padding: 10px 14px;
   color: white; cursor: pointer; border-radius: 8px; z-index: 20; font-size: 13px;
   transition: opacity 0.2s, transform 0.2s, background 0.2s;
@@ -34,33 +34,41 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #openFolderBtn { right: 330px; }
 #purgeLibraryBtn { right: 460px; background: #6b2222; }
 #purgeLibraryBtn:hover { background: #8a2b2b; }
-
-/* -------- Top-right controls -------- */
-#homeBar {
-  position: fixed; top: 10px; right: 10px; z-index: 26;
-  display: flex; align-items: center; gap: 8px;
-  transition: opacity 0.2s, transform 0.2s;
-}
-#libraryBtn {
-  background: #00a8ff; border: none; color: white; cursor: pointer;
-  padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
-  transition: background 0.2s;
-}
+#libraryBtn { right: 550px; background: #00a8ff; font-weight: 600; }
 #libraryBtn:hover { background: #008ecc; }
-#countBadge {
-  background: #222; border: 1px solid #333;
-  padding: 8px 12px; border-radius: 8px; font-size: 12px;
-  color: #00a8ff; font-family: monospace; white-space: nowrap;
-}
-.controls-hidden #homeBar { opacity: 0; pointer-events: none; transform: translateY(-8px); }
 
 #fileInput, #libraryInput, #folderFallbackInput { display: none; }
 #library {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: #111; padding: 20px; overflow-y: auto; z-index: 30;
+  background: #111; padding: 60px 20px 20px; overflow-y: auto; z-index: 30;
   grid-template-columns: repeat(auto-fill, 160px); gap: 16px;
 }
 #library.active { display: grid; }
+
+/* -------- Library screen header (contains count) -------- */
+#libHeader {
+  position: fixed; top: 0; left: 0; right: 0; height: 52px;
+  background: rgba(17,17,17,0.98); border-bottom: 1px solid #222;
+  display: none; align-items: center; padding: 0 20px; z-index: 31;
+  gap: 14px;
+}
+#library.active ~ #libHeader,
+body.library-open #libHeader { display: flex; }
+#libHeader h2 {
+  margin: 0; font-size: 15px; font-weight: 600; color: #eee;
+}
+#libHeader .total {
+  font-size: 12px; color: #00a8ff; font-family: monospace;
+  background: #1a1a1a; padding: 5px 12px; border-radius: 14px;
+  border: 1px solid #262626;
+}
+#libHeader .spacer { flex: 1; }
+#libHeader .close {
+  background: #333; border: none; color: white; cursor: pointer;
+  padding: 6px 12px; border-radius: 6px; font-size: 12px;
+}
+#libHeader .close:hover { background: #444; }
+
 #library .group-header {
   grid-column: 1 / -1; font-size: 13px; font-weight: bold; color: #00a8ff;
   padding: 12px 4px 4px; border-bottom: 1px solid #222;
@@ -94,7 +102,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #resetFiltersBtn { background: #666; }
 #resetFiltersBtn:hover { background: #555; }
 .controls-hidden #toggleTools, .controls-hidden #addFilesBtn, .controls-hidden #singleFileBtn,
-.controls-hidden #openFolderBtn, .controls-hidden #purgeLibraryBtn,
+.controls-hidden #openFolderBtn, .controls-hidden #purgeLibraryBtn, .controls-hidden #libraryBtn,
 .controls-hidden #pageInfo, .controls-hidden #chapterInfo {
   opacity: 0; pointer-events: none; transform: translateY(10px);
 }
@@ -164,23 +172,27 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <input type="file" id="libraryInput" accept=".zip,.cbz" multiple>
 <input type="file" id="folderFallbackInput" webkitdirectory directory multiple>
 
+<!-- Library header (only visible when library open) -->
+<div id="libHeader">
+  <h2>📚 Your Library</h2>
+  <span class="total" id="libTotal">0 indexed</span>
+  <span class="spacer"></span>
+  <button class="close" id="libClose">✕ Close</button>
+</div>
+
 <div id="library"></div>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 <div id="chapterInfo"></div>
 <div id="pageInfo"></div>
 <div id="permBanner"></div>
 
-<!-- Top-right: home / library + indexed count -->
-<div id="homeBar">
-  <span id="countBadge" title="Total indexed manga">📚 0</span>
-  <button id="libraryBtn" title="Back to library">🏠 Library</button>
-</div>
-
 <div id="shortcutsHelp">
   <h3>⌨️ Keyboard Shortcuts</h3>
   <table>
     <tr><td><kbd>A</kbd> / <kbd>←</kbd></td><td>Previous chapter</td></tr>
     <tr><td><kbd>D</kbd> / <kbd>→</kbd></td><td>Next chapter</td></tr>
+    <tr><td><kbd>W</kbd></td><td>Scroll up (page)</td></tr>
+    <tr><td><kbd>S</kbd></td><td>Scroll down (page)</td></tr>
     <tr><td><kbd>T</kbd></td><td>Toggle Tools</td></tr>
     <tr><td><kbd>H</kbd></td><td>Home / Library</td></tr>
     <tr><td><kbd>O</kbd></td><td>Open File</td></tr>
@@ -236,6 +248,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <button id="singleFileBtn">📄 Open File</button>
 <button id="openFolderBtn">📁 Open Folder</button>
 <button id="purgeLibraryBtn">🗑️ Purge</button>
+<button id="libraryBtn">🏠 Library</button>
 <div id="reader"></div>
 
 <script>
@@ -244,16 +257,17 @@ let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = 
 let currentBlobURLs = [];
 let imageCache = new Map();
 let windowImageEntries = [];
+let currentMangaSlug = ""; // for hash routing
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
+const libHeader = document.getElementById("libHeader");
+const libTotal = document.getElementById("libTotal");
 const progressFill = document.getElementById("progressFill");
 const chapterInfo = document.getElementById("chapterInfo");
 const pageInfo = document.getElementById("pageInfo");
 const shortcutsHelp = document.getElementById("shortcutsHelp");
 const storageInfo = document.getElementById("storageInfo");
 const permBanner = document.getElementById("permBanner");
-const countBadge = document.getElementById("countBadge");
-const libraryBtn = document.getElementById("libraryBtn");
 const thumbURLs = [];
 let intersectionObserver = null;
 
@@ -327,10 +341,46 @@ function cleanupThumbnails() {
   thumbURLs.length = 0;
 }
 
+/* ================= SLUG HELPERS ================= */
+function slugify(s) {
+  return String(s)
+    .replace(/\\/g, '/')
+    .replace(/\.[a-z0-9]+$/i, '') // strip extension if any
+    .trim()
+    .replace(/[^\w\s\-\/]+/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+}
+function setHashForManga(name) {
+  const slug = slugify(name);
+  currentMangaSlug = slug;
+  // Avoid double push if unchanged
+  const newHash = '#manga=' + encodeURIComponent(slug);
+  if (location.hash !== newHash) {
+    history.replaceState(null, '', location.pathname + location.search + newHash);
+  }
+}
+function clearHash() {
+  currentMangaSlug = "";
+  if (location.hash) {
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+}
+function getMangaFromHash() {
+  const h = location.hash.replace(/^#/, '');
+  const m = h.match(/^manga=(.+)$/);
+  if (m) return decodeURIComponent(m[1]);
+  // legacy: bare #something
+  if (h && !h.includes('=')) return h;
+  return null;
+}
+
 /* ================= UI TOGGLE ================= */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #libraryBtn, #countBadge, #addFilesBtn, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo, #storageInfo, #permBanner')) return;
+  if (e.target.closest('#tools, #toggleTools, #libraryBtn, #addFilesBtn, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #folderSelect, input, button, .book, #library, #libHeader, #shortcutsHelp, #pageInfo, #chapterInfo, #storageInfo, #permBanner')) return;
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
   if (!controlsVisible) document.getElementById("tools").style.display = "none";
@@ -381,16 +431,15 @@ async function idbClear() {
   });
 }
 
-/* ================= COUNT BADGE ================= */
-async function refreshCountBadge() {
+/* ================= LIBRARY HEADER ================= */
+async function refreshLibTotal() {
   try {
     const recs = await idbGet(KEY_LIBRARY);
     const n = Array.isArray(recs) ? recs.length : 0;
-    countBadge.textContent = `📚 ${n}`;
-    countBadge.title = `${n} indexed manga`;
+    libTotal.textContent = `${n} indexed`;
     return n;
   } catch {
-    countBadge.textContent = '📚 0';
+    libTotal.textContent = `0 indexed`;
     return 0;
   }
 }
@@ -473,9 +522,11 @@ function createBookElement(book) {
     ev.stopPropagation();
     if (book.file) {
       cleanupBlobURLs();
+      setHashForManga(book.name);
       try {
         await loadZipFile(book.file);
         libraryEl.classList.remove('active');
+        document.body.classList.remove('library-open');
       } catch (e) {
         libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${e.message}</div>`;
       }
@@ -500,8 +551,10 @@ async function openCachedBook(book) {
     if (perm !== 'granted') { showChapterInfo('❌ Permission denied'); return; }
     const file = await handle.getFile();
     cleanupBlobURLs();
+    setHashForManga(book.name);
     await loadZipFile(file);
     libraryEl.classList.remove('active');
+    document.body.classList.remove('library-open');
   } catch (e) {
     console.error(e);
     libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error opening: ${e.message}</div>`;
@@ -545,7 +598,6 @@ function renderLibrary(books, grouped = false) {
 
 /* ================= HOME ================= */
 async function showHome() {
-  // Close reader view elements that don't belong on home
   readerEl.innerHTML = '';
   allImages = [];
   windowImageEntries = [];
@@ -553,15 +605,25 @@ async function showHome() {
   chapterInfo.classList.remove('visible');
   document.getElementById('tools').style.display = 'none';
 
+  cleanupBlobURLs();
+  if (intersectionObserver) { intersectionObserver.disconnect(); intersectionObserver = null; }
+  zip = null;
+  currentZipName = "";
+  chapterStartIndex = {};
+  foldersList = [];
+  currentFolder = "";
+  folderSelect.innerHTML = '<option value="">📁 All Pages (full manga)</option>';
+  clearHash();
+
   const recs = await idbGet(KEY_LIBRARY);
   const books = Array.isArray(recs) ? recs.map(r => ({
-    name: r.name, group: r.group, thumbBlob: r.thumbBlob,
-    fileHandle: r.fileHandle
+    name: r.name, group: r.group, thumbBlob: r.thumbBlob, fileHandle: r.fileHandle
   })) : [];
 
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   renderLibrary(books, true);
-  await refreshCountBadge();
+  await refreshLibTotal();
 
   if (books.length) {
     permBanner.innerHTML = `📁 Cached library · ${books.length} books · Click any book to grant access`;
@@ -570,7 +632,70 @@ async function showHome() {
   }
 }
 
-libraryBtn.onclick = (e) => { e.stopPropagation(); showHome(); };
+/* ================= TRY AUTO-OPEN FROM HASH ================= */
+async function tryAutoOpenFromHash() {
+  const wanted = getMangaFromHash();
+  if (!wanted) return false;
+
+  const recs = await idbGet(KEY_LIBRARY);
+  if (!Array.isArray(recs) || !recs.length) return false;
+
+  // Match by slugified name OR by slugified relPath
+  let match = recs.find(r => slugify(r.name) === wanted);
+  if (!match) {
+    // try matching trailing part
+    match = recs.find(r => slugify(r.name).endsWith(wanted));
+  }
+  if (!match) {
+    // try matching the last path segment
+    match = recs.find(r => slugify((r.name || '').split('/').pop()) === wanted);
+  }
+  if (!match) return false;
+
+  if (!match.fileHandle) {
+    // No persistent handle (fallback session) — can't auto-open
+    showChapterInfo('⚠️ Re-open folder to access this manga');
+    return false;
+  }
+
+  // Auto-load: try to grant permission silently; if prompt, request it (needs gesture ideally,
+  // but some browsers allow on load after prior grant)
+  try {
+    const perm = await match.fileHandle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') {
+      const file = await match.fileHandle.getFile();
+      setHashForManga(match.name);
+      await loadZipFile(file);
+      return true;
+    } else if (perm === 'prompt') {
+      // Show a banner inviting the user to click to grant
+      permBanner.innerHTML = `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`;
+      permBanner.classList.add('visible');
+      document.getElementById('grantLoadBtn').onclick = async () => {
+        try {
+          const p2 = await match.fileHandle.requestPermission({ mode: 'read' });
+          if (p2 === 'granted') {
+            permBanner.classList.remove('visible');
+            const file = await match.fileHandle.getFile();
+            setHashForManga(match.name);
+            await loadZipFile(file);
+          }
+        } catch (e) { console.warn(e); }
+      };
+      return false;
+    }
+  } catch (e) { console.warn('Auto-open failed:', e); }
+  return false;
+}
+
+/* ================= BUTTONS ================= */
+document.getElementById('libraryBtn').onclick = (e) => { e.stopPropagation(); showHome(); };
+document.getElementById('libClose').onclick = (e) => {
+  e.stopPropagation();
+  libraryEl.classList.remove('active');
+  document.body.classList.remove('library-open');
+  clearHash();
+};
 
 /* ================= FOLDER PICKER ================= */
 const openFolderBtn = document.getElementById('openFolderBtn');
@@ -597,12 +722,14 @@ async function collectArchiveFiles(dirHandle, basePath = '') {
 async function buildLibraryFromDirectory(dirHandle) {
   libraryEl.innerHTML = `<div class="loading">Scanning folder: ${dirHandle.name}…</div>`;
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   progressFill.style.width = '0%';
 
   const archives = await collectArchiveFiles(dirHandle);
   if (!archives.length) {
     libraryEl.innerHTML = '<div class="loading">No .zip/.cbz files found in this folder.</div>';
     progressFill.style.width = '0%';
+    await refreshLibTotal();
     return;
   }
 
@@ -628,7 +755,7 @@ async function buildLibraryFromDirectory(dirHandle) {
 
   const clean = books.filter(Boolean);
   await idbSet(KEY_LIBRARY, clean);
-  await refreshCountBadge();
+  await refreshLibTotal();
   renderLibrary(clean, true);
 }
 
@@ -651,11 +778,12 @@ openFolderBtn.onclick = async (e) => {
   }
 };
 
-/* Fallback: <input webkitdirectory> — session-only */
+/* Fallback: <input webkitdirectory> */
 folderFallbackInput.onchange = async (e) => {
   const all = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (!all.length) { e.target.value = ''; return; }
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   libraryEl.innerHTML = `<div class="loading">Loading ${all.length} archives…</div>`;
   const archives = all.map(file => ({ file, relPath: file.webkitRelativePath || file.name, handle: null }));
   const books = await processWithConcurrency(archives, async (item, index) => {
@@ -674,11 +802,12 @@ folderFallbackInput.onchange = async (e) => {
   e.target.value = '';
 };
 
-/* ================= ADD FILES (multi-file, session-only) ================= */
+/* ================= ADD FILES ================= */
 document.getElementById("addFilesBtn").onclick = (e) => {
   e.stopPropagation();
   libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files…</div>';
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   progressFill.style.width = '0%';
   cleanupThumbnails();
   document.getElementById("libraryInput").click();
@@ -688,6 +817,7 @@ document.getElementById("libraryInput").onchange = async (e) => {
   const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (!files.length) { libraryEl.innerHTML = '<div class="loading">No files selected</div>'; return; }
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files…</div>`;
   const books = await processWithConcurrency(files, async (file, index) => {
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
@@ -714,9 +844,12 @@ document.getElementById("fileInput").onchange = async (e) => {
   progressFill.style.width = '0%';
   libraryEl.innerHTML = `<div class="loading">Loading ${file.name}…</div>`;
   libraryEl.classList.add('active');
+  document.body.classList.add('library-open');
   try {
+    setHashForManga(file.name);
     await loadZipFile(file);
     libraryEl.classList.remove('active');
+    document.body.classList.remove('library-open');
   } catch(err) {
     libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
   }
@@ -769,6 +902,8 @@ async function loadZipFile(file) {
   renderPlaceholders(imageEntries);
   showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? ' (nested)' : ''));
   window.scrollTo(0, 0);
+  // Ensure hash reflects the opened manga
+  if (!getMangaFromHash()) setHashForManga(currentZipName);
 }
 
 function renderPlaceholders(entries) {
@@ -879,10 +1014,21 @@ function showChapterInfo(text) {
   setTimeout(() => chapterInfo.classList.remove('visible'), 2500);
 }
 
+/* ================= W/S SCROLL ================= */
+function scrollPage(direction) {
+  const step = Math.round(window.innerHeight * 0.85);
+  window.scrollBy({ top: direction * step, behavior: 'smooth' });
+}
+
 /* ================= KEYBOARD ================= */
 document.addEventListener("keydown", (e) => {
+  // Don't hijack if typing in inputs/selects
+  const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
   if (e.key === "Escape") {
     libraryEl.classList.remove('active');
+    document.body.classList.remove('library-open');
     shortcutsHelp.classList.remove('active');
     storageInfo.classList.remove('active');
     return;
@@ -890,7 +1036,13 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
     e.preventDefault(); shortcutsHelp.classList.toggle('active'); return;
   }
-  if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active') || storageInfo.classList.contains('active')) return;
+  if (shortcutsHelp.classList.contains('active') || storageInfo.classList.contains('active')) return;
+
+  // W / S scroll (only meaningful when a manga is loaded)
+  if (e.key === "w" || e.key === "W") { e.preventDefault(); scrollPage(-1); return; }
+  if (e.key === "s" || e.key === "S") { e.preventDefault(); scrollPage(1); return; }
+
+  if (libraryEl.classList.contains('active')) return;
 
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const i = foldersList.indexOf(currentFolder);
@@ -988,11 +1140,13 @@ async function doPurge() {
   allImages = [];
   libraryEl.innerHTML = '';
   libraryEl.classList.remove('active');
+  document.body.classList.remove('library-open');
   readerEl.innerHTML = '';
   pageInfo.classList.remove('visible');
   chapterInfo.classList.remove('visible');
   permBanner.classList.remove('visible');
-  await refreshCountBadge();
+  clearHash();
+  await refreshLibTotal();
 }
 
 document.getElementById('purgeConfirm').onclick = async () => {
@@ -1015,11 +1169,26 @@ window.addEventListener('resize', () => {
   }
 });
 
+/* React to manual hash changes (back/forward, or paste new hash) */
+window.addEventListener('hashchange', async () => {
+  const wanted = getMangaFromHash();
+  if (!wanted) return;
+  // If a different manga is requested, try to open it
+  if (currentMangaSlug === wanted) return;
+  await tryAutoOpenFromHash();
+});
+
 loadFilters();
 
-/* Auto-show cached library on load + refresh count badge */
+/* Boot: refresh count and try hash auto-open */
 window.addEventListener('load', async () => {
-  await refreshCountBadge();
+  await refreshLibTotal();
+
+  // 1. Try to auto-open from hash first
+  const opened = await tryAutoOpenFromHash();
+  if (opened) return;
+
+  // 2. Otherwise, show the library grid (if cache exists)
   const recs = await idbGet(KEY_LIBRARY);
   if (Array.isArray(recs) && recs.length) {
     const books = recs.map(r => ({
@@ -1027,10 +1196,13 @@ window.addEventListener('load', async () => {
     }));
     renderLibrary(books, true);
     libraryEl.classList.add('active');
+    document.body.classList.add('library-open');
 
-    permBanner.innerHTML = `📁 Cached library · ${recs.length} books · Click any book to grant access`;
-    permBanner.classList.add('visible');
-    setTimeout(() => permBanner.classList.remove('visible'), 6000);
+    if (!getMangaFromHash()) {
+      permBanner.innerHTML = `📁 Cached library · ${recs.length} books · Click any book to grant access`;
+      permBanner.classList.add('visible');
+      setTimeout(() => permBanner.classList.remove('visible'), 6000);
+    }
   }
 });
 </script>
