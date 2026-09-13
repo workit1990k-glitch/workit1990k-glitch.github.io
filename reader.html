@@ -2,84 +2,87 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Manga Reader</title>
+<title>Manga Reader · Folder Library</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
-  display: block;
-  margin: 0 auto;
-  width: 100%;
-  height: auto;
+  display: block; margin: 0 auto; width: 100%; height: auto;
   max-width: fit-content;
-  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1)) grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
-  min-height: 100px;
-  background: #1a1a1a;
-}
-#reader .chapter-marker {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+  filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1))
+          grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
+  min-height: 100px; background: #1a1a1a;
 }
 #tools {
   position: fixed; top: 10px; right: 10px; background: #222;
   padding: 12px; border-radius: 12px; display: none;
-  width: 240px; z-index: 10;
-  max-height: 80vh; overflow-y: auto;
+  width: 240px; z-index: 10; max-height: 80vh; overflow-y: auto;
 }
 #tools label { font-size: 12px; display: block; margin-bottom: 8px; }
 #tools .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 #tools .slider-row input { flex: 1; }
 #tools .slider-row span { min-width: 40px; text-align: right; font-size: 11px; color: #aaa; }
 #tools select, #tools button { width: 100%; margin-top: 5px; }
-#toggleTools, #openLibrary, #singleFileBtn {
+#toggleTools, #openLibrary, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn {
   position: fixed; bottom: 20px; background: #444; border: none;
   padding: 10px 14px; color: white; cursor: pointer; border-radius: 8px; z-index: 20;
-  font-size: 13px; transition: opacity 0.2s, transform 0.2s;
+  font-size: 13px; transition: opacity 0.2s, transform 0.2s, background 0.2s;
 }
 #toggleTools { right: 20px; }
 #openLibrary { right: 110px; }
 #singleFileBtn { right: 220px; }
-#fileInput, #libraryInput { display: none; }
+#openFolderBtn { right: 330px; }
+#purgeLibraryBtn { right: 460px; background: #6b2222; }
+#purgeLibraryBtn:hover { background: #8a2b2b; }
+#fileInput, #libraryInput, #folderFallbackInput { display: none; }
 #library {
   display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: #111; padding: 20px; overflow-y: auto; z-index: 30;
   grid-template-columns: repeat(auto-fill, 160px); gap: 16px;
 }
 #library.active { display: grid; }
+#library .group-header {
+  grid-column: 1 / -1;
+  font-size: 13px; font-weight: bold; color: #00a8ff;
+  padding: 12px 4px 4px; border-bottom: 1px solid #222;
+}
 .book {
   cursor: pointer; background: #222; padding: 8px; border-radius: 12px;
   text-align: center; transition: transform 0.1s, background 0.2s;
+  position: relative;
 }
 .book:hover { background: #333; transform: translateY(-2px); }
+.book:active { transform: scale(0.97); }
 .book img {
   width: 100%; height: 220px; object-fit: cover; border-radius: 8px;
-  background: #1a1a1a;
+  background: #1a1a1a; pointer-events: none;
 }
 .book span {
   font-size: 12px; display: block; margin-top: 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.book .nested-badge {
+  position: absolute; top: 12px; right: 12px;
+  background: #00a8ff; color: black; font-size: 9px;
+  padding: 2px 6px; border-radius: 10px; font-weight: bold;
 }
 .loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
-.progress-bar {
-  position: fixed; top: 0; left: 0; height: 3px; background: #444; z-index: 40;
-}
-.progress-fill {
-  height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s;
-}
+.progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: #444; z-index: 40; }
+.progress-fill { height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s; }
 .filter-label { display: flex; justify-content: space-between; align-items: center; }
-#saveFiltersBtn, #resetFiltersBtn { 
-  background: #00a8ff; margin-top: 8px; font-size: 12px; padding: 6px; border-radius: 6px; 
+#saveFiltersBtn, #resetFiltersBtn {
+  background: #00a8ff; margin-top: 8px; font-size: 12px; padding: 6px; border-radius: 6px;
 }
 #saveFiltersBtn:hover, #resetFiltersBtn:hover { background: #008ecc; }
 #resetFiltersBtn { background: #666; }
 #resetFiltersBtn:hover { background: #555; }
-.controls-hidden #toggleTools, 
-.controls-hidden #openLibrary, 
+.controls-hidden #toggleTools,
+.controls-hidden #openLibrary,
 .controls-hidden #singleFileBtn,
+.controls-hidden #openFolderBtn,
+.controls-hidden #purgeLibraryBtn,
 .controls-hidden #pageInfo,
 .controls-hidden #chapterInfo {
   opacity: 0; pointer-events: none; transform: translateY(10px);
@@ -107,19 +110,45 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #shortcutsHelp h3 { margin: 0 0 15px 0; font-size: 16px; }
 #shortcutsHelp table { width: 100%; font-size: 12px; }
 #shortcutsHelp td { padding: 4px 0; }
-#shortcutsHelp kbd { 
-  background: #444; padding: 2px 6px; border-radius: 4px; font-family: monospace; 
-}
+#shortcutsHelp kbd { background: #444; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
 .img-placeholder {
   display: flex; align-items: center; justify-content: center;
   background: #1a1a1a; color: #555; font-size: 11px;
 }
+.img-placeholder .nested-badge {
+  position: absolute; top: 4px; right: 4px;
+  background: #00a8ff; color: black; font-size: 9px;
+  padding: 2px 6px; border-radius: 10px; font-weight: bold; z-index: 5;
+}
+
+/* ---- Storage info panel ---- */
+#storageInfo {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(34,34,34,0.97); padding: 16px 22px; border-radius: 12px;
+  z-index: 60; display: none; min-width: 300px;
+  border: 1px solid #333;
+}
+#storageInfo.active { display: block; }
+#storageInfo h3 { margin: 0 0 12px 0; font-size: 15px; }
+#storageInfo table { width: 100%; font-size: 12px; margin-bottom: 12px; }
+#storageInfo td { padding: 4px 0; }
+#storageInfo td:last-child { text-align: right; color: #00a8ff; font-family: monospace; }
+#storageInfo .actions { display: flex; gap: 8px; }
+#storageInfo button {
+  flex: 1; padding: 8px; border: none; border-radius: 6px;
+  cursor: pointer; font-size: 12px; color: white;
+}
+#storageInfo .confirm { background: #c0392b; }
+#storageInfo .confirm:hover { background: #e04a3a; }
+#storageInfo .cancel { background: #444; }
+#storageInfo .cancel:hover { background: #555; }
 </style>
 </head>
 <body>
 
 <input type="file" id="fileInput" accept=".zip,.cbz">
 <input type="file" id="libraryInput" accept=".zip,.cbz" multiple>
+<input type="file" id="folderFallbackInput" webkitdirectory directory multiple>
 
 <div id="library"></div>
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
@@ -134,17 +163,35 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
     <tr><td><kbd>T</kbd></td><td>Toggle Tools</td></tr>
     <tr><td><kbd>L</kbd></td><td>Open Library</td></tr>
     <tr><td><kbd>O</kbd></td><td>Open File</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Open Folder</td></tr>
     <tr><td><kbd>Space</kbd> / <kbd>C</kbd></td><td>Hide/Show Controls</td></tr>
     <tr><td><kbd>Ctrl+R</kbd></td><td>Reset Filters</td></tr>
     <tr><td><kbd>?</kbd></td><td>This Help</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td>Close Help/Library</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Close Help/Library/Storage</td></tr>
   </table>
   <p style="text-align:center;margin-top:15px;color:#888;">Click outside or press Esc to close</p>
 </div>
 
+<div id="storageInfo">
+  <h3>🗑️ Purge Library Data</h3>
+  <table id="storageTable">
+    <tr><td>Saved folder handle</td><td id="sizeHandle">—</td></tr>
+    <tr><td>Saved filter settings</td><td id="sizeFilters">—</td></tr>
+    <tr><td>Thumbnail blob URLs</td><td id="sizeThumbs">—</td></tr>
+    <tr><td>Image cache (in-memory)</td><td id="sizeCache">—</td></tr>
+    <tr style="border-top:1px solid #333;">
+      <td style="padding-top:8px;"><b>Total estimated</b></td>
+      <td id="sizeTotal" style="padding-top:8px;font-weight:bold;">—</td>
+    </tr>
+  </table>
+  <div class="actions">
+    <button class="cancel" id="purgeCancel">Cancel</button>
+    <button class="confirm" id="purgeConfirm">Purge Now</button>
+  </div>
+</div>
+
 <div id="tools">
   <label>Jump to Chapter <select id="folderSelect"></select></label>
-  
   <div class="slider-row">
     <label class="filter-label">Contrast <span id="contrastValue">1.00</span></label>
     <input type="range" id="contrast" min="80" max="150" value="100">
@@ -158,7 +205,6 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
     <input type="range" id="saturate" min="0" max="200" value="100">
   </div>
   <label><input type="checkbox" id="grayscale"> Grayscale (100%)</label>
-  
   <button id="saveFiltersBtn">💾 Save Settings</button>
   <button id="resetFiltersBtn">↺ Reset to Default</button>
 </div>
@@ -166,22 +212,26 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <button id="toggleTools">⚙️ Tools</button>
 <button id="openLibrary">📚 Library</button>
 <button id="singleFileBtn">📄 Open File</button>
+<button id="openFolderBtn">📁 Open Folder</button>
+<button id="purgeLibraryBtn">🗑️ Purge</button>
 <div id="reader"></div>
 
 <script>
+/* ================= STATE ================= */
 let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
 let currentBlobURLs = [];
-let imageCache = new Map(); // Cache for loaded image blobs
+let imageCache = new Map();
+let windowImageEntries = []; // was window.imageEntries
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
 const chapterInfo = document.getElementById("chapterInfo");
 const pageInfo = document.getElementById("pageInfo");
 const shortcutsHelp = document.getElementById("shortcutsHelp");
+const storageInfo = document.getElementById("storageInfo");
 const thumbURLs = [];
 let intersectionObserver = null;
 
-// Filter elements
 const contrast = document.getElementById("contrast");
 const brightness = document.getElementById("brightness");
 const saturate = document.getElementById("saturate");
@@ -194,55 +244,46 @@ const resetFiltersBtn = document.getElementById("resetFiltersBtn");
 const folderSelect = document.getElementById("folderSelect");
 const readerEl = document.getElementById("reader");
 
-// Default filter values
 const DEFAULTS = { contrast: 100, brightness: 100, saturate: 100, grayscale: false };
 
-/* ---------- FILTERS ---------- */
+/* ================= FILTERS ================= */
 function updateFilters() {
   const contrastVal = contrast.value / 100;
   const brightnessVal = brightness.value / 100;
   const saturateVal = saturate.value / 100;
   const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
-  
   contrastValue.textContent = contrastVal.toFixed(2);
   brightnessValue.textContent = brightnessVal.toFixed(2);
   saturateValue.textContent = saturateVal.toFixed(2);
-  
   root.style.setProperty('--contrast', contrastVal);
   root.style.setProperty('--brightness', brightnessVal);
   root.style.setProperty('--saturate', saturateVal);
   root.style.setProperty('--grayscale', grayscaleVal);
 }
-
 [contrast, brightness, saturate].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
-/* ---------- SAVE/LOAD/RESET FILTERS ---------- */
 function saveFilters() {
   const settings = {
-    contrast: contrast.value,
-    brightness: brightness.value,
-    saturate: saturate.value,
-    grayscale: grayscaleToggle.checked
+    contrast: contrast.value, brightness: brightness.value,
+    saturate: saturate.value, grayscale: grayscaleToggle.checked
   };
   localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
   saveFiltersBtn.textContent = '✓ Saved!';
   setTimeout(() => saveFiltersBtn.textContent = '💾 Save Settings', 1500);
 }
-
 function loadFilters() {
   const saved = localStorage.getItem('mangaReaderFilters');
   if (!saved) return;
   try {
-    const settings = JSON.parse(saved);
-    if (settings.contrast) contrast.value = settings.contrast;
-    if (settings.brightness) brightness.value = settings.brightness;
-    if (settings.saturate) saturate.value = settings.saturate;
-    if (settings.grayscale !== undefined) grayscaleToggle.checked = settings.grayscale;
+    const s = JSON.parse(saved);
+    if (s.contrast) contrast.value = s.contrast;
+    if (s.brightness) brightness.value = s.brightness;
+    if (s.saturate) saturate.value = s.saturate;
+    if (s.grayscale !== undefined) grayscaleToggle.checked = s.grayscale;
     updateFilters();
   } catch(e) { console.warn('Failed to load filters:', e); }
 }
-
 function resetFilters() {
   contrast.value = DEFAULTS.contrast;
   brightness.value = DEFAULTS.brightness;
@@ -252,53 +293,44 @@ function resetFilters() {
   resetFiltersBtn.textContent = '✓ Reset!';
   setTimeout(() => resetFiltersBtn.textContent = '↺ Reset to Default', 1500);
 }
-
 saveFiltersBtn.onclick = saveFilters;
 resetFiltersBtn.onclick = resetFilters;
 
-/* ---------- MEMORY CLEANUP ---------- */
+/* ================= CLEANUP ================= */
 function cleanupBlobURLs() {
-  currentBlobURLs.forEach(url => {
-    try { URL.revokeObjectURL(url); } catch(e) {}
-  });
+  currentBlobURLs.forEach(url => { try { URL.revokeObjectURL(url); } catch(e) {} });
   currentBlobURLs = [];
   imageCache.clear();
 }
-
 function cleanupThumbnails() {
-  thumbURLs.forEach(url => {
-    try { URL.revokeObjectURL(url); } catch(e) {}
-  });
+  thumbURLs.forEach(url => { try { URL.revokeObjectURL(url); } catch(e) {} });
   thumbURLs.length = 0;
 }
 
-/* ---------- UI TOGGLE ON CLICK ONLY ---------- */
+/* ================= UI TOGGLE ================= */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo')) return;
-  
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo, #storageInfo')) return;
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
   if (!controlsVisible) document.getElementById("tools").style.display = "none";
 });
 
-/* ---------- TOOLS PANEL ---------- */
 document.getElementById("toggleTools").onclick = (e) => {
   e.stopPropagation();
   const tools = document.getElementById("tools");
   tools.style.display = tools.style.display === "none" ? "block" : "none";
 };
 
-/* ---------- LIBRARY & SINGLE FILE ---------- */
+/* ================= LIBRARY & FILE PICKERS ================= */
 document.getElementById("openLibrary").onclick = (e) => {
   e.stopPropagation();
-  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files...</div>';
+  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files…</div>';
   libraryEl.classList.add('active');
   progressFill.style.width = '0%';
   cleanupThumbnails();
   document.getElementById("libraryInput").click();
 };
-
 document.getElementById("singleFileBtn").onclick = (e) => {
   e.stopPropagation();
   cleanupBlobURLs();
@@ -309,11 +341,9 @@ document.getElementById("singleFileBtn").onclick = (e) => {
 document.getElementById("fileInput").onchange = async (e) => {
   const file = e.target.files[0];
   if (!file || !/\.(zip|cbz)$/i.test(file.name)) return;
-  
   progressFill.style.width = '0%';
-  libraryEl.innerHTML = `<div class="loading">Loading ${file.name}...</div>`;
+  libraryEl.innerHTML = `<div class="loading">Loading ${file.name}…</div>`;
   libraryEl.classList.add('active');
-  
   try {
     await loadZipFile(file);
     libraryEl.classList.remove('active');
@@ -324,30 +354,208 @@ document.getElementById("fileInput").onchange = async (e) => {
   e.target.value = '';
 };
 
-/* ---------- THUMBNAIL EXTRACTION ---------- */
+/* ================= INDEXEDDB HELPERS ================= */
+const DB_NAME = 'mangaReader';
+const DB_STORE = 'handles';
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).put(val, key);
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readonly');
+    const req = tx.objectStore(DB_STORE).get(key);
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+}
+async function idbClear() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).clear();
+    tx.oncomplete = res;
+    tx.onerror = () => rej(tx.error);
+  });
+}
+
+/* ================= FOLDER PICKER ================= */
+const openFolderBtn = document.getElementById('openFolderBtn');
+const folderFallbackInput = document.getElementById('folderFallbackInput');
+
+async function collectArchiveFiles(dirHandle, basePath = '') {
+  const results = [];
+  for await (const entry of dirHandle.values()) {
+    if (entry.kind === 'file') {
+      if (/\.(zip|cbz)$/i.test(entry.name)) {
+        const file = await entry.getFile();
+        const relPath = basePath ? `${basePath}/${entry.name}` : entry.name;
+        results.push({ file, relPath, handle: entry });
+      }
+    } else if (entry.kind === 'directory') {
+      if (entry.name.startsWith('.') || entry.name === '__MACOSX') continue;
+      const nested = await collectArchiveFiles(entry, basePath ? `${basePath}/${entry.name}` : entry.name);
+      results.push(...nested);
+    }
+  }
+  return results;
+}
+
+async function buildLibraryFromDirectory(dirHandle) {
+  libraryEl.innerHTML = `<div class="loading">Scanning folder: ${dirHandle.name}…</div>`;
+  libraryEl.classList.add('active');
+  progressFill.style.width = '0%';
+
+  const archives = await collectArchiveFiles(dirHandle);
+  if (archives.length === 0) {
+    libraryEl.innerHTML = '<div class="loading">No .zip/.cbz files found in this folder.</div>';
+    progressFill.style.width = '0%';
+    return;
+  }
+
+  const books = await processWithConcurrency(archives, async (item, index) => {
+    libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
+    try {
+      const thumbURL = await extractFirstImageThumbnail(item.file);
+      return {
+        file: item.file,
+        handle: item.handle,
+        name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
+        thumb: thumbURL,
+        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : ''
+      };
+    } catch (err) {
+      console.warn('Skip:', item.relPath, err);
+      return null;
+    }
+  }, 4);
+
+  progressFill.style.width = '100%';
+  setTimeout(() => progressFill.style.width = '0%', 300);
+  renderLibrary(books.filter(Boolean), true);
+}
+
+openFolderBtn.onclick = async (e) => {
+  e.stopPropagation();
+  if (!('showDirectoryPicker' in window)) {
+    folderFallbackInput.click();
+    return;
+  }
+  try {
+    const dirHandle = await window.showDirectoryPicker({
+      id: 'mangaRoot',
+      mode: 'read',
+      startIn: 'documents'
+    });
+    await idbSet('lastDir', dirHandle);
+    await buildLibraryFromDirectory(dirHandle);
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const saved = await idbGet('lastDir');
+      if (saved) await tryRestoreSavedHandle(saved);
+    } else {
+      console.error(err);
+      libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
+    }
+  }
+};
+
+async function tryRestoreSavedHandle(handle) {
+  if (!handle || typeof handle.queryPermission !== 'function') return;
+  const perm = await handle.queryPermission({ mode: 'read' });
+  if (perm === 'granted') {
+    await buildLibraryFromDirectory(handle);
+    return;
+  }
+  if (perm === 'prompt') {
+    const req = await handle.requestPermission({ mode: 'read' });
+    if (req === 'granted') await buildLibraryFromDirectory(handle);
+  }
+}
+
+/* Fallback: <input webkitdirectory> */
+folderFallbackInput.onchange = async (e) => {
+  const all = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
+  if (!all.length) { e.target.value = ''; return; }
+  libraryEl.classList.add('active');
+  libraryEl.innerHTML = `<div class="loading">Loading ${all.length} archives…</div>`;
+
+  const archives = all.map(file => ({
+    file,
+    relPath: file.webkitRelativePath || file.name,
+    handle: null
+  }));
+
+  const books = await processWithConcurrency(archives, async (item, index) => {
+    libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
+    try {
+      const thumbURL = await extractFirstImageThumbnail(item.file);
+      return {
+        file: item.file,
+        name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
+        thumb: thumbURL,
+        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : ''
+      };
+    } catch { return null; }
+  }, 4);
+
+  renderLibrary(books.filter(Boolean), true);
+  e.target.value = '';
+};
+
+/* ================= THUMBNAIL EXTRACTION (nested zip aware) ================= */
 async function extractFirstImageThumbnail(file) {
   const zipTemp = await JSZip.loadAsync(file);
-  const imagePath = Object.keys(zipTemp.files)
-    .filter(p => !p.endsWith('/') && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0];
-  
-  if (!imagePath) return null;
-  const blob = await zipTemp.files[imagePath].async("blob");
+  async function collectImagePaths(zipObj, base = '') {
+    let paths = [];
+    for (const [path, entry] of Object.entries(zipObj.files)) {
+      if (entry.dir) continue;
+      const fullPath = base ? `${base}/${path}` : path;
+      if (path.includes('__MACOSX')) continue;
+      if (/\.(zip|cbz)$/i.test(path)) {
+        try {
+          const blob = await entry.async('blob');
+          const nestedZip = await JSZip.loadAsync(blob);
+          const nestedPaths = await collectImagePaths(nestedZip, fullPath);
+          paths = paths.concat(nestedPaths);
+        } catch (e) { console.warn('Nested zip read error:', fullPath, e); }
+      } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
+        paths.push({ path: fullPath, entry });
+      }
+    }
+    return paths;
+  }
+  const entries = await collectImagePaths(zipTemp);
+  if (!entries.length) return null;
+  entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  const blob = await entries[0].entry.async('blob');
   const url = URL.createObjectURL(blob);
   thumbURLs.push(url);
   return url;
 }
 
-/* ---------- PARALLEL PROCESSING POOL ---------- */
+/* ================= CONCURRENCY POOL ================= */
 async function processWithConcurrency(items, processor, concurrency = 3) {
   const results = new Array(items.length);
   const executing = [];
   let completed = 0;
-  
   for (let i = 0; i < items.length; i++) {
     const index = i;
     const item = items[i];
-    
     const promise = (async () => {
       try { return await processor(item, index); }
       catch(err) { console.warn('Processor error', index, err); return null; }
@@ -359,7 +567,6 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
       progressFill.style.width = `${Math.round((completed / items.length) * 100)}%`;
       return result;
     });
-    
     executing.push(promise);
     if (executing.length >= concurrency) await Promise.race(executing);
   }
@@ -367,172 +574,212 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
   return results;
 }
 
-/* ---------- LIBRARY LOADING ---------- */
+/* ================= LIBRARY (multi-file) ================= */
 document.getElementById("libraryInput").onchange = async (e) => {
   const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (files.length === 0) {
     libraryEl.innerHTML = '<div class="loading">No ZIP/CBZ files selected</div>';
     return;
   }
-
-  libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files...</div>`;
-  
+  libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files…</div>`;
   const books = await processWithConcurrency(files, async (file, index) => {
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
     try {
       const thumbURL = await extractFirstImageThumbnail(file);
-      return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumb: thumbURL };
+      return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumb: thumbURL, group: '' };
     } catch (err) { console.warn('Skip:', file.name, err); return null; }
   }, 3);
-  
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
-  renderLibrary(books.filter(b => b !== null));
+  renderLibrary(books.filter(b => b !== null), false);
   e.target.value = '';
 };
 
-function renderLibrary(books) {
+/* ================= RENDER LIBRARY (grouped) ================= */
+function renderLibrary(books, grouped = false) {
   libraryEl.innerHTML = '';
-  if (books.length === 0) {
+  if (!books.length) {
     libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
     return;
   }
   const placeholder = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
-  
-  books.forEach(book => {
-    const div = document.createElement("div");
-    div.className = "book";
-    div.innerHTML = `<img src="${book.thumb || placeholder}" loading="lazy"><span title="${book.name}">${book.name}</span>`;
-    div.onclick = async () => {
+
+  const makeBook = (book) => {
+    const div = document.createElement('div');
+    div.className = 'book';
+    const isNested = /\.(zip|cbz)\//i.test(book.name) || book.name.includes('nested');
+    div.innerHTML = `
+      <img src="${book.thumb || placeholder}" loading="lazy" alt="">
+      ${isNested ? '<span class="nested-badge">nested</span>' : ''}
+      <span title="${book.name}">${book.name.split('/').pop()}</span>
+    `;
+    // Whole card is clickable
+    div.onclick = async (ev) => {
+      ev.stopPropagation();
       cleanupBlobURLs();
-      await loadZipFile(book.file);
-      libraryEl.classList.remove('active');
+      try {
+        await loadZipFile(book.file);
+        libraryEl.classList.remove('active');
+      } catch (err) {
+        console.error('Failed to open book:', err);
+        libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error opening: ${err.message}</div>`;
+      }
     };
-    libraryEl.appendChild(div);
+    return div;
+  };
+
+  if (!grouped) {
+    books.forEach(b => libraryEl.appendChild(makeBook(b)));
+    return;
+  }
+
+  const groups = new Map();
+  for (const b of books) {
+    const key = b.group || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  }
+
+  // Sort: ungrouped first, then alphabetical folders
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '') return -1;
+    if (b === '') return 1;
+    return a.localeCompare(b, undefined, { numeric: true });
   });
+
+  for (const key of sortedKeys) {
+    if (key) {
+      const header = document.createElement('div');
+      header.className = 'group-header';
+      header.textContent = `📁 ${key}`;
+      libraryEl.appendChild(header);
+    }
+    groups.get(key)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+      .forEach(b => libraryEl.appendChild(makeBook(b)));
+  }
 }
 
-/* ---------- STREAMING ZIP LOAD - STRUCTURE ONLY ---------- */
+/* ================= LOAD ZIP (with nested extraction) ================= */
 async function loadZipFile(file) {
   cleanupBlobURLs();
-  
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
-  
-  // Load zip structure only (fast streaming metadata parse)
   zip = await JSZip.loadAsync(file, { checkCRC32: false });
-  
+
+  const imageEntries = [];
+
+  async function processZip(zipObj, basePath = '') {
+    for (const [path, entry] of Object.entries(zipObj.files)) {
+      if (entry.dir) continue;
+      if (path.includes('__MACOSX')) continue;
+      const virtualPath = basePath ? `${basePath}/${path}` : path;
+      if (/\.(zip|cbz)$/i.test(path)) {
+        try {
+          const blob = await entry.async('blob');
+          const nestedZip = await JSZip.loadAsync(blob);
+          await processZip(nestedZip, virtualPath);
+        } catch (e) { console.warn('Nested zip fail:', virtualPath, e); }
+      } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
+        imageEntries.push({ virtualPath, entry, zipObj, isNested: !!basePath });
+      }
+    }
+  }
+
+  await processZip(zip, '');
+  imageEntries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath, undefined, { numeric: true }));
+
+  allImages = imageEntries.map(e => e.virtualPath);
+  windowImageEntries = imageEntries;
+
   const folders = new Set();
-  Object.keys(zip.files).forEach(path => {
-    const parts = path.split("/").filter(p => p);
+  allImages.forEach(p => {
+    const parts = p.split('/').filter(Boolean);
     if (parts.length > 1) folders.add(parts[0]);
   });
-  
+
   folderSelect.innerHTML = '<option value="">📁 All Pages (full manga)</option>';
   foldersList = ["", ...Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true }))];
-  
-  foldersList.filter(f => f).forEach(f => {
+  foldersList.filter(Boolean).forEach(f => {
     const opt = document.createElement("option");
     opt.value = f; opt.textContent = `📑 ${f}`;
     folderSelect.appendChild(opt);
   });
-  
+
   currentFolder = "";
   folderSelect.value = "";
-  await loadAllImagesStreaming();
-  showChapterInfo("📖 " + currentZipName);
+  renderPlaceholders(imageEntries);
+  showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? ' (nested)' : ''));
   window.scrollTo(0, 0);
 }
 
-/* ---------- STREAMING IMAGE LOADING WITH INTERSECTION OBSERVER ---------- */
-async function loadAllImagesStreaming() {
-  readerEl.innerHTML = '<div class="loading">📚 Reading manga structure...</div>';
-  
-  // Get all image paths - structure only, NO blob loading yet
-  allImages = Object.keys(zip.files)
-    .filter(p => !p.endsWith("/") && !p.includes('__MACOSX') && /\.(jpg|jpeg|png|webp)$/i.test(p))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  
+/* ================= RENDER PLACEHOLDERS ================= */
+function renderPlaceholders(entries) {
+  readerEl.innerHTML = '';
   chapterStartIndex = {};
-  readerEl.innerHTML = "";
-  
-  // Create placeholder elements for all images (instant)
-  for (let i = 0; i < allImages.length; i++) {
-    const path = allImages[i];
+
+  entries.forEach((entry, i) => {
+    const path = entry.virtualPath;
     const folder = path.includes("/") ? path.split("/")[0] : "";
-    
-    if (folder && !chapterStartIndex[folder]) {
-      chapterStartIndex[folder] = { index: i, element: null };
-    }
-    
-    // Create placeholder div that will become img when loaded
+    if (folder && !chapterStartIndex[folder]) chapterStartIndex[folder] = { index: i, element: null };
+
     const placeholder = document.createElement("div");
     placeholder.className = "img-placeholder";
     placeholder.textContent = `📄 Page ${i + 1}`;
     placeholder.dataset.path = path;
     placeholder.dataset.folder = folder;
     placeholder.dataset.index = i + 1;
-    placeholder.style.height = "400px"; // Approximate height for layout
-    
-    if (folder && chapterStartIndex[folder].element === null) {
-      chapterStartIndex[folder].element = placeholder;
+    placeholder.style.height = "400px";
+    placeholder.style.position = "relative";
+
+    if (entry.isNested) {
+      const badge = document.createElement('span');
+      badge.className = 'nested-badge';
+      badge.textContent = 'nested';
+      placeholder.appendChild(badge);
     }
-    
+
+    if (folder && chapterStartIndex[folder].element === null) chapterStartIndex[folder].element = placeholder;
     readerEl.appendChild(placeholder);
-  }
-  
-  // Setup IntersectionObserver for lazy loading images
+  });
+
   setupImageObserver();
-  
-  // Update page info with total count
   pageInfo.textContent = `📄 Page 1 / ${allImages.length}`;
   pageInfo.classList.add('visible');
 }
 
-/* ---------- INTERSECTION OBSERVER FOR STREAMING ---------- */
+/* ================= INTERSECTION OBSERVER ================= */
 function setupImageObserver() {
-  // Clean up existing observer
-  if (intersectionObserver) {
-    intersectionObserver.disconnect();
-  }
-  
+  if (intersectionObserver) intersectionObserver.disconnect();
   intersectionObserver = new IntersectionObserver(async (entries) => {
     for (const entry of entries) {
-      if (entry.isIntersecting) {
-        const placeholder = entry.target;
-        const path = placeholder.dataset.path;
-        
-        // Skip if already loaded
-        if (placeholder.tagName === 'IMG') continue;
-        
-        // Check cache first
-        if (imageCache.has(path)) {
-          replacePlaceholderWithImage(placeholder, imageCache.get(path));
-          continue;
-        }
-        
-        // Load image blob on-demand (streaming!)
-        try {
-          const blob = await zip.files[path].async("blob");
-          const url = URL.createObjectURL(blob);
-          imageCache.set(path, { url, blob });
-          currentBlobURLs.push(url);
-          replacePlaceholderWithImage(placeholder, { url, blob });
-        } catch(e) {
-          placeholder.textContent = `❌ Failed to load`;
-          placeholder.style.color = '#f66';
-          console.warn('Stream load fail:', path, e);
-        }
+      if (!entry.isIntersecting) continue;
+      const placeholder = entry.target;
+      const path = placeholder.dataset.path;
+      if (placeholder.tagName === 'IMG') continue;
+
+      const imageEntry = windowImageEntries.find(e => e.virtualPath === path);
+      if (!imageEntry) { placeholder.textContent = '❌ Not found'; continue; }
+
+      if (imageCache.has(path)) {
+        replacePlaceholderWithImage(placeholder, imageCache.get(path));
+        continue;
+      }
+
+      try {
+        const blob = await imageEntry.entry.async("blob");
+        const url = URL.createObjectURL(blob);
+        imageCache.set(path, { url, blob });
+        currentBlobURLs.push(url);
+        replacePlaceholderWithImage(placeholder, { url, blob });
+      } catch(e) {
+        placeholder.textContent = '❌ Failed to load';
+        placeholder.style.color = '#f66';
+        console.warn('Stream load fail:', path, e);
       }
     }
-  }, {
-    rootMargin: '300px 0px', // Preload images 300px before they enter viewport
-    threshold: 0.01
-  });
-  
-  // Observe all placeholders
-  readerEl.querySelectorAll('.img-placeholder').forEach(el => {
-    intersectionObserver.observe(el);
-  });
+  }, { rootMargin: '300px 0px', threshold: 0.01 });
+
+  readerEl.querySelectorAll('.img-placeholder').forEach(el => intersectionObserver.observe(el));
 }
 
 function replacePlaceholderWithImage(placeholder, imageData) {
@@ -544,59 +791,55 @@ function replacePlaceholderWithImage(placeholder, imageData) {
   img.dataset.folder = placeholder.dataset.folder;
   img.dataset.index = placeholder.dataset.index;
   img.title = `Page ${placeholder.dataset.index} / ${allImages.length}`;
-  
-  // Preserve chapter marker reference
-  const folder = placeholder.dataset.folder;
-  if (folder && chapterStartIndex[folder]?.element === placeholder) {
-    chapterStartIndex[folder].element = img;
+
+  const hadBadge = placeholder.querySelector('.nested-badge');
+  if (hadBadge) {
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'relative';
+    wrapper.appendChild(img);
+    wrapper.appendChild(hadBadge.cloneNode(true));
+    placeholder.replaceWith(wrapper);
+  } else {
+    placeholder.replaceWith(img);
   }
-  
-  placeholder.replaceWith(img);
+
+  const folder = placeholder.dataset.folder;
+  if (folder && chapterStartIndex[folder]?.element === placeholder) chapterStartIndex[folder].element = img;
 }
 
-/* ---------- PAGE INFO DISPLAY ---------- */
+/* ================= PAGE INFO ================= */
 function updatePageInfo() {
-  if (allImages.length === 0) return;
-  
-  const scrollTop = window.scrollY;
-  const viewportHeight = window.innerHeight;
-  const images = readerEl.querySelectorAll('img, .img-placeholder');
-  
+  if (!allImages.length) return;
+  const items = readerEl.querySelectorAll('img, .img-placeholder, div:has(> img)');
   let currentPage = 1;
-  images.forEach((el, index) => {
+  const mid = window.innerHeight / 2;
+  items.forEach((el, index) => {
     const rect = el.getBoundingClientRect();
-    if (rect.top < viewportHeight / 2 && rect.bottom > 0) {
-      currentPage = index + 1;
-    }
+    if (rect.top < mid && rect.bottom > 0) currentPage = index + 1;
   });
-  
   pageInfo.textContent = `📄 Page ${currentPage} / ${allImages.length}`;
 }
-
 let scrollTimeout;
 window.addEventListener('scroll', () => {
   if (allImages.length > 0) {
-    // Debounce scroll updates for performance
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(updatePageInfo, 50);
   }
 }, { passive: true });
 
-/* ---------- CHAPTER NAVIGATION ---------- */
+/* ================= CHAPTER NAV ================= */
 function scrollToChapter(folder) {
   if (!folder) {
     window.scrollTo({ top: 0, behavior: "smooth" });
     showChapterInfo("📖 All Pages");
     return;
   }
-  
-  const chapterData = chapterStartIndex[folder];
-  if (chapterData && chapterData.element) {
-    chapterData.element.scrollIntoView({ behavior: "smooth", block: "start" });
+  const data = chapterStartIndex[folder];
+  if (data && data.element) {
+    data.element.scrollIntoView({ behavior: "smooth", block: "start" });
     showChapterInfo(`📑 Jumped to: ${folder}`);
   }
 }
-
 folderSelect.onchange = () => scrollToChapter(folderSelect.value);
 
 function showChapterInfo(text) {
@@ -605,37 +848,33 @@ function showChapterInfo(text) {
   setTimeout(() => chapterInfo.classList.remove('visible'), 2500);
 }
 
-/* ---------- KEYBOARD NAVIGATION ---------- */
+/* ================= KEYBOARD ================= */
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     libraryEl.classList.remove('active');
     shortcutsHelp.classList.remove('active');
+    storageInfo.classList.remove('active');
     return;
   }
-  
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
     e.preventDefault();
     shortcutsHelp.classList.toggle('active');
     return;
   }
-  
-  if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active')) return;
-  
+  if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active') || storageInfo.classList.contains('active')) return;
+
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const nextIdx = (idx + 1) % foldersList.length;
-    currentFolder = foldersList[nextIdx];
+    currentFolder = foldersList[(idx + 1) % foldersList.length];
     folderSelect.value = currentFolder;
     scrollToChapter(currentFolder);
   }
   if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
     const idx = foldersList.indexOf(currentFolder);
-    const prevIdx = (idx - 1 + foldersList.length) % foldersList.length;
-    currentFolder = foldersList[prevIdx];
+    currentFolder = foldersList[(idx - 1 + foldersList.length) % foldersList.length];
     folderSelect.value = currentFolder;
     scrollToChapter(currentFolder);
   }
-  
   if (e.key === "t") {
     e.stopPropagation();
     const tools = document.getElementById("tools");
@@ -643,6 +882,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "l") { e.stopPropagation(); document.getElementById("openLibrary").click(); }
   if (e.key === "o") { e.stopPropagation(); document.getElementById("singleFileBtn").click(); }
+  if (e.key === "f") { e.stopPropagation(); document.getElementById("openFolderBtn").click(); }
   if (e.key === " " || e.key === "c") {
     e.preventDefault();
     controlsVisible = !controlsVisible;
@@ -653,31 +893,156 @@ document.addEventListener("keydown", (e) => {
 });
 
 shortcutsHelp.addEventListener('click', (e) => {
-  if (e.target === shortcutsHelp) {
-    shortcutsHelp.classList.remove('active');
-  }
+  if (e.target === shortcutsHelp) shortcutsHelp.classList.remove('active');
+});
+storageInfo.addEventListener('click', (e) => {
+  if (e.target === storageInfo) storageInfo.classList.remove('active');
 });
 
-/* ---------- INIT & CLEANUP ---------- */
+/* ================= PURGE LIBRARY ================= */
+const purgeBtn = document.getElementById('purgeLibraryBtn');
+
+function formatBytes(bytes) {
+  if (bytes === 0 || bytes == null) return '0 B';
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
+
+async function estimateStorage() {
+  // 1. IndexedDB handle size (we can only estimate — the handle itself is small, but let's show whether it exists)
+  let handleSize = 0;
+  try {
+    const h = await idbGet('lastDir');
+    if (h) handleSize = 256; // rough fixed estimate: the handle reference itself
+  } catch {}
+
+  // 2. localStorage filters size
+  const filtersStr = localStorage.getItem('mangaReaderFilters') || '';
+  const filtersSize = new Blob([filtersStr]).size;
+
+  // 3. Thumbnail blob URLs — we can't measure their byte size directly from the URL,
+  // but we can fetch them (they're blob: URLs in the same document — fetching returns the same bytes).
+  let thumbBytes = 0;
+  for (const url of thumbURLs) {
+    try {
+      const resp = await fetch(url);
+      const b = await resp.blob();
+      thumbBytes += b.size;
+    } catch {}
+  }
+
+  // 4. Image cache (in-memory blobs)
+  let cacheBytes = 0;
+  for (const { blob } of imageCache.values()) {
+    if (blob && blob.size) cacheBytes += blob.size;
+  }
+
+  // 5. Also check navigator.storage.estimate() for a browser-level view
+  let quotaInfo = null;
+  if (navigator.storage && navigator.storage.estimate) {
+    try { quotaInfo = await navigator.storage.estimate(); } catch {}
+  }
+
+  return { handleSize, filtersSize, thumbBytes, cacheBytes, quotaInfo };
+}
+
+purgeBtn.onclick = async (e) => {
+  e.stopPropagation();
+  // Build storage info panel
+  document.getElementById('sizeHandle').textContent = 'computing…';
+  document.getElementById('sizeFilters').textContent = 'computing…';
+  document.getElementById('sizeThumbs').textContent = 'computing…';
+  document.getElementById('sizeCache').textContent = 'computing…';
+  document.getElementById('sizeTotal').textContent = 'computing…';
+  storageInfo.classList.add('active');
+
+  const s = await estimateStorage();
+
+  document.getElementById('sizeHandle').textContent = s.handleSize ? '~256 B (handle)' : 'none';
+  document.getElementById('sizeFilters').textContent = formatBytes(s.filtersSize);
+  document.getElementById('sizeThumbs').textContent = `${thumbURLs.length} URLs · ${formatBytes(s.thumbBytes)}`;
+  document.getElementById('sizeCache').textContent = `${imageCache.size} blobs · ${formatBytes(s.cacheBytes)}`;
+
+  const total = s.handleSize + s.filtersSize + s.thumbBytes + s.cacheBytes;
+  let totalText = formatBytes(total);
+  if (s.quotaInfo && s.quotaInfo.usage != null) {
+    totalText += ` (browser total: ${formatBytes(s.quotaInfo.usage)})`;
+  }
+  document.getElementById('sizeTotal').textContent = totalText;
+};
+
+document.getElementById('purgeCancel').onclick = () => storageInfo.classList.remove('active');
+document.getElementById('purgeConfirm').onclick = async () => {
+  // Clear IndexedDB
+  try { await idbClear(); } catch (e) { console.warn('idb clear failed', e); }
+  // Clear localStorage
+  try { localStorage.removeItem('mangaReaderFilters'); } catch {}
+  // Revoke blob URLs and clear caches
+  cleanupBlobURLs();
+  cleanupThumbnails();
+  windowImageEntries = [];
+  allImages = [];
+  // Clear library grid + reader
+  libraryEl.innerHTML = '';
+  libraryEl.classList.remove('active');
+  readerEl.innerHTML = '';
+  pageInfo.classList.remove('visible');
+  chapterInfo.classList.remove('visible');
+
+  storageInfo.innerHTML = '<div style="text-align:center;padding:10px;color:#0f0;">✓ Library data purged</div>';
+  setTimeout(() => {
+    storageInfo.classList.remove('active');
+    // Restore original content for next time
+    storageInfo.innerHTML = `
+      <h3>🗑️ Purge Library Data</h3>
+      <table id="storageTable">
+        <tr><td>Saved folder handle</td><td id="sizeHandle">—</td></tr>
+        <tr><td>Saved filter settings</td><td id="sizeFilters">—</td></tr>
+        <tr><td>Thumbnail blob URLs</td><td id="sizeThumbs">—</td></tr>
+        <tr><td>Image cache (in-memory)</td><td id="sizeCache">—</td></tr>
+        <tr style="border-top:1px solid #333;">
+          <td style="padding-top:8px;"><b>Total estimated</b></td>
+          <td id="sizeTotal" style="padding-top:8px;font-weight:bold;">—</td>
+        </tr>
+      </table>
+      <div class="actions">
+        <button class="cancel" id="purgeCancel">Cancel</button>
+        <button class="confirm" id="purgeConfirm">Purge Now</button>
+      </div>
+    `;
+    document.getElementById('purgeCancel').onclick = () => storageInfo.classList.remove('active');
+    document.getElementById('purgeConfirm').onclick = arguments.callee;
+  }, 1200);
+};
+
+/* ================= INIT ================= */
 window.addEventListener('beforeunload', () => {
   cleanupBlobURLs();
   cleanupThumbnails();
   if (intersectionObserver) intersectionObserver.disconnect();
 });
 
-// Handle window resize to re-trigger lazy loading if needed
 window.addEventListener('resize', () => {
   if (intersectionObserver && readerEl.querySelectorAll('.img-placeholder').length > 0) {
-    // Re-observe placeholders in case layout changed
-    readerEl.querySelectorAll('.img-placeholder').forEach(el => {
-      if (!intersectionObserver.takeRecords().some(r => r.target === el)) {
-        intersectionObserver.observe(el);
-      }
-    });
+    readerEl.querySelectorAll('.img-placeholder').forEach(el => intersectionObserver.observe(el));
   }
 });
 
 loadFilters();
+
+/* Optional: auto-restore last folder if permission already granted */
+window.addEventListener('load', async () => {
+  try {
+    const saved = await idbGet('lastDir');
+    if (saved && typeof saved.queryPermission === 'function') {
+      const perm = await saved.queryPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        await buildLibraryFromDirectory(saved);
+      }
+    }
+  } catch (e) { /* ignore */ }
+});
 </script>
 </body>
 </html>
