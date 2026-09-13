@@ -45,18 +45,14 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 }
 #library.active { display: grid; }
 
-/* -------- Library screen header (contains count) -------- */
 #libHeader {
   position: fixed; top: 0; left: 0; right: 0; height: 52px;
   background: rgba(17,17,17,0.98); border-bottom: 1px solid #222;
   display: none; align-items: center; padding: 0 20px; z-index: 31;
   gap: 14px;
 }
-#library.active ~ #libHeader,
 body.library-open #libHeader { display: flex; }
-#libHeader h2 {
-  margin: 0; font-size: 15px; font-weight: 600; color: #eee;
-}
+#libHeader h2 { margin: 0; font-size: 15px; font-weight: 600; color: #eee; }
 #libHeader .total {
   font-size: 12px; color: #00a8ff; font-family: monospace;
   background: #1a1a1a; padding: 5px 12px; border-radius: 14px;
@@ -81,12 +77,12 @@ body.library-open #libHeader { display: flex; }
 .book:hover { background: #333; transform: translateY(-2px); }
 .book:active { transform: scale(0.97); }
 .book img {
-  width: 100%; height: 220px; object-fit: cover; border-radius: 8px;
-  background: #1a1a1a; pointer-events: none;
+  width: 144px; height: 220px; object-fit: cover;
+  border-radius: 8px; background: #1a1a1a; pointer-events: none;
 }
 .book span {
   font-size: 12px; display: block; margin-top: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
 .book .nested-badge {
@@ -172,7 +168,6 @@ body.library-open #libHeader { display: flex; }
 <input type="file" id="libraryInput" accept=".zip,.cbz" multiple>
 <input type="file" id="folderFallbackInput" webkitdirectory directory multiple>
 
-<!-- Library header (only visible when library open) -->
 <div id="libHeader">
   <h2>📚 Your Library</h2>
   <span class="total" id="libTotal">0 indexed</span>
@@ -257,10 +252,9 @@ let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = 
 let currentBlobURLs = [];
 let imageCache = new Map();
 let windowImageEntries = [];
-let currentMangaSlug = ""; // for hash routing
+let currentMangaSlug = "";
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
-const libHeader = document.getElementById("libHeader");
 const libTotal = document.getElementById("libTotal");
 const progressFill = document.getElementById("progressFill");
 const chapterInfo = document.getElementById("chapterInfo");
@@ -345,7 +339,7 @@ function cleanupThumbnails() {
 function slugify(s) {
   return String(s)
     .replace(/\\/g, '/')
-    .replace(/\.[a-z0-9]+$/i, '') // strip extension if any
+    .replace(/\.[a-z0-9]+$/i, '')
     .trim()
     .replace(/[^\w\s\-\/]+/g, '')
     .replace(/\s+/g, '-')
@@ -356,7 +350,6 @@ function slugify(s) {
 function setHashForManga(name) {
   const slug = slugify(name);
   currentMangaSlug = slug;
-  // Avoid double push if unchanged
   const newHash = '#manga=' + encodeURIComponent(slug);
   if (location.hash !== newHash) {
     history.replaceState(null, '', location.pathname + location.search + newHash);
@@ -372,7 +365,6 @@ function getMangaFromHash() {
   const h = location.hash.replace(/^#/, '');
   const m = h.match(/^manga=(.+)$/);
   if (m) return decodeURIComponent(m[1]);
-  // legacy: bare #something
   if (h && !h.includes('=')) return h;
   return null;
 }
@@ -431,7 +423,6 @@ async function idbClear() {
   });
 }
 
-/* ================= LIBRARY HEADER ================= */
 async function refreshLibTotal() {
   try {
     const recs = await idbGet(KEY_LIBRARY);
@@ -444,14 +435,18 @@ async function refreshLibTotal() {
   }
 }
 
-/* ================= THUMBNAIL BLOB EXTRACTION ================= */
-async function extractFirstImageBlob(file) {
+/* ================= THUMB RESIZE / EXTRACT ================= */
+const THUMB_W = 144;
+const THUMB_H = 220;
+const THUMB_QUALITY = 0.8;
+
+async function extractAndResizeThumbnail(file) {
   const zipTemp = await JSZip.loadAsync(file);
+
   async function collectImagePaths(zipObj, base = '') {
     let paths = [];
     for (const [path, entry] of Object.entries(zipObj.files)) {
-      if (entry.dir) continue;
-      if (path.includes('__MACOSX')) continue;
+      if (entry.dir || path.includes('__MACOSX')) continue;
       const fullPath = base ? `${base}/${path}` : path;
       if (/\.(zip|cbz)$/i.test(path)) {
         try {
@@ -465,10 +460,53 @@ async function extractFirstImageBlob(file) {
     }
     return paths;
   }
+
   const entries = await collectImagePaths(zipTemp);
   if (!entries.length) return null;
   entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
-  return await entries[0].entry.async('blob');
+  const srcBlob = await entries[0].entry.async('blob');
+
+  // Decode
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(srcBlob);
+  } catch (e) {
+    bitmap = await new Promise((res, rej) => {
+      const url = URL.createObjectURL(srcBlob);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = (err) => { URL.revokeObjectURL(url); rej(err); };
+      img.src = url;
+    });
+  }
+
+  // Cover-fit crop → 144×220
+  const srcW = bitmap.width, srcH = bitmap.height;
+  const targetAspect = THUMB_W / THUMB_H;
+  const srcAspect = srcW / srcH;
+  let sx = 0, sy = 0, sWidth = srcW, sHeight = srcH;
+  if (srcAspect > targetAspect) {
+    sWidth = Math.round(srcH * targetAspect);
+    sx = Math.round((srcW - sWidth) / 2);
+  } else if (srcAspect < targetAspect) {
+    sHeight = Math.round(srcW / targetAspect);
+    sy = Math.round((srcH - sHeight) / 2);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = THUMB_W;
+  canvas.height = THUMB_H;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, sx, sy, sWidth, sHeight, 0, 0, THUMB_W, THUMB_H);
+  if (typeof bitmap.close === 'function') bitmap.close();
+
+  // Encode as WebP
+  const webp = await new Promise(res => canvas.toBlob(res, 'image/webp', THUMB_QUALITY));
+  if (webp) return webp;
+  // Fallback for very old browsers
+  return await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
 }
 
 /* ================= CONCURRENCY POOL ================= */
@@ -496,8 +534,8 @@ async function processWithConcurrency(items, processor, concurrency = 3) {
   return results;
 }
 
-/* ================= BOOK ELEMENT BUILDER ================= */
-const PLACEHOLDER = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
+/* ================= BOOK ELEMENT ================= */
+const PLACEHOLDER = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="144" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
 
 function createBookElement(book) {
   const div = document.createElement('div');
@@ -532,10 +570,7 @@ function createBookElement(book) {
       }
       return;
     }
-    if (book.fileHandle) {
-      await openCachedBook(book);
-      return;
-    }
+    if (book.fileHandle) { await openCachedBook(book); return; }
     showChapterInfo('⚠️ Re-open the folder to access this file');
   };
   return div;
@@ -632,7 +667,7 @@ async function showHome() {
   }
 }
 
-/* ================= TRY AUTO-OPEN FROM HASH ================= */
+/* ================= AUTO-OPEN FROM HASH ================= */
 async function tryAutoOpenFromHash() {
   const wanted = getMangaFromHash();
   if (!wanted) return false;
@@ -640,26 +675,16 @@ async function tryAutoOpenFromHash() {
   const recs = await idbGet(KEY_LIBRARY);
   if (!Array.isArray(recs) || !recs.length) return false;
 
-  // Match by slugified name OR by slugified relPath
   let match = recs.find(r => slugify(r.name) === wanted);
-  if (!match) {
-    // try matching trailing part
-    match = recs.find(r => slugify(r.name).endsWith(wanted));
-  }
-  if (!match) {
-    // try matching the last path segment
-    match = recs.find(r => slugify((r.name || '').split('/').pop()) === wanted);
-  }
+  if (!match) match = recs.find(r => slugify(r.name).endsWith(wanted));
+  if (!match) match = recs.find(r => slugify((r.name || '').split('/').pop()) === wanted);
   if (!match) return false;
 
   if (!match.fileHandle) {
-    // No persistent handle (fallback session) — can't auto-open
     showChapterInfo('⚠️ Re-open folder to access this manga');
     return false;
   }
 
-  // Auto-load: try to grant permission silently; if prompt, request it (needs gesture ideally,
-  // but some browsers allow on load after prior grant)
   try {
     const perm = await match.fileHandle.queryPermission({ mode: 'read' });
     if (perm === 'granted') {
@@ -668,7 +693,6 @@ async function tryAutoOpenFromHash() {
       await loadZipFile(file);
       return true;
     } else if (perm === 'prompt') {
-      // Show a banner inviting the user to click to grant
       permBanner.innerHTML = `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`;
       permBanner.classList.add('visible');
       document.getElementById('grantLoadBtn').onclick = async () => {
@@ -736,7 +760,7 @@ async function buildLibraryFromDirectory(dirHandle) {
   const books = await processWithConcurrency(archives, async (item, index) => {
     libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
     try {
-      const thumbBlob = await extractFirstImageBlob(item.file);
+      const thumbBlob = await extractAndResizeThumbnail(item.file);
       return {
         name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
         group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : '',
@@ -748,7 +772,7 @@ async function buildLibraryFromDirectory(dirHandle) {
       console.warn('Skip:', item.relPath, err);
       return null;
     }
-  }, 4);
+  }, 3); // lowered from 4 — image decoding is heavier
 
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
@@ -778,7 +802,6 @@ openFolderBtn.onclick = async (e) => {
   }
 };
 
-/* Fallback: <input webkitdirectory> */
 folderFallbackInput.onchange = async (e) => {
   const all = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (!all.length) { e.target.value = ''; return; }
@@ -789,7 +812,7 @@ folderFallbackInput.onchange = async (e) => {
   const books = await processWithConcurrency(archives, async (item, index) => {
     libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
     try {
-      const thumbBlob = await extractFirstImageBlob(item.file);
+      const thumbBlob = await extractAndResizeThumbnail(item.file);
       return {
         file: item.file,
         name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
@@ -797,7 +820,7 @@ folderFallbackInput.onchange = async (e) => {
         thumbBlob
       };
     } catch { return null; }
-  }, 4);
+  }, 3);
   renderLibrary(books.filter(Boolean), true);
   e.target.value = '';
 };
@@ -822,7 +845,7 @@ document.getElementById("libraryInput").onchange = async (e) => {
   const books = await processWithConcurrency(files, async (file, index) => {
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
     try {
-      const thumbBlob = await extractFirstImageBlob(file);
+      const thumbBlob = await extractAndResizeThumbnail(file);
       return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumbBlob, group: '' };
     } catch { return null; }
   }, 3);
@@ -857,7 +880,7 @@ document.getElementById("fileInput").onchange = async (e) => {
   e.target.value = '';
 };
 
-/* ================= LOAD ZIP (with nested extraction) ================= */
+/* ================= LOAD ZIP ================= */
 async function loadZipFile(file) {
   cleanupBlobURLs();
   currentZipName = file.name.replace(/\.(zip|cbz)$/i, '');
@@ -902,7 +925,6 @@ async function loadZipFile(file) {
   renderPlaceholders(imageEntries);
   showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? ' (nested)' : ''));
   window.scrollTo(0, 0);
-  // Ensure hash reflects the opened manga
   if (!getMangaFromHash()) setHashForManga(currentZipName);
 }
 
@@ -1022,7 +1044,6 @@ function scrollPage(direction) {
 
 /* ================= KEYBOARD ================= */
 document.addEventListener("keydown", (e) => {
-  // Don't hijack if typing in inputs/selects
   const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
 
@@ -1038,7 +1059,6 @@ document.addEventListener("keydown", (e) => {
   }
   if (shortcutsHelp.classList.contains('active') || storageInfo.classList.contains('active')) return;
 
-  // W / S scroll (only meaningful when a manga is loaded)
   if (e.key === "w" || e.key === "W") { e.preventDefault(); scrollPage(-1); return; }
   if (e.key === "s" || e.key === "S") { e.preventDefault(); scrollPage(1); return; }
 
@@ -1169,26 +1189,20 @@ window.addEventListener('resize', () => {
   }
 });
 
-/* React to manual hash changes (back/forward, or paste new hash) */
 window.addEventListener('hashchange', async () => {
   const wanted = getMangaFromHash();
   if (!wanted) return;
-  // If a different manga is requested, try to open it
   if (currentMangaSlug === wanted) return;
   await tryAutoOpenFromHash();
 });
 
 loadFilters();
 
-/* Boot: refresh count and try hash auto-open */
 window.addEventListener('load', async () => {
   await refreshLibTotal();
-
-  // 1. Try to auto-open from hash first
   const opened = await tryAutoOpenFromHash();
   if (opened) return;
 
-  // 2. Otherwise, show the library grid (if cache exists)
   const recs = await idbGet(KEY_LIBRARY);
   if (Array.isArray(recs) && recs.length) {
     const books = recs.map(r => ({
@@ -1197,7 +1211,6 @@ window.addEventListener('load', async () => {
     renderLibrary(books, true);
     libraryEl.classList.add('active');
     document.body.classList.add('library-open');
-
     if (!getMangaFromHash()) {
       permBanner.innerHTML = `📁 Cached library · ${recs.length} books · Click any book to grant access`;
       permBanner.classList.add('visible');
