@@ -82,7 +82,7 @@ body.library-open #libHeader { display: flex; }
 }
 .book span {
   font-size: 12px; display: block; margin-top: 8px;
-  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
 .book .nested-badge {
@@ -148,13 +148,22 @@ body.library-open #libHeader { display: flex; }
 #storageInfo .confirm:hover { background: #e04a3a; }
 #storageInfo .cancel { background: #444; }
 #storageInfo .cancel:hover { background: #555; }
+
+/* ---- permBanner: smooth fade in / out ---- */
 #permBanner {
-  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,168,255,0.15); border: 1px solid rgba(0,168,255,0.4);
+  position: fixed; top: 60px; left: 50%;
+  transform: translate(-50%, -8px);
+  background: rgba(0,168,255,0.15);
+  border: 1px solid rgba(0,168,255,0.4);
   padding: 8px 16px; border-radius: 20px; font-size: 12px; z-index: 25;
-  display: none; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
 }
-#permBanner.visible { display: flex; }
+#permBanner.visible {
+  opacity: 1; pointer-events: auto;
+  transform: translate(-50%, 0);
+}
 #permBanner button {
   background: #00a8ff; border: none; color: white; padding: 4px 10px;
   border-radius: 12px; cursor: pointer; font-size: 11px; font-weight: bold;
@@ -278,6 +287,35 @@ const folderSelect = document.getElementById("folderSelect");
 const readerEl = document.getElementById("reader");
 
 const DEFAULTS = { contrast: 100, brightness: 100, saturate: 100, grayscale: false };
+
+/* ================= PERM BANNER ================= */
+let permBannerTimer = null;
+
+function showPermBanner(html, hideAfterMs = 5000, onClick = null) {
+  if (permBannerTimer) { clearTimeout(permBannerTimer); permBannerTimer = null; }
+  permBanner.innerHTML = html;
+  permBanner.classList.add('visible');
+
+  if (onClick) {
+    permBanner.onclick = (e) => { e.stopPropagation(); onClick(e); };
+  } else {
+    permBanner.onclick = null;
+  }
+
+  if (hideAfterMs && hideAfterMs > 0) {
+    permBannerTimer = setTimeout(() => {
+      permBanner.classList.remove('visible');
+      permBannerTimer = null;
+      permBanner.onclick = null;
+    }, hideAfterMs);
+  }
+}
+
+function hidePermBanner() {
+  if (permBannerTimer) { clearTimeout(permBannerTimer); permBannerTimer = null; }
+  permBanner.classList.remove('visible');
+  permBanner.onclick = null;
+}
 
 /* ================= FILTERS ================= */
 function updateFilters() {
@@ -466,7 +504,6 @@ async function extractAndResizeThumbnail(file) {
   entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
   const srcBlob = await entries[0].entry.async('blob');
 
-  // Decode
   let bitmap;
   try {
     bitmap = await createImageBitmap(srcBlob);
@@ -480,7 +517,6 @@ async function extractAndResizeThumbnail(file) {
     });
   }
 
-  // Cover-fit crop → 144×220
   const srcW = bitmap.width, srcH = bitmap.height;
   const targetAspect = THUMB_W / THUMB_H;
   const srcAspect = srcW / srcH;
@@ -502,10 +538,8 @@ async function extractAndResizeThumbnail(file) {
   ctx.drawImage(bitmap, sx, sy, sWidth, sHeight, 0, 0, THUMB_W, THUMB_H);
   if (typeof bitmap.close === 'function') bitmap.close();
 
-  // Encode as WebP
   const webp = await new Promise(res => canvas.toBlob(res, 'image/webp', THUMB_QUALITY));
   if (webp) return webp;
-  // Fallback for very old browsers
   return await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
 }
 
@@ -661,9 +695,7 @@ async function showHome() {
   await refreshLibTotal();
 
   if (books.length) {
-    permBanner.innerHTML = `📁 Cached library · ${books.length} books · Click any book to grant access`;
-    permBanner.classList.add('visible');
-    setTimeout(() => permBanner.classList.remove('visible'), 5000);
+    showPermBanner(`📁 Cached library · ${books.length} books · Click any book to grant access`, 5000);
   }
 }
 
@@ -693,19 +725,25 @@ async function tryAutoOpenFromHash() {
       await loadZipFile(file);
       return true;
     } else if (perm === 'prompt') {
-      permBanner.innerHTML = `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`;
-      permBanner.classList.add('visible');
-      document.getElementById('grantLoadBtn').onclick = async () => {
-        try {
-          const p2 = await match.fileHandle.requestPermission({ mode: 'read' });
-          if (p2 === 'granted') {
-            permBanner.classList.remove('visible');
-            const file = await match.fileHandle.getFile();
-            setHashForManga(match.name);
-            await loadZipFile(file);
-          }
-        } catch (e) { console.warn(e); }
-      };
+      // Actionable banner: no auto-hide, waits for user click
+      showPermBanner(
+        `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`,
+        null, // don't auto-hide
+        async (ev) => {
+          if (!ev.target.closest('#grantLoadBtn')) return;
+          try {
+            const p2 = await match.fileHandle.requestPermission({ mode: 'read' });
+            if (p2 === 'granted') {
+              hidePermBanner();
+              const file = await match.fileHandle.getFile();
+              setHashForManga(match.name);
+              await loadZipFile(file);
+            } else {
+              hidePermBanner();
+            }
+          } catch (e) { console.warn(e); hidePermBanner(); }
+        }
+      );
       return false;
     }
   } catch (e) { console.warn('Auto-open failed:', e); }
@@ -772,7 +810,7 @@ async function buildLibraryFromDirectory(dirHandle) {
       console.warn('Skip:', item.relPath, err);
       return null;
     }
-  }, 3); // lowered from 4 — image decoding is heavier
+  }, 3);
 
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
@@ -1164,7 +1202,7 @@ async function doPurge() {
   readerEl.innerHTML = '';
   pageInfo.classList.remove('visible');
   chapterInfo.classList.remove('visible');
-  permBanner.classList.remove('visible');
+  hidePermBanner();
   clearHash();
   await refreshLibTotal();
 }
@@ -1212,9 +1250,7 @@ window.addEventListener('load', async () => {
     libraryEl.classList.add('active');
     document.body.classList.add('library-open');
     if (!getMangaFromHash()) {
-      permBanner.innerHTML = `📁 Cached library · ${recs.length} books · Click any book to grant access`;
-      permBanner.classList.add('visible');
-      setTimeout(() => permBanner.classList.remove('visible'), 6000);
+      showPermBanner(`📁 Cached library · ${recs.length} books · Click any book to grant access`, 5000);
     }
   }
 });
