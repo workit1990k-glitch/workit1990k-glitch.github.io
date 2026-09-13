@@ -2,22 +2,21 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Manga Reader · Folder Library</title>
+<title>Manga Reader · Cached Library</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
-  display: block; margin: 0 auto; width: 100%; height: auto;
-  max-width: fit-content;
+  display: block; margin: 0 auto; width: 100%; height: auto; max-width: fit-content;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1))
           grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
   min-height: 100px; background: #1a1a1a;
 }
 #tools {
-  position: fixed; top: 10px; right: 10px; background: #222;
-  padding: 12px; border-radius: 12px; display: none;
-  width: 240px; z-index: 10; max-height: 80vh; overflow-y: auto;
+  position: fixed; top: 10px; right: 10px; background: #222; padding: 12px;
+  border-radius: 12px; display: none; width: 240px; z-index: 10;
+  max-height: 80vh; overflow-y: auto;
 }
 #tools label { font-size: 12px; display: block; margin-bottom: 8px; }
 #tools .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
@@ -25,9 +24,9 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #tools .slider-row span { min-width: 40px; text-align: right; font-size: 11px; color: #aaa; }
 #tools select, #tools button { width: 100%; margin-top: 5px; }
 #toggleTools, #openLibrary, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn {
-  position: fixed; bottom: 20px; background: #444; border: none;
-  padding: 10px 14px; color: white; cursor: pointer; border-radius: 8px; z-index: 20;
-  font-size: 13px; transition: opacity 0.2s, transform 0.2s, background 0.2s;
+  position: fixed; bottom: 20px; background: #444; border: none; padding: 10px 14px;
+  color: white; cursor: pointer; border-radius: 8px; z-index: 20; font-size: 13px;
+  transition: opacity 0.2s, transform 0.2s, background 0.2s;
 }
 #toggleTools { right: 20px; }
 #openLibrary { right: 110px; }
@@ -43,9 +42,12 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 }
 #library.active { display: grid; }
 #library .group-header {
-  grid-column: 1 / -1;
-  font-size: 13px; font-weight: bold; color: #00a8ff;
+  grid-column: 1 / -1; font-size: 13px; font-weight: bold; color: #00a8ff;
   padding: 12px 4px 4px; border-bottom: 1px solid #222;
+}
+#library .cache-note {
+  grid-column: 1 / -1; font-size: 11px; color: #888; padding: 6px 4px;
+  border-bottom: 1px solid #1a1a1a;
 }
 .book {
   cursor: pointer; background: #222; padding: 8px; border-radius: 12px;
@@ -64,41 +66,36 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   pointer-events: none;
 }
 .book .nested-badge {
-  position: absolute; top: 12px; right: 12px;
-  background: #00a8ff; color: black; font-size: 9px;
-  padding: 2px 6px; border-radius: 10px; font-weight: bold;
+  position: absolute; top: 12px; right: 12px; background: #00a8ff; color: black;
+  font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: bold;
+}
+.book .cached-badge {
+  position: absolute; top: 12px; left: 12px; background: #444; color: #aaa;
+  font-size: 9px; padding: 2px 6px; border-radius: 10px;
 }
 .loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
 .progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: #444; z-index: 40; }
 .progress-fill { height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s; }
 .filter-label { display: flex; justify-content: space-between; align-items: center; }
-#saveFiltersBtn, #resetFiltersBtn {
-  background: #00a8ff; margin-top: 8px; font-size: 12px; padding: 6px; border-radius: 6px;
-}
+#saveFiltersBtn, #resetFiltersBtn { background: #00a8ff; margin-top: 8px; font-size: 12px; padding: 6px; border-radius: 6px; }
 #saveFiltersBtn:hover, #resetFiltersBtn:hover { background: #008ecc; }
 #resetFiltersBtn { background: #666; }
 #resetFiltersBtn:hover { background: #555; }
-.controls-hidden #toggleTools,
-.controls-hidden #openLibrary,
-.controls-hidden #singleFileBtn,
-.controls-hidden #openFolderBtn,
-.controls-hidden #purgeLibraryBtn,
-.controls-hidden #pageInfo,
-.controls-hidden #chapterInfo {
+.controls-hidden #toggleTools, .controls-hidden #openLibrary, .controls-hidden #singleFileBtn,
+.controls-hidden #openFolderBtn, .controls-hidden #purgeLibraryBtn,
+.controls-hidden #pageInfo, .controls-hidden #chapterInfo {
   opacity: 0; pointer-events: none; transform: translateY(10px);
 }
 #chapterInfo {
   position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
   background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
-  font-size: 12px; z-index: 15; display: none;
-  transition: opacity 0.2s, transform 0.2s;
+  font-size: 12px; z-index: 15; display: none; transition: opacity 0.2s, transform 0.2s;
 }
 #chapterInfo.visible { display: block; }
 #pageInfo {
   position: fixed; bottom: 20px; left: 5%; transform: translateX(-50%);
   background: rgba(34,34,34,0.9); padding: 6px 14px; border-radius: 20px;
-  font-size: 12px; z-index: 15; display: none;
-  transition: opacity 0.2s, transform 0.2s;
+  font-size: 12px; z-index: 15; display: none; transition: opacity 0.2s, transform 0.2s;
 }
 #pageInfo.visible { display: block; }
 #shortcutsHelp {
@@ -116,17 +113,13 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   background: #1a1a1a; color: #555; font-size: 11px;
 }
 .img-placeholder .nested-badge {
-  position: absolute; top: 4px; right: 4px;
-  background: #00a8ff; color: black; font-size: 9px;
-  padding: 2px 6px; border-radius: 10px; font-weight: bold; z-index: 5;
+  position: absolute; top: 4px; right: 4px; background: #00a8ff; color: black;
+  font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: bold; z-index: 5;
 }
-
-/* ---- Storage info panel ---- */
 #storageInfo {
   position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
   background: rgba(34,34,34,0.97); padding: 16px 22px; border-radius: 12px;
-  z-index: 60; display: none; min-width: 300px;
-  border: 1px solid #333;
+  z-index: 60; display: none; min-width: 320px; border: 1px solid #333;
 }
 #storageInfo.active { display: block; }
 #storageInfo h3 { margin: 0 0 12px 0; font-size: 15px; }
@@ -134,14 +127,23 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 #storageInfo td { padding: 4px 0; }
 #storageInfo td:last-child { text-align: right; color: #00a8ff; font-family: monospace; }
 #storageInfo .actions { display: flex; gap: 8px; }
-#storageInfo button {
-  flex: 1; padding: 8px; border: none; border-radius: 6px;
-  cursor: pointer; font-size: 12px; color: white;
-}
+#storageInfo button { flex: 1; padding: 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; color: white; }
 #storageInfo .confirm { background: #c0392b; }
 #storageInfo .confirm:hover { background: #e04a3a; }
 #storageInfo .cancel { background: #444; }
 #storageInfo .cancel:hover { background: #555; }
+#permBanner {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,168,255,0.15); border: 1px solid rgba(0,168,255,0.4);
+  padding: 8px 16px; border-radius: 20px; font-size: 12px; z-index: 25;
+  display: none; align-items: center; gap: 10px;
+}
+#permBanner.visible { display: flex; }
+#permBanner button {
+  background: #00a8ff; border: none; color: white; padding: 4px 10px;
+  border-radius: 12px; cursor: pointer; font-size: 11px; font-weight: bold;
+}
+#permBanner button:hover { background: #008ecc; }
 </style>
 </head>
 <body>
@@ -154,6 +156,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 <div id="chapterInfo"></div>
 <div id="pageInfo"></div>
+<div id="permBanner"></div>
 
 <div id="shortcutsHelp">
   <h3>⌨️ Keyboard Shortcuts</h3>
@@ -176,8 +179,9 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
   <h3>🗑️ Purge Library Data</h3>
   <table id="storageTable">
     <tr><td>Saved folder handle</td><td id="sizeHandle">—</td></tr>
+    <tr><td>Cached library (names + thumbs)</td><td id="sizeLib">—</td></tr>
     <tr><td>Saved filter settings</td><td id="sizeFilters">—</td></tr>
-    <tr><td>Thumbnail blob URLs</td><td id="sizeThumbs">—</td></tr>
+    <tr><td>Rendered thumbnail URLs</td><td id="sizeThumbs">—</td></tr>
     <tr><td>Image cache (in-memory)</td><td id="sizeCache">—</td></tr>
     <tr style="border-top:1px solid #333;">
       <td style="padding-top:8px;"><b>Total estimated</b></td>
@@ -221,7 +225,7 @@ body { margin: 0; background: #111; color: white; font-family: sans-serif; user-
 let zip, currentFolder = "", foldersList = [], currentZipName = "", allImages = [], chapterStartIndex = {};
 let currentBlobURLs = [];
 let imageCache = new Map();
-let windowImageEntries = []; // was window.imageEntries
+let windowImageEntries = [];
 const root = document.documentElement;
 const libraryEl = document.getElementById("library");
 const progressFill = document.getElementById("progressFill");
@@ -229,6 +233,7 @@ const chapterInfo = document.getElementById("chapterInfo");
 const pageInfo = document.getElementById("pageInfo");
 const shortcutsHelp = document.getElementById("shortcutsHelp");
 const storageInfo = document.getElementById("storageInfo");
+const permBanner = document.getElementById("permBanner");
 const thumbURLs = [];
 let intersectionObserver = null;
 
@@ -248,27 +253,24 @@ const DEFAULTS = { contrast: 100, brightness: 100, saturate: 100, grayscale: fal
 
 /* ================= FILTERS ================= */
 function updateFilters() {
-  const contrastVal = contrast.value / 100;
-  const brightnessVal = brightness.value / 100;
-  const saturateVal = saturate.value / 100;
-  const grayscaleVal = grayscaleToggle.checked ? 1 : 0;
-  contrastValue.textContent = contrastVal.toFixed(2);
-  brightnessValue.textContent = brightnessVal.toFixed(2);
-  saturateValue.textContent = saturateVal.toFixed(2);
-  root.style.setProperty('--contrast', contrastVal);
-  root.style.setProperty('--brightness', brightnessVal);
-  root.style.setProperty('--saturate', saturateVal);
-  root.style.setProperty('--grayscale', grayscaleVal);
+  const c = contrast.value / 100, b = brightness.value / 100, s = saturate.value / 100;
+  const g = grayscaleToggle.checked ? 1 : 0;
+  contrastValue.textContent = c.toFixed(2);
+  brightnessValue.textContent = b.toFixed(2);
+  saturateValue.textContent = s.toFixed(2);
+  root.style.setProperty('--contrast', c);
+  root.style.setProperty('--brightness', b);
+  root.style.setProperty('--saturate', s);
+  root.style.setProperty('--grayscale', g);
 }
 [contrast, brightness, saturate].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
 
 function saveFilters() {
-  const settings = {
+  localStorage.setItem('mangaReaderFilters', JSON.stringify({
     contrast: contrast.value, brightness: brightness.value,
     saturate: saturate.value, grayscale: grayscaleToggle.checked
-  };
-  localStorage.setItem('mangaReaderFilters', JSON.stringify(settings));
+  }));
   saveFiltersBtn.textContent = '✓ Saved!';
   setTimeout(() => saveFiltersBtn.textContent = '💾 Save Settings', 1500);
 }
@@ -282,13 +284,11 @@ function loadFilters() {
     if (s.saturate) saturate.value = s.saturate;
     if (s.grayscale !== undefined) grayscaleToggle.checked = s.grayscale;
     updateFilters();
-  } catch(e) { console.warn('Failed to load filters:', e); }
+  } catch(e) {}
 }
 function resetFilters() {
-  contrast.value = DEFAULTS.contrast;
-  brightness.value = DEFAULTS.brightness;
-  saturate.value = DEFAULTS.saturate;
-  grayscaleToggle.checked = DEFAULTS.grayscale;
+  contrast.value = DEFAULTS.contrast; brightness.value = DEFAULTS.brightness;
+  saturate.value = DEFAULTS.saturate; grayscaleToggle.checked = DEFAULTS.grayscale;
   updateFilters();
   resetFiltersBtn.textContent = '✓ Reset!';
   setTimeout(() => resetFiltersBtn.textContent = '↺ Reset to Default', 1500);
@@ -298,65 +298,35 @@ resetFiltersBtn.onclick = resetFilters;
 
 /* ================= CLEANUP ================= */
 function cleanupBlobURLs() {
-  currentBlobURLs.forEach(url => { try { URL.revokeObjectURL(url); } catch(e) {} });
+  currentBlobURLs.forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} });
   currentBlobURLs = [];
   imageCache.clear();
 }
 function cleanupThumbnails() {
-  thumbURLs.forEach(url => { try { URL.revokeObjectURL(url); } catch(e) {} });
+  thumbURLs.forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} });
   thumbURLs.length = 0;
 }
 
 /* ================= UI TOGGLE ================= */
 let controlsVisible = true;
 document.addEventListener('click', (e) => {
-  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo, #storageInfo')) return;
+  if (e.target.closest('#tools, #toggleTools, #openLibrary, #singleFileBtn, #openFolderBtn, #purgeLibraryBtn, #folderSelect, input, button, .book, #library, #shortcutsHelp, #pageInfo, #chapterInfo, #storageInfo, #permBanner')) return;
   controlsVisible = !controlsVisible;
   document.body.classList.toggle('controls-hidden', !controlsVisible);
   if (!controlsVisible) document.getElementById("tools").style.display = "none";
 });
-
 document.getElementById("toggleTools").onclick = (e) => {
   e.stopPropagation();
   const tools = document.getElementById("tools");
   tools.style.display = tools.style.display === "none" ? "block" : "none";
 };
 
-/* ================= LIBRARY & FILE PICKERS ================= */
-document.getElementById("openLibrary").onclick = (e) => {
-  e.stopPropagation();
-  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files…</div>';
-  libraryEl.classList.add('active');
-  progressFill.style.width = '0%';
-  cleanupThumbnails();
-  document.getElementById("libraryInput").click();
-};
-document.getElementById("singleFileBtn").onclick = (e) => {
-  e.stopPropagation();
-  cleanupBlobURLs();
-  cleanupThumbnails();
-  document.getElementById("fileInput").click();
-};
-
-document.getElementById("fileInput").onchange = async (e) => {
-  const file = e.target.files[0];
-  if (!file || !/\.(zip|cbz)$/i.test(file.name)) return;
-  progressFill.style.width = '0%';
-  libraryEl.innerHTML = `<div class="loading">Loading ${file.name}…</div>`;
-  libraryEl.classList.add('active');
-  try {
-    await loadZipFile(file);
-    libraryEl.classList.remove('active');
-  } catch(err) {
-    libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
-  }
-  progressFill.style.width = '0%';
-  e.target.value = '';
-};
-
-/* ================= INDEXEDDB HELPERS ================= */
+/* ================= INDEXEDDB ================= */
 const DB_NAME = 'mangaReader';
 const DB_STORE = 'handles';
+const KEY_LAST_DIR = 'lastDir';
+const KEY_LIBRARY = 'libraryCache';
+
 function idbOpen() {
   return new Promise((res, rej) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -370,8 +340,7 @@ async function idbSet(key, val) {
   return new Promise((res, rej) => {
     const tx = db.transaction(DB_STORE, 'readwrite');
     tx.objectStore(DB_STORE).put(val, key);
-    tx.oncomplete = res;
-    tx.onerror = () => rej(tx.error);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
   });
 }
 async function idbGet(key) {
@@ -383,14 +352,180 @@ async function idbGet(key) {
     req.onerror = () => rej(req.error);
   });
 }
+async function idbDelete(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).delete(key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
 async function idbClear() {
   const db = await idbOpen();
   return new Promise((res, rej) => {
     const tx = db.transaction(DB_STORE, 'readwrite');
     tx.objectStore(DB_STORE).clear();
-    tx.oncomplete = res;
-    tx.onerror = () => rej(tx.error);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
   });
+}
+
+/* ================= THUMBNAIL BLOB EXTRACTION ================= */
+async function extractFirstImageBlob(file) {
+  const zipTemp = await JSZip.loadAsync(file);
+  async function collectImagePaths(zipObj, base = '') {
+    let paths = [];
+    for (const [path, entry] of Object.entries(zipObj.files)) {
+      if (entry.dir) continue;
+      if (path.includes('__MACOSX')) continue;
+      const fullPath = base ? `${base}/${path}` : path;
+      if (/\.(zip|cbz)$/i.test(path)) {
+        try {
+          const blob = await entry.async('blob');
+          const nested = await JSZip.loadAsync(blob);
+          paths = paths.concat(await collectImagePaths(nested, fullPath));
+        } catch (e) {}
+      } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
+        paths.push({ path: fullPath, entry });
+      }
+    }
+    return paths;
+  }
+  const entries = await collectImagePaths(zipTemp);
+  if (!entries.length) return null;
+  entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  return await entries[0].entry.async('blob');
+}
+
+/* ================= CONCURRENCY POOL ================= */
+async function processWithConcurrency(items, processor, concurrency = 3) {
+  const results = new Array(items.length);
+  const executing = [];
+  let completed = 0;
+  for (let i = 0; i < items.length; i++) {
+    const idx = i, item = items[i];
+    const p = (async () => {
+      try { return await processor(item, idx); }
+      catch(err) { console.warn('Processor error', idx, err); return null; }
+    })().then(result => {
+      results[idx] = result;
+      const k = executing.indexOf(p);
+      if (k > -1) executing.splice(k, 1);
+      completed++;
+      progressFill.style.width = `${Math.round((completed / items.length) * 100)}%`;
+      return result;
+    });
+    executing.push(p);
+    if (executing.length >= concurrency) await Promise.race(executing);
+  }
+  await Promise.all(executing);
+  return results;
+}
+
+/* ================= BOOK ELEMENT BUILDER ================= */
+const PLACEHOLDER = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
+
+function createBookElement(book) {
+  const div = document.createElement('div');
+  div.className = 'book';
+
+  // Thumb URL: prefer in-memory URL, else create from blob
+  let thumbURL = book.thumb;
+  if (!thumbURL && book.thumbBlob) {
+    thumbURL = URL.createObjectURL(book.thumbBlob);
+    thumbURLs.push(thumbURL);
+  }
+
+  const isCached = !!book.cached;
+  const displayName = (book.name || '').split('/').pop();
+
+  div.innerHTML = `
+    <img src="${thumbURL || PLACEHOLDER}" loading="lazy" alt="">
+    ${isCached ? '<span class="cached-badge">cached</span>' : ''}
+    <span title="${book.name}">${displayName}</span>
+  `;
+
+  div.onclick = async (ev) => {
+    ev.stopPropagation();
+    // Session file object → straight to reader
+    if (book.file) {
+      cleanupBlobURLs();
+      try {
+        await loadZipFile(book.file);
+        libraryEl.classList.remove('active');
+      } catch (e) {
+        libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${e.message}</div>`;
+      }
+      return;
+    }
+    // Cached record with a persisted file handle → request permission, then read
+    if (book.fileHandle) {
+      await openCachedBook(book);
+      return;
+    }
+    // No way to read it (fallback session without handles)
+    showChapterInfo('⚠️ Re-open the folder to access this file');
+  };
+  return div;
+}
+
+/* ================= OPEN FROM CACHE ================= */
+async function openCachedBook(book) {
+  const handle = book.fileHandle;
+  showChapterInfo('🔑 Requesting access…');
+  try {
+    let perm = await handle.queryPermission({ mode: 'read' });
+    if (perm !== 'granted') {
+      perm = await handle.requestPermission({ mode: 'read' });
+    }
+    if (perm !== 'granted') {
+      showChapterInfo('❌ Permission denied');
+      return;
+    }
+    const file = await handle.getFile();
+    cleanupBlobURLs();
+    await loadZipFile(file);
+    libraryEl.classList.remove('active');
+  } catch (e) {
+    console.error(e);
+    libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error opening: ${e.message}</div>`;
+  }
+}
+
+/* ================= LIBRARY RENDER ================= */
+function renderLibrary(books, grouped = false) {
+  libraryEl.innerHTML = '';
+  if (!books.length) {
+    libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
+    return;
+  }
+
+  if (!grouped) {
+    books.forEach(b => libraryEl.appendChild(createBookElement(b)));
+    return;
+  }
+
+  const groups = new Map();
+  for (const b of books) {
+    const key = b.group || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(b);
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (a === '') return -1;
+    if (b === '') return 1;
+    return a.localeCompare(b, undefined, { numeric: true });
+  });
+  for (const key of keys) {
+    if (key) {
+      const h = document.createElement('div');
+      h.className = 'group-header';
+      h.textContent = `📁 ${key}`;
+      libraryEl.appendChild(h);
+    }
+    groups.get(key)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+      .forEach(b => libraryEl.appendChild(createBookElement(b)));
+  }
 }
 
 /* ================= FOLDER PICKER ================= */
@@ -421,7 +556,7 @@ async function buildLibraryFromDirectory(dirHandle) {
   progressFill.style.width = '0%';
 
   const archives = await collectArchiveFiles(dirHandle);
-  if (archives.length === 0) {
+  if (!archives.length) {
     libraryEl.innerHTML = '<div class="loading">No .zip/.cbz files found in this folder.</div>';
     progressFill.style.width = '0%';
     return;
@@ -430,13 +565,13 @@ async function buildLibraryFromDirectory(dirHandle) {
   const books = await processWithConcurrency(archives, async (item, index) => {
     libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
     try {
-      const thumbURL = await extractFirstImageThumbnail(item.file);
+      const thumbBlob = await extractFirstImageBlob(item.file);
       return {
-        file: item.file,
-        handle: item.handle,
         name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
-        thumb: thumbURL,
-        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : ''
+        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : '',
+        thumbBlob,
+        fileHandle: item.handle,   // FileSystemFileHandle → structured-clonable
+        relPath: item.relPath
       };
     } catch (err) {
       console.warn('Skip:', item.relPath, err);
@@ -446,7 +581,29 @@ async function buildLibraryFromDirectory(dirHandle) {
 
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
-  renderLibrary(books.filter(Boolean), true);
+
+  const clean = books.filter(Boolean);
+  // Save to IndexedDB for next visit
+  await saveLibraryCache(clean);
+  // Render (with fileHandle, session-only if no handle)
+  renderLibrary(clean, true);
+}
+
+async function saveLibraryCache(books) {
+  // Records are { name, group, thumbBlob, fileHandle, relPath }
+  // Strip the session-only `file` (none here) — thumbBlob + handle are clonable
+  try {
+    await idbSet(KEY_LIBRARY, books);
+  } catch (e) {
+    console.warn('Failed to save library cache:', e);
+  }
+}
+
+async function loadLibraryCache() {
+  try {
+    const recs = await idbGet(KEY_LIBRARY);
+    return Array.isArray(recs) ? recs : [];
+  } catch (e) { return []; }
 }
 
 openFolderBtn.onclick = async (e) => {
@@ -457,16 +614,13 @@ openFolderBtn.onclick = async (e) => {
   }
   try {
     const dirHandle = await window.showDirectoryPicker({
-      id: 'mangaRoot',
-      mode: 'read',
-      startIn: 'documents'
+      id: 'mangaRoot', mode: 'read', startIn: 'documents'
     });
-    await idbSet('lastDir', dirHandle);
+    await idbSet(KEY_LAST_DIR, dirHandle);
     await buildLibraryFromDirectory(dirHandle);
   } catch (err) {
     if (err.name === 'AbortError') {
-      const saved = await idbGet('lastDir');
-      if (saved) await tryRestoreSavedHandle(saved);
+      // user cancelled; nothing to do
     } else {
       console.error(err);
       libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
@@ -474,20 +628,7 @@ openFolderBtn.onclick = async (e) => {
   }
 };
 
-async function tryRestoreSavedHandle(handle) {
-  if (!handle || typeof handle.queryPermission !== 'function') return;
-  const perm = await handle.queryPermission({ mode: 'read' });
-  if (perm === 'granted') {
-    await buildLibraryFromDirectory(handle);
-    return;
-  }
-  if (perm === 'prompt') {
-    const req = await handle.requestPermission({ mode: 'read' });
-    if (req === 'granted') await buildLibraryFromDirectory(handle);
-  }
-}
-
-/* Fallback: <input webkitdirectory> */
+/* Fallback: <input webkitdirectory> — session-only library (no persistent handles) */
 folderFallbackInput.onchange = async (e) => {
   const all = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
   if (!all.length) { e.target.value = ''; return; }
@@ -495,20 +636,18 @@ folderFallbackInput.onchange = async (e) => {
   libraryEl.innerHTML = `<div class="loading">Loading ${all.length} archives…</div>`;
 
   const archives = all.map(file => ({
-    file,
-    relPath: file.webkitRelativePath || file.name,
-    handle: null
+    file, relPath: file.webkitRelativePath || file.name, handle: null
   }));
 
   const books = await processWithConcurrency(archives, async (item, index) => {
     libraryEl.innerHTML = `<div class="loading">Thumbnail ${index + 1}/${archives.length}<br><small>${item.relPath}</small></div>`;
     try {
-      const thumbURL = await extractFirstImageThumbnail(item.file);
+      const thumbBlob = await extractFirstImageBlob(item.file);
       return {
-        file: item.file,
+        file: item.file,           // session-only; can't be persisted anyway
         name: item.relPath.replace(/\.(zip|cbz)$/i, ''),
-        thumb: thumbURL,
-        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : ''
+        group: item.relPath.includes('/') ? item.relPath.slice(0, item.relPath.lastIndexOf('/')) : '',
+        thumbBlob
       };
     } catch { return null; }
   }, 4);
@@ -517,148 +656,54 @@ folderFallbackInput.onchange = async (e) => {
   e.target.value = '';
 };
 
-/* ================= THUMBNAIL EXTRACTION (nested zip aware) ================= */
-async function extractFirstImageThumbnail(file) {
-  const zipTemp = await JSZip.loadAsync(file);
-  async function collectImagePaths(zipObj, base = '') {
-    let paths = [];
-    for (const [path, entry] of Object.entries(zipObj.files)) {
-      if (entry.dir) continue;
-      const fullPath = base ? `${base}/${path}` : path;
-      if (path.includes('__MACOSX')) continue;
-      if (/\.(zip|cbz)$/i.test(path)) {
-        try {
-          const blob = await entry.async('blob');
-          const nestedZip = await JSZip.loadAsync(blob);
-          const nestedPaths = await collectImagePaths(nestedZip, fullPath);
-          paths = paths.concat(nestedPaths);
-        } catch (e) { console.warn('Nested zip read error:', fullPath, e); }
-      } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
-        paths.push({ path: fullPath, entry });
-      }
-    }
-    return paths;
-  }
-  const entries = await collectImagePaths(zipTemp);
-  if (!entries.length) return null;
-  entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
-  const blob = await entries[0].entry.async('blob');
-  const url = URL.createObjectURL(blob);
-  thumbURLs.push(url);
-  return url;
-}
-
-/* ================= CONCURRENCY POOL ================= */
-async function processWithConcurrency(items, processor, concurrency = 3) {
-  const results = new Array(items.length);
-  const executing = [];
-  let completed = 0;
-  for (let i = 0; i < items.length; i++) {
-    const index = i;
-    const item = items[i];
-    const promise = (async () => {
-      try { return await processor(item, index); }
-      catch(err) { console.warn('Processor error', index, err); return null; }
-    })().then(result => {
-      results[index] = result;
-      const idx = executing.indexOf(promise);
-      if (idx > -1) executing.splice(idx, 1);
-      completed++;
-      progressFill.style.width = `${Math.round((completed / items.length) * 100)}%`;
-      return result;
-    });
-    executing.push(promise);
-    if (executing.length >= concurrency) await Promise.race(executing);
-  }
-  await Promise.all(executing);
-  return results;
-}
-
-/* ================= LIBRARY (multi-file) ================= */
+/* ================= LIBRARY (multi-file, session-only) ================= */
 document.getElementById("libraryInput").onchange = async (e) => {
   const files = Array.from(e.target.files).filter(f => /\.(zip|cbz)$/i.test(f.name));
-  if (files.length === 0) {
-    libraryEl.innerHTML = '<div class="loading">No ZIP/CBZ files selected</div>';
-    return;
-  }
+  if (!files.length) { libraryEl.innerHTML = '<div class="loading">No files selected</div>'; return; }
+  libraryEl.classList.add('active');
   libraryEl.innerHTML = `<div class="loading">Scanning ${files.length} files…</div>`;
   const books = await processWithConcurrency(files, async (file, index) => {
     libraryEl.innerHTML = `<div class="loading">Processing ${index + 1}/${files.length}: ${file.name}</div>`;
     try {
-      const thumbURL = await extractFirstImageThumbnail(file);
-      return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumb: thumbURL, group: '' };
-    } catch (err) { console.warn('Skip:', file.name, err); return null; }
+      const thumbBlob = await extractFirstImageBlob(file);
+      return { file, name: file.name.replace(/\.(zip|cbz)$/i, ''), thumbBlob, group: '' };
+    } catch { return null; }
   }, 3);
   progressFill.style.width = '100%';
   setTimeout(() => progressFill.style.width = '0%', 300);
-  renderLibrary(books.filter(b => b !== null), false);
+  renderLibrary(books.filter(Boolean), false);
   e.target.value = '';
 };
 
-/* ================= RENDER LIBRARY (grouped) ================= */
-function renderLibrary(books, grouped = false) {
-  libraryEl.innerHTML = '';
-  if (!books.length) {
-    libraryEl.innerHTML = '<div class="loading">No valid manga files found</div>';
-    return;
+/* ================= SINGLE FILE ================= */
+document.getElementById("openLibrary").onclick = (e) => {
+  e.stopPropagation();
+  libraryEl.innerHTML = '<div class="loading">Select ZIP/CBZ files…</div>';
+  libraryEl.classList.add('active');
+  progressFill.style.width = '0%';
+  cleanupThumbnails();
+  document.getElementById("libraryInput").click();
+};
+document.getElementById("singleFileBtn").onclick = (e) => {
+  e.stopPropagation();
+  cleanupBlobURLs(); cleanupThumbnails();
+  document.getElementById("fileInput").click();
+};
+document.getElementById("fileInput").onchange = async (e) => {
+  const file = e.target.files[0];
+  if (!file || !/\.(zip|cbz)$/i.test(file.name)) return;
+  progressFill.style.width = '0%';
+  libraryEl.innerHTML = `<div class="loading">Loading ${file.name}…</div>`;
+  libraryEl.classList.add('active');
+  try {
+    await loadZipFile(file);
+    libraryEl.classList.remove('active');
+  } catch(err) {
+    libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error: ${err.message}</div>`;
   }
-  const placeholder = `image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="220"><rect fill="%23222" width="100%25" height="100%25"/><text x="50%25" y="50%25" fill="%23666" font-size="12" text-anchor="middle" dominant-baseline="middle">No Preview</text></svg>`;
-
-  const makeBook = (book) => {
-    const div = document.createElement('div');
-    div.className = 'book';
-    const isNested = /\.(zip|cbz)\//i.test(book.name) || book.name.includes('nested');
-    div.innerHTML = `
-      <img src="${book.thumb || placeholder}" loading="lazy" alt="">
-      ${isNested ? '<span class="nested-badge">nested</span>' : ''}
-      <span title="${book.name}">${book.name.split('/').pop()}</span>
-    `;
-    // Whole card is clickable
-    div.onclick = async (ev) => {
-      ev.stopPropagation();
-      cleanupBlobURLs();
-      try {
-        await loadZipFile(book.file);
-        libraryEl.classList.remove('active');
-      } catch (err) {
-        console.error('Failed to open book:', err);
-        libraryEl.innerHTML = `<div class="loading" style="color:#f66">Error opening: ${err.message}</div>`;
-      }
-    };
-    return div;
-  };
-
-  if (!grouped) {
-    books.forEach(b => libraryEl.appendChild(makeBook(b)));
-    return;
-  }
-
-  const groups = new Map();
-  for (const b of books) {
-    const key = b.group || '';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(b);
-  }
-
-  // Sort: ungrouped first, then alphabetical folders
-  const sortedKeys = [...groups.keys()].sort((a, b) => {
-    if (a === '') return -1;
-    if (b === '') return 1;
-    return a.localeCompare(b, undefined, { numeric: true });
-  });
-
-  for (const key of sortedKeys) {
-    if (key) {
-      const header = document.createElement('div');
-      header.className = 'group-header';
-      header.textContent = `📁 ${key}`;
-      libraryEl.appendChild(header);
-    }
-    groups.get(key)
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-      .forEach(b => libraryEl.appendChild(makeBook(b)));
-  }
-}
+  progressFill.style.width = '0%';
+  e.target.value = '';
+};
 
 /* ================= LOAD ZIP (with nested extraction) ================= */
 async function loadZipFile(file) {
@@ -667,24 +712,21 @@ async function loadZipFile(file) {
   zip = await JSZip.loadAsync(file, { checkCRC32: false });
 
   const imageEntries = [];
-
   async function processZip(zipObj, basePath = '') {
     for (const [path, entry] of Object.entries(zipObj.files)) {
-      if (entry.dir) continue;
-      if (path.includes('__MACOSX')) continue;
+      if (entry.dir || path.includes('__MACOSX')) continue;
       const virtualPath = basePath ? `${basePath}/${path}` : path;
       if (/\.(zip|cbz)$/i.test(path)) {
         try {
           const blob = await entry.async('blob');
-          const nestedZip = await JSZip.loadAsync(blob);
-          await processZip(nestedZip, virtualPath);
-        } catch (e) { console.warn('Nested zip fail:', virtualPath, e); }
+          const nested = await JSZip.loadAsync(blob);
+          await processZip(nested, virtualPath);
+        } catch (e) {}
       } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
         imageEntries.push({ virtualPath, entry, zipObj, isNested: !!basePath });
       }
     }
   }
-
   await processZip(zip, '');
   imageEntries.sort((a, b) => a.virtualPath.localeCompare(b.virtualPath, undefined, { numeric: true }));
 
@@ -696,7 +738,6 @@ async function loadZipFile(file) {
     const parts = p.split('/').filter(Boolean);
     if (parts.length > 1) folders.add(parts[0]);
   });
-
   folderSelect.innerHTML = '<option value="">📁 All Pages (full manga)</option>';
   foldersList = ["", ...Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true }))];
   foldersList.filter(Boolean).forEach(f => {
@@ -705,80 +746,63 @@ async function loadZipFile(file) {
     folderSelect.appendChild(opt);
   });
 
-  currentFolder = "";
-  folderSelect.value = "";
+  currentFolder = ""; folderSelect.value = "";
   renderPlaceholders(imageEntries);
   showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? ' (nested)' : ''));
   window.scrollTo(0, 0);
 }
 
-/* ================= RENDER PLACEHOLDERS ================= */
 function renderPlaceholders(entries) {
   readerEl.innerHTML = '';
   chapterStartIndex = {};
-
   entries.forEach((entry, i) => {
     const path = entry.virtualPath;
     const folder = path.includes("/") ? path.split("/")[0] : "";
     if (folder && !chapterStartIndex[folder]) chapterStartIndex[folder] = { index: i, element: null };
 
-    const placeholder = document.createElement("div");
-    placeholder.className = "img-placeholder";
-    placeholder.textContent = `📄 Page ${i + 1}`;
-    placeholder.dataset.path = path;
-    placeholder.dataset.folder = folder;
-    placeholder.dataset.index = i + 1;
-    placeholder.style.height = "400px";
-    placeholder.style.position = "relative";
-
+    const ph = document.createElement("div");
+    ph.className = "img-placeholder";
+    ph.textContent = `📄 Page ${i + 1}`;
+    ph.dataset.path = path;
+    ph.dataset.folder = folder;
+    ph.dataset.index = i + 1;
+    ph.style.height = "400px";
+    ph.style.position = "relative";
     if (entry.isNested) {
-      const badge = document.createElement('span');
-      badge.className = 'nested-badge';
-      badge.textContent = 'nested';
-      placeholder.appendChild(badge);
+      const b = document.createElement('span');
+      b.className = 'nested-badge'; b.textContent = 'nested';
+      ph.appendChild(b);
     }
-
-    if (folder && chapterStartIndex[folder].element === null) chapterStartIndex[folder].element = placeholder;
-    readerEl.appendChild(placeholder);
+    if (folder && chapterStartIndex[folder].element === null) chapterStartIndex[folder].element = ph;
+    readerEl.appendChild(ph);
   });
-
   setupImageObserver();
   pageInfo.textContent = `📄 Page 1 / ${allImages.length}`;
   pageInfo.classList.add('visible');
 }
 
-/* ================= INTERSECTION OBSERVER ================= */
 function setupImageObserver() {
   if (intersectionObserver) intersectionObserver.disconnect();
   intersectionObserver = new IntersectionObserver(async (entries) => {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
-      const placeholder = entry.target;
-      const path = placeholder.dataset.path;
-      if (placeholder.tagName === 'IMG') continue;
-
-      const imageEntry = windowImageEntries.find(e => e.virtualPath === path);
-      if (!imageEntry) { placeholder.textContent = '❌ Not found'; continue; }
-
-      if (imageCache.has(path)) {
-        replacePlaceholderWithImage(placeholder, imageCache.get(path));
-        continue;
-      }
-
+      const ph = entry.target;
+      const path = ph.dataset.path;
+      if (ph.tagName === 'IMG') continue;
+      const ie = windowImageEntries.find(e => e.virtualPath === path);
+      if (!ie) { ph.textContent = '❌ Not found'; continue; }
+      if (imageCache.has(path)) { replacePlaceholderWithImage(ph, imageCache.get(path)); continue; }
       try {
-        const blob = await imageEntry.entry.async("blob");
+        const blob = await ie.entry.async("blob");
         const url = URL.createObjectURL(blob);
         imageCache.set(path, { url, blob });
         currentBlobURLs.push(url);
-        replacePlaceholderWithImage(placeholder, { url, blob });
+        replacePlaceholderWithImage(ph, { url, blob });
       } catch(e) {
-        placeholder.textContent = '❌ Failed to load';
-        placeholder.style.color = '#f66';
-        console.warn('Stream load fail:', path, e);
+        ph.textContent = '❌ Failed to load'; ph.style.color = '#f66';
       }
     }
   }, { rootMargin: '300px 0px', threshold: 0.01 });
-
   readerEl.querySelectorAll('.img-placeholder').forEach(el => intersectionObserver.observe(el));
 }
 
@@ -794,30 +818,28 @@ function replacePlaceholderWithImage(placeholder, imageData) {
 
   const hadBadge = placeholder.querySelector('.nested-badge');
   if (hadBadge) {
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'relative';
-    wrapper.appendChild(img);
-    wrapper.appendChild(hadBadge.cloneNode(true));
-    placeholder.replaceWith(wrapper);
+    const wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    wrap.appendChild(img);
+    wrap.appendChild(hadBadge.cloneNode(true));
+    placeholder.replaceWith(wrap);
   } else {
     placeholder.replaceWith(img);
   }
-
   const folder = placeholder.dataset.folder;
   if (folder && chapterStartIndex[folder]?.element === placeholder) chapterStartIndex[folder].element = img;
 }
 
-/* ================= PAGE INFO ================= */
 function updatePageInfo() {
   if (!allImages.length) return;
   const items = readerEl.querySelectorAll('img, .img-placeholder, div:has(> img)');
-  let currentPage = 1;
+  let cur = 1;
   const mid = window.innerHeight / 2;
-  items.forEach((el, index) => {
-    const rect = el.getBoundingClientRect();
-    if (rect.top < mid && rect.bottom > 0) currentPage = index + 1;
+  items.forEach((el, i) => {
+    const r = el.getBoundingClientRect();
+    if (r.top < mid && r.bottom > 0) cur = i + 1;
   });
-  pageInfo.textContent = `📄 Page ${currentPage} / ${allImages.length}`;
+  pageInfo.textContent = `📄 Page ${cur} / ${allImages.length}`;
 }
 let scrollTimeout;
 window.addEventListener('scroll', () => {
@@ -827,21 +849,12 @@ window.addEventListener('scroll', () => {
   }
 }, { passive: true });
 
-/* ================= CHAPTER NAV ================= */
 function scrollToChapter(folder) {
-  if (!folder) {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    showChapterInfo("📖 All Pages");
-    return;
-  }
-  const data = chapterStartIndex[folder];
-  if (data && data.element) {
-    data.element.scrollIntoView({ behavior: "smooth", block: "start" });
-    showChapterInfo(`📑 Jumped to: ${folder}`);
-  }
+  if (!folder) { window.scrollTo({ top: 0, behavior: "smooth" }); showChapterInfo("📖 All Pages"); return; }
+  const d = chapterStartIndex[folder];
+  if (d && d.element) { d.element.scrollIntoView({ behavior: "smooth", block: "start" }); showChapterInfo(`📑 Jumped to: ${folder}`); }
 }
 folderSelect.onchange = () => scrollToChapter(folderSelect.value);
-
 function showChapterInfo(text) {
   chapterInfo.textContent = text;
   chapterInfo.classList.add('visible');
@@ -857,26 +870,21 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
-    e.preventDefault();
-    shortcutsHelp.classList.toggle('active');
-    return;
+    e.preventDefault(); shortcutsHelp.classList.toggle('active'); return;
   }
   if (libraryEl.classList.contains('active') || shortcutsHelp.classList.contains('active') || storageInfo.classList.contains('active')) return;
 
   if ((e.key === "d" || e.key === "ArrowRight") && foldersList.length > 1) {
-    const idx = foldersList.indexOf(currentFolder);
-    currentFolder = foldersList[(idx + 1) % foldersList.length];
-    folderSelect.value = currentFolder;
-    scrollToChapter(currentFolder);
+    const i = foldersList.indexOf(currentFolder);
+    currentFolder = foldersList[(i + 1) % foldersList.length];
+    folderSelect.value = currentFolder; scrollToChapter(currentFolder);
   }
   if ((e.key === "a" || e.key === "ArrowLeft") && foldersList.length > 1) {
-    const idx = foldersList.indexOf(currentFolder);
-    currentFolder = foldersList[(idx - 1 + foldersList.length) % foldersList.length];
-    folderSelect.value = currentFolder;
-    scrollToChapter(currentFolder);
+    const i = foldersList.indexOf(currentFolder);
+    currentFolder = foldersList[(i - 1 + foldersList.length) % foldersList.length];
+    folderSelect.value = currentFolder; scrollToChapter(currentFolder);
   }
-  if (e.key === "t") {
-    e.stopPropagation();
+  if (e.key === "t") { e.stopPropagation();
     const tools = document.getElementById("tools");
     tools.style.display = tools.style.display === "none" ? "block" : "none";
   }
@@ -891,138 +899,100 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "r" && e.ctrlKey) { e.preventDefault(); resetFilters(); }
 });
+shortcutsHelp.addEventListener('click', (e) => { if (e.target === shortcutsHelp) shortcutsHelp.classList.remove('active'); });
+storageInfo.addEventListener('click', (e) => { if (e.target === storageInfo) storageInfo.classList.remove('active'); });
 
-shortcutsHelp.addEventListener('click', (e) => {
-  if (e.target === shortcutsHelp) shortcutsHelp.classList.remove('active');
-});
-storageInfo.addEventListener('click', (e) => {
-  if (e.target === storageInfo) storageInfo.classList.remove('active');
-});
+/* ================= PURGE ================= */
+function formatBytes(b) {
+  if (b === 0 || b == null) return '0 B';
+  const k = 1024, sizes = ['B','KB','MB','GB'];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return `${(b / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
 
-/* ================= PURGE LIBRARY ================= */
-const purgeBtn = document.getElementById('purgeLibraryBtn');
-
-function formatBytes(bytes) {
-  if (bytes === 0 || bytes == null) return '0 B';
-  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+async function getLibraryCacheStats() {
+  const recs = await loadLibraryCache();
+  let bytes = 0;
+  for (const r of recs) {
+    if (r.thumbBlob?.size) bytes += r.thumbBlob.size;
+    if (r.name) bytes += r.name.length * 2;
+  }
+  return { count: recs.length, bytes };
 }
 
 async function estimateStorage() {
-  // 1. IndexedDB handle size (we can only estimate — the handle itself is small, but let's show whether it exists)
   let handleSize = 0;
-  try {
-    const h = await idbGet('lastDir');
-    if (h) handleSize = 256; // rough fixed estimate: the handle reference itself
-  } catch {}
+  try { const h = await idbGet(KEY_LAST_DIR); if (h) handleSize = 256; } catch {}
 
-  // 2. localStorage filters size
+  const libStats = await getLibraryCacheStats();
+
   const filtersStr = localStorage.getItem('mangaReaderFilters') || '';
   const filtersSize = new Blob([filtersStr]).size;
 
-  // 3. Thumbnail blob URLs — we can't measure their byte size directly from the URL,
-  // but we can fetch them (they're blob: URLs in the same document — fetching returns the same bytes).
   let thumbBytes = 0;
   for (const url of thumbURLs) {
-    try {
-      const resp = await fetch(url);
-      const b = await resp.blob();
-      thumbBytes += b.size;
-    } catch {}
+    try { const r = await fetch(url); const b = await r.blob(); thumbBytes += b.size; } catch {}
   }
-
-  // 4. Image cache (in-memory blobs)
   let cacheBytes = 0;
-  for (const { blob } of imageCache.values()) {
-    if (blob && blob.size) cacheBytes += blob.size;
-  }
+  for (const { blob } of imageCache.values()) if (blob?.size) cacheBytes += blob.size;
 
-  // 5. Also check navigator.storage.estimate() for a browser-level view
   let quotaInfo = null;
-  if (navigator.storage && navigator.storage.estimate) {
+  if (navigator.storage?.estimate) {
     try { quotaInfo = await navigator.storage.estimate(); } catch {}
   }
-
-  return { handleSize, filtersSize, thumbBytes, cacheBytes, quotaInfo };
+  return { handleSize, libStats, filtersSize, thumbBytes, cacheBytes, quotaInfo };
 }
 
-purgeBtn.onclick = async (e) => {
+document.getElementById('purgeLibraryBtn').onclick = async (e) => {
   e.stopPropagation();
-  // Build storage info panel
-  document.getElementById('sizeHandle').textContent = 'computing…';
-  document.getElementById('sizeFilters').textContent = 'computing…';
-  document.getElementById('sizeThumbs').textContent = 'computing…';
-  document.getElementById('sizeCache').textContent = 'computing…';
-  document.getElementById('sizeTotal').textContent = 'computing…';
+  ['sizeHandle','sizeLib','sizeFilters','sizeThumbs','sizeCache','sizeTotal']
+    .forEach(id => document.getElementById(id).textContent = 'computing…');
   storageInfo.classList.add('active');
-
   const s = await estimateStorage();
 
   document.getElementById('sizeHandle').textContent = s.handleSize ? '~256 B (handle)' : 'none';
+  document.getElementById('sizeLib').textContent = `${s.libStats.count} books · ${formatBytes(s.libStats.bytes)}`;
   document.getElementById('sizeFilters').textContent = formatBytes(s.filtersSize);
   document.getElementById('sizeThumbs').textContent = `${thumbURLs.length} URLs · ${formatBytes(s.thumbBytes)}`;
   document.getElementById('sizeCache').textContent = `${imageCache.size} blobs · ${formatBytes(s.cacheBytes)}`;
 
-  const total = s.handleSize + s.filtersSize + s.thumbBytes + s.cacheBytes;
-  let totalText = formatBytes(total);
-  if (s.quotaInfo && s.quotaInfo.usage != null) {
-    totalText += ` (browser total: ${formatBytes(s.quotaInfo.usage)})`;
-  }
-  document.getElementById('sizeTotal').textContent = totalText;
+  const total = s.handleSize + s.libStats.bytes + s.filtersSize + s.thumbBytes + s.cacheBytes;
+  let txt = formatBytes(total);
+  if (s.quotaInfo?.usage != null) txt += ` (browser total: ${formatBytes(s.quotaInfo.usage)})`;
+  document.getElementById('sizeTotal').textContent = txt;
 };
 
 document.getElementById('purgeCancel').onclick = () => storageInfo.classList.remove('active');
-document.getElementById('purgeConfirm').onclick = async () => {
-  // Clear IndexedDB
-  try { await idbClear(); } catch (e) { console.warn('idb clear failed', e); }
-  // Clear localStorage
+
+async function doPurge() {
+  try { await idbClear(); } catch (e) {}
   try { localStorage.removeItem('mangaReaderFilters'); } catch {}
-  // Revoke blob URLs and clear caches
   cleanupBlobURLs();
   cleanupThumbnails();
   windowImageEntries = [];
   allImages = [];
-  // Clear library grid + reader
   libraryEl.innerHTML = '';
   libraryEl.classList.remove('active');
   readerEl.innerHTML = '';
   pageInfo.classList.remove('visible');
   chapterInfo.classList.remove('visible');
+  permBanner.classList.remove('visible');
+}
 
+document.getElementById('purgeConfirm').onclick = async () => {
+  await doPurge();
   storageInfo.innerHTML = '<div style="text-align:center;padding:10px;color:#0f0;">✓ Library data purged</div>';
   setTimeout(() => {
     storageInfo.classList.remove('active');
-    // Restore original content for next time
-    storageInfo.innerHTML = `
-      <h3>🗑️ Purge Library Data</h3>
-      <table id="storageTable">
-        <tr><td>Saved folder handle</td><td id="sizeHandle">—</td></tr>
-        <tr><td>Saved filter settings</td><td id="sizeFilters">—</td></tr>
-        <tr><td>Thumbnail blob URLs</td><td id="sizeThumbs">—</td></tr>
-        <tr><td>Image cache (in-memory)</td><td id="sizeCache">—</td></tr>
-        <tr style="border-top:1px solid #333;">
-          <td style="padding-top:8px;"><b>Total estimated</b></td>
-          <td id="sizeTotal" style="padding-top:8px;font-weight:bold;">—</td>
-        </tr>
-      </table>
-      <div class="actions">
-        <button class="cancel" id="purgeCancel">Cancel</button>
-        <button class="confirm" id="purgeConfirm">Purge Now</button>
-      </div>
-    `;
-    document.getElementById('purgeCancel').onclick = () => storageInfo.classList.remove('active');
-    document.getElementById('purgeConfirm').onclick = arguments.callee;
-  }, 1200);
+    location.reload();
+  }, 1000);
 };
 
 /* ================= INIT ================= */
 window.addEventListener('beforeunload', () => {
-  cleanupBlobURLs();
-  cleanupThumbnails();
+  cleanupBlobURLs(); cleanupThumbnails();
   if (intersectionObserver) intersectionObserver.disconnect();
 });
-
 window.addEventListener('resize', () => {
   if (intersectionObserver && readerEl.querySelectorAll('.img-placeholder').length > 0) {
     readerEl.querySelectorAll('.img-placeholder').forEach(el => intersectionObserver.observe(el));
@@ -1031,17 +1001,23 @@ window.addEventListener('resize', () => {
 
 loadFilters();
 
-/* Optional: auto-restore last folder if permission already granted */
+/* Auto-restore cached library on load — instant, no permission needed */
 window.addEventListener('load', async () => {
-  try {
-    const saved = await idbGet('lastDir');
-    if (saved && typeof saved.queryPermission === 'function') {
-      const perm = await saved.queryPermission({ mode: 'read' });
-      if (perm === 'granted') {
-        await buildLibraryFromDirectory(saved);
-      }
-    }
-  } catch (e) { /* ignore */ }
+  const recs = await loadLibraryCache();
+  if (recs.length) {
+    // Render as cached — clicking will request permission
+    const books = recs.map(r => ({
+      name: r.name, group: r.group, thumbBlob: r.thumbBlob,
+      fileHandle: r.fileHandle, cached: true
+    }));
+    renderLibrary(books, true);
+    libraryEl.classList.add('active');
+
+    // Show banner indicating the library is from cache
+    permBanner.innerHTML = `📁 Cached library · ${recs.length} books · Click any book to grant access`;
+    permBanner.classList.add('visible');
+    setTimeout(() => permBanner.classList.remove('visible'), 6000);
+  }
 });
 </script>
 </body>
