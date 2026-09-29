@@ -23,7 +23,7 @@
       border-radius: 28px;
       padding: 28px 32px;
       width: 100%;
-      max-width: 720px;
+      max-width: 680px;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
       border: 1px solid #2a313c;
     }
@@ -122,12 +122,6 @@
       color: #eef3fd;
       word-break: break-word;
     }
-    .stat-value small {
-      font-size: 14px;
-      font-weight: 400;
-      color: #8f9bb3;
-      margin-left: 6px;
-    }
     .controls {
       background: #0e1219;
       border-radius: 20px;
@@ -145,7 +139,7 @@
       margin-bottom: 0;
     }
     .control-label {
-      width: 110px;
+      width: 130px;
       font-size: 15px;
       font-weight: 500;
       color: #cbd5e6;
@@ -157,110 +151,96 @@
       align-items: center;
       gap: 14px;
     }
-    input[type="range"] {
-      flex: 1;
-      height: 6px;
-      -webkit-appearance: none;
-      background: #232c38;
-      border-radius: 10px;
-      outline: none;
-    }
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 18px;
-      height: 18px;
-      background: #2b7aff;
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow: 0 0 0 3px rgba(43, 122, 255, 0.2);
-      transition: 0.1s;
-    }
-    input[type="range"]::-webkit-slider-thumb:hover {
-      background: #4a8eff;
-    }
-    .value-badge {
-      min-width: 75px;
-      text-align: right;
-      font-weight: 600;
+    select {
+      width: 100%;
+      padding: 12px 16px;
+      background: #1c2330;
+      border: 1px solid #2f3a4a;
+      border-radius: 12px;
       color: #eef3fd;
       font-size: 15px;
-      background: #1c2330;
-      padding: 5px 12px;
-      border-radius: 30px;
-      border: 1px solid #2c3748;
-    }
-
-    /* estimation table */
-    .estimate-table {
-      background: #0e1219;
-      border-radius: 18px;
-      border: 1px solid #2a3442;
-      overflow: hidden;
-      margin: 20px 0 16px;
-    }
-    .estimate-header {
-      display: grid;
-      grid-template-columns: 1.4fr 1fr 1fr 1fr;
-      gap: 8px;
-      padding: 12px 18px;
-      background: #1a2230;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      color: #7f8b9f;
-      border-bottom: 1px solid #232c38;
-    }
-    .estimate-row {
-      display: grid;
-      grid-template-columns: 1.4fr 1fr 1fr 1fr;
-      gap: 8px;
-      padding: 14px 18px;
-      align-items: center;
-      border-bottom: 1px solid #1c2531;
-    }
-    .estimate-row:last-child {
-      border-bottom: none;
-    }
-    .estimate-row .label-cell {
-      font-size: 14px;
       font-weight: 500;
-      color: #cbd5e6;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f9bb3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      background-size: 18px;
+      padding-right: 44px;
+      transition: border-color 0.2s;
     }
-    .estimate-row .label-cell .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      display: inline-block;
+    select:hover {
+      border-color: #3e4a5c;
     }
-    .dot.orig { background: #6e7b91; }
-    .dot.new { background: #2b7aff; }
-    .dot.diff { background: #66d9a0; }
-    .dot.diff.negative { background: #ff7b7b; }
-
-    .estimate-row .value-cell {
-      font-size: 16px;
-      font-weight: 600;
+    select:focus {
+      outline: none;
+      border-color: #2b7aff;
+    }
+    select option {
+      background: #1c2330;
       color: #eef3fd;
     }
-    .estimate-row .value-cell.diff {
+    .bitrate-info {
+      background: #131b26;
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid #1f2a38;
+    }
+    .bitrate-info-label {
+      font-size: 13px;
+      color: #7f8b9f;
+      font-weight: 500;
+    }
+    .bitrate-info-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #7bb3ff;
+    }
+    .estimate-box {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0e1219;
+      border-radius: 18px;
+      padding: 18px 24px;
+      margin: 20px 0 16px;
+      border: 1px solid #2a3442;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .estimate-item {
+      display: flex;
+      flex-direction: column;
+    }
+    .estimate-label {
+      font-size: 13px;
+      color: #7b879b;
+      letter-spacing: 0.2px;
+      margin-bottom: 2px;
+    }
+    .estimate-number {
+      font-size: 22px;
+      font-weight: 700;
+      color: #eef3fd;
+      line-height: 1.2;
+    }
+    .estimate-number.diff {
       color: #66d9a0;
     }
-    .estimate-row .value-cell.diff.negative {
+    .estimate-number.diff.negative {
       color: #ff7b7b;
     }
-    .estimate-row .value-cell small {
-      display: block;
-      font-size: 11px;
-      font-weight: 400;
+    .estimate-number small {
+      font-size: 13px;
+      font-weight: 500;
       color: #7f8b9f;
-      margin-top: 2px;
-      letter-spacing: 0.1px;
+      margin-left: 6px;
     }
-
     .convert-btn {
       width: 100%;
       background: #2b7aff;
@@ -338,15 +318,6 @@
     .hidden {
       display: none;
     }
-    @media (max-width: 560px) {
-      .card { padding: 22px 18px; }
-      .estimate-header,
-      .estimate-row {
-        grid-template-columns: 1.2fr 1fr 1fr 1fr;
-        padding: 10px 12px;
-      }
-      .estimate-row .value-cell { font-size: 14px; }
-    }
   </style>
 </head>
 <body>
@@ -389,52 +360,35 @@
   <div id="controlsSection" class="hidden">
     <div class="controls">
       <div class="control-row">
-        <div class="control-label">Bitrate</div>
+        <div class="control-label">Target resolution</div>
         <div class="control-input">
-          <input type="range" id="bitrateSlider" min="0.2" max="8" step="0.1" value="2">
-          <div class="value-badge" id="bitrateValue">2.0 Mbps</div>
+          <select id="resolutionSelect">
+            <option value="360">360p (640×360)</option>
+            <option value="480">480p (854×480)</option>
+            <option value="720" selected>720p (1280×720)</option>
+            <option value="1080">1080p (1920×1080)</option>
+          </select>
         </div>
       </div>
-      <div class="control-row">
-        <div class="control-label">Resolution</div>
-        <div class="control-input">
-          <input type="range" id="resolutionSlider" min="240" max="2160" step="1" value="720">
-          <div class="value-badge" id="resolutionValue">720p</div>
-        </div>
+      <div class="bitrate-info">
+        <span class="bitrate-info-label">Auto bitrate (optimized)</span>
+        <span class="bitrate-info-value" id="autoBitrateValue">—</span>
       </div>
     </div>
 
-    <!-- estimation table: shows diff for bitrate change and resolution change separately -->
-    <div class="estimate-table">
-      <div class="estimate-header">
-        <div>Metric</div>
-        <div>Original</div>
-        <div>New</div>
-        <div>Difference</div>
+    <!-- estimation: only video estimated size -->
+    <div class="estimate-box">
+      <div class="estimate-item">
+        <span class="estimate-label">Original size</span>
+        <span class="estimate-number" id="origSizeValue">—</span>
       </div>
-
-      <!-- Bitrate row -->
-      <div class="estimate-row">
-        <div class="label-cell"><span class="dot orig"></span> Bitrate</div>
-        <div class="value-cell" id="origBitrateCell">—</div>
-        <div class="value-cell" id="newBitrateCell">—</div>
-        <div class="value-cell diff" id="bitrateDiffCell">—</div>
+      <div class="estimate-item">
+        <span class="estimate-label">Estimated new size</span>
+        <span class="estimate-number" id="newSizeValue">—</span>
       </div>
-
-      <!-- Resolution row -->
-      <div class="estimate-row">
-        <div class="label-cell"><span class="dot orig"></span> Resolution</div>
-        <div class="value-cell" id="origResCell">—</div>
-        <div class="value-cell" id="newResCell">—</div>
-        <div class="value-cell diff" id="resDiffCell">—</div>
-      </div>
-
-      <!-- Total size row (highlighted) -->
-      <div class="estimate-row" style="background:#131b26;">
-        <div class="label-cell"><span class="dot new"></span> Est. file size</div>
-        <div class="value-cell" id="origSizeCell">—</div>
-        <div class="value-cell" id="newSizeCell">—</div>
-        <div class="value-cell diff" id="sizeDiffCell">—</div>
+      <div class="estimate-item">
+        <span class="estimate-label">Difference</span>
+        <span class="estimate-number diff" id="diffValue">—</span>
       </div>
     </div>
 
@@ -456,7 +410,7 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.12.15/umd/ffmpeg.min.js"></script>
 <script>
   (function(){
     // DOM elements
@@ -467,26 +421,16 @@
     const bitrateStat = document.getElementById('bitrateStat');
     const resolutionStat = document.getElementById('resolutionStat');
     const durationStat = document.getElementById('durationStat');
-    const bitrateSlider = document.getElementById('bitrateSlider');
-    const resolutionSlider = document.getElementById('resolutionSlider');
-    const bitrateValue = document.getElementById('bitrateValue');
-    const resolutionValue = document.getElementById('resolutionValue');
+    const resolutionSelect = document.getElementById('resolutionSelect');
+    const autoBitrateValue = document.getElementById('autoBitrateValue');
+    const origSizeValue = document.getElementById('origSizeValue');
+    const newSizeValue = document.getElementById('newSizeValue');
+    const diffValue = document.getElementById('diffValue');
     const convertBtn = document.getElementById('convertBtn');
     const progressBar = document.getElementById('progressBar');
     const statusMessage = document.getElementById('statusMessage');
     const outputArea = document.getElementById('outputArea');
     const downloadLink = document.getElementById('downloadLink');
-
-    // estimate table cells
-    const origBitrateCell = document.getElementById('origBitrateCell');
-    const newBitrateCell = document.getElementById('newBitrateCell');
-    const bitrateDiffCell = document.getElementById('bitrateDiffCell');
-    const origResCell = document.getElementById('origResCell');
-    const newResCell = document.getElementById('newResCell');
-    const resDiffCell = document.getElementById('resDiffCell');
-    const origSizeCell = document.getElementById('origSizeCell');
-    const newSizeCell = document.getElementById('newSizeCell');
-    const sizeDiffCell = document.getElementById('sizeDiffCell');
 
     // state
     let selectedFile = null;
@@ -494,12 +438,32 @@
       duration: 0,
       width: 0,
       height: 0,
-      bitrate: 0,      // in bits per second (bps)
-      size: 0,         // bytes
+      bitrate: 0,
+      size: 0,
     };
     let ffmpeg = null;
     let isConverting = false;
     let currentObjectUrl = null;
+
+    // ---------- Efficient bitrate table (bits per pixel per second) ----------
+    // These values are based on H.264 (libx264) with 'fast' preset, targeting
+    // good quality (~CRF 22-24). Expressed in bits per pixel per second (bpp).
+    // Lower bpp = smaller file, higher bpp = better quality.
+    // Values empirically chosen for a good size/quality tradeoff.
+    const BPP_TABLE = {
+      360:  0.08,   // ~ 0.08 bpp  → ~ 250 kbps for 640x360
+      480:  0.085,  // ~ 0.085 bpp → ~ 500 kbps for 854x480
+      720:  0.09,   // ~ 0.09 bpp  → ~ 1.2 Mbps for 1280x720
+      1080: 0.095,  // ~ 0.095 bpp → ~ 2.7 Mbps for 1920x1080
+    };
+
+    // Standard widths for each target height (16:9)
+    const STD_WIDTHS = {
+      360: 640,
+      480: 854,
+      720: 1280,
+      1080: 1920,
+    };
 
     // ---------- helpers ----------
     function formatBytes(bytes, decimals = 2) {
@@ -526,122 +490,68 @@
       return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
     }
 
-    // Estimate size based on bitrate (video+audio) and duration.
-    function estimateSizeFromBitrate(bitrateBps, durationSec) {
-      if (!bitrateBps || !durationSec || durationSec <= 0) return 0;
-      // assume audio ~128 kbps included in target bitrate when user picks bitrate.
-      // For simplicity, we treat the user-selected bitrate as the total target bitrate.
-      return (bitrateBps * durationSec) / 8;
+    // Compute optimized bitrate for a target resolution using bpp model.
+    // Also enforce a max bitrate based on the original bitrate so we never
+    // increase the size beyond the original (unless user is upscaling).
+    function computeAutoBitrate(targetHeight) {
+      const stdWidth = STD_WIDTHS[targetHeight] || Math.round(targetHeight * 16 / 9);
+      const pixels = stdWidth * targetHeight;
+      const bpp = BPP_TABLE[targetHeight] || 0.09;
+      let bitrate = pixels * bpp;
+
+      // Clamp to sensible bounds (200 kbps – 15 Mbps)
+      bitrate = Math.max(200_000, Math.min(15_000_000, bitrate));
+
+      // If original bitrate is known and smaller than computed, cap it
+      // so we never produce a larger file than the original.
+      if (videoMetadata.bitrate > 0) {
+        bitrate = Math.min(bitrate, videoMetadata.bitrate);
+      }
+
+      return Math.round(bitrate);
     }
 
-    // Estimate size accounting for both bitrate AND resolution change.
-    // Resolution change alone does NOT change file size if bitrate is constant.
-    // However, lower resolution often allows lower bitrate for same quality.
-    // To give the user a meaningful resolution-based estimate, we model:
-    //   effectiveBitrate = targetBitrate * resolutionFactor
-    // where resolutionFactor scales relative to original resolution if user
-    // wants to lower bitrate further for small resolutions.
-    // Actually simpler and more honest: show that resolution change alone does
-    // not affect size unless bitrate changes. But we can show "recommended bitrate"
-    // for a given resolution. We'll compute two separate contributions:
-    //   1. bitrateDiffBytes  = (newBitrate - origBitrate) * duration / 8
-    //   2. resFactor = (newPixels / origPixels), and estimate "natural" bitrate
-    //      for the new resolution at same quality/bit-depth => bitrate scales with pixels.
-    // But since the user is explicitly setting a target bitrate, the resolution
-    // change is enforced by the scale filter but bitrate is what drives file size.
-    // To make the resolution slider meaningful, we compute a "suggested bitrate"
-    // for the chosen resolution based on original bits-per-pixel, and use that
-    // as the effective bitrate when the user hasn't manually adjusted? No.
-    // The cleanest approach: show two separate "if only this changed" scenarios,
-    // plus the combined result.
-    // We'll implement the combined estimate as:
-    //   effectiveTargetBitrate = targetBitrateMbps * 1e6
-    //   newSize = effectiveTargetBitrate * duration / 8
-    // And for resolution row, we show the "recommended bitrate for this resolution"
-    // and the size if that recommended bitrate were used, so user sees impact.
-
-    // Compute recommended bitrate for a given resolution based on original
-    // bits-per-pixel (bpp), then apply a compression factor (0.7) since we
-    // re-encode. This gives an intuitive resolution-driven estimate.
-    function recommendedBitrateForResolution(origBitrateBps, origW, origH, newH, aspect) {
-      if (!origW || !origH || !origBitrateBps) return origBitrateBps;
-      const origPixels = origW * origH;
-      const newW = Math.round(newH * aspect / 2) * 2;
-      const newPixels = newW * newH;
-      // bits per pixel of original
-      const bpp = origBitrateBps / origPixels;
-      // assume we can keep similar bpp but with better codec efficiency (0.8)
-      // this is heuristic.
-      const recommended = bpp * newPixels * 0.8;
-      // clamp to sensible range (0.2 – 12 Mbps)
-      return Math.min(12_000_000, Math.max(200_000, recommended));
+    // Estimate new file size based on auto bitrate and duration
+    function estimateNewSize(targetHeight) {
+      if (!videoMetadata.duration) return 0;
+      const bitrate = computeAutoBitrate(targetHeight);
+      return (bitrate * videoMetadata.duration) / 8;
     }
 
     function resolutionLabel(height) {
       const map = { 240: '240p', 360: '360p', 480: '480p', 720: '720p', 1080: '1080p', 1440: '1440p', 2160: '4K' };
-      const keys = Object.keys(map).map(Number);
-      const closest = keys.reduce((prev, curr) => Math.abs(curr - height) < Math.abs(prev - height) ? curr : prev);
-      return map[closest] || `${height}p`;
+      return map[height] || `${height}p`;
     }
 
-    // Update all estimates
+    // Update all UI estimates based on current resolution selection
     function updateEstimates() {
       if (!selectedFile || !videoMetadata.duration) return;
 
-      const duration = videoMetadata.duration;
-      const origBitrate = videoMetadata.bitrate;           // bps
-      const origSize = videoMetadata.size;                 // bytes
-      const origW = videoMetadata.width;
-      const origH = videoMetadata.height;
-      const aspect = origW / origH;
+      const targetHeight = parseInt(resolutionSelect.value, 10);
+      const origSize = videoMetadata.size;
+      const newSize = estimateNewSize(targetHeight);
+      const autoBitrate = computeAutoBitrate(targetHeight);
 
-      // current slider values
-      const newBitrateMbps = parseFloat(bitrateSlider.value);
-      const newBitrateBps = newBitrateMbps * 1_000_000;
-      const newHeight = parseInt(resolutionSlider.value, 10);
-      const newWidth = Math.round(newHeight * aspect / 2) * 2;
+      // Update auto bitrate display
+      autoBitrateValue.textContent = formatBitrate(autoBitrate);
 
-      // update labels
-      bitrateValue.textContent = newBitrateMbps.toFixed(1) + ' Mbps';
-      resolutionValue.textContent = resolutionLabel(newHeight);
+      // Update size estimates
+      origSizeValue.textContent = formatBytes(origSize);
+      newSizeValue.textContent = formatBytes(newSize);
 
-      // --- Estimate new file size using target bitrate (combined effect) ---
-      // Since ffmpeg will enforce target bitrate, file size ≈ bitrate * duration / 8
-      let estimatedNewSize = estimateSizeFromBitrate(newBitrateBps, duration);
-      // Fallback if duration/bitrate missing
-      if (estimatedNewSize <= 0) estimatedNewSize = origSize * 0.7;
+      const diffBytes = newSize - origSize;
+      const diffAbs = Math.abs(diffBytes);
 
-      // --- Fill table cells ---
-
-      // Bitrate row
-      origBitrateCell.textContent = formatBitrate(origBitrate);
-      newBitrateCell.textContent = formatBitrate(newBitrateBps);
-      const bitrateDiffBps = newBitrateBps - origBitrate;
-      // size difference attributable to bitrate change alone
-      const bitrateDiffBytes = (bitrateDiffBps * duration) / 8;
-      bitrateDiffCell.textContent = (bitrateDiffBytes > 0 ? '+' : '') + formatBytes(bitrateDiffBytes);
-      bitrateDiffCell.classList.toggle('negative', bitrateDiffBytes > 0);
-
-      // Resolution row: show recommended bitrate and size for that resolution
-      const recommendedBps = recommendedBitrateForResolution(origBitrate, origW, origH, newHeight, aspect);
-      const recommendedSize = estimateSizeFromBitrate(recommendedBps, duration);
-      origResCell.textContent = `${origW}×${origH}`;
-      newResCell.innerHTML = `${newWidth}×${newHeight}<small>~${formatBitrate(recommendedBps)} rec.</small>`;
-      // diff for resolution: recommendedSize - origSize
-      const resDiffBytes = recommendedSize - origSize;
-      resDiffCell.textContent = (resDiffBytes > 0 ? '+' : '') + formatBytes(resDiffBytes);
-      resDiffCell.classList.toggle('negative', resDiffBytes > 0);
-
-      // Total size row
-      origSizeCell.textContent = formatBytes(origSize);
-      newSizeCell.textContent = formatBytes(estimatedNewSize);
-      const totalDiffBytes = estimatedNewSize - origSize;
-      sizeDiffCell.textContent = (totalDiffBytes > 0 ? '+' : '') + formatBytes(totalDiffBytes);
-      sizeDiffCell.classList.toggle('negative', totalDiffBytes > 0);
-
-      // Also update the small note under the "New" resolution: show what the
-      // file size would be if only resolution changed (using recommended bitrate)
-      // That's already in resDiffCell, good.
+      if (diffBytes < 0) {
+        diffValue.textContent = '−' + formatBytes(diffAbs);
+        diffValue.classList.remove('negative');
+      } else if (diffBytes > 0) {
+        diffValue.textContent = '+' + formatBytes(diffAbs);
+        diffValue.classList.add('negative');
+      } else {
+        diffValue.textContent = '± 0 B';
+        diffValue.classList.remove('negative');
+      }
     }
 
     // reset UI after new file
@@ -696,18 +606,29 @@
     async function initFFmpeg() {
       if (ffmpeg) return ffmpeg;
       statusMessage.textContent = 'Loading FFmpeg...';
-      const { FFmpeg } = FFmpegWASM;
-      ffmpeg = new FFmpeg();
+
+      // Fix: In ffmpeg.wasm 0.12.x, the UMD build exposes FFmpeg directly on window.
+      const FFmpegClass = window.FFmpeg && window.FFmpeg.FFmpeg
+        ? window.FFmpeg.FFmpeg
+        : window.FFmpeg;
+
+      if (!FFmpegClass) {
+        throw new Error('FFmpeg library not loaded. Check the script tag.');
+      }
+
+      ffmpeg = new FFmpegClass();
       ffmpeg.on('log', ({ message }) => { /* console.log(message) */ });
       ffmpeg.on('progress', ({ progress }) => {
         const percent = Math.min(100, Math.round(progress * 100));
         progressBar.style.width = percent + '%';
         statusMessage.textContent = `Converting... ${percent}%`;
       });
+
       await ffmpeg.load({
         coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
         wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
       });
+
       statusMessage.textContent = 'FFmpeg ready';
       return ffmpeg;
     }
@@ -731,22 +652,24 @@
         const inputName = 'input.' + (selectedFile.name.split('.').pop() || 'mp4');
         await ff.writeFile(inputName, fileData);
 
-        const targetBitrateMbps = parseFloat(bitrateSlider.value);
-        const targetBitrateBps = Math.round(targetBitrateMbps * 1_000_000);
-        const targetHeight = parseInt(resolutionSlider.value, 10);
-        const aspect = videoMetadata.width / videoMetadata.height;
-        const targetWidth = Math.round(targetHeight * aspect / 2) * 2;
+        const targetHeight = parseInt(resolutionSelect.value, 10);
+        const targetWidth = STD_WIDTHS[targetHeight] || Math.round(targetHeight * 16 / 9);
+        const targetBitrateBps = computeAutoBitrate(targetHeight);
 
         const outputName = 'output.mp4';
 
+        // Efficient H.264 encoding settings:
+        // - CRF 23 for constant quality baseline
+        // - maxrate/bufsize to cap peak bitrate
+        // - faststart for streaming
         const args = [
           '-i', inputName,
           '-vf', `scale=${targetWidth}:${targetHeight}`,
-          '-b:v', `${targetBitrateBps}`,
-          '-maxrate', `${targetBitrateBps}`,
-          '-bufsize', `${targetBitrateBps * 2}`,
           '-c:v', 'libx264',
           '-preset', 'fast',
+          '-crf', '23',
+          '-maxrate', `${targetBitrateBps}`,
+          '-bufsize', `${targetBitrateBps * 2}`,
           '-c:a', 'aac',
           '-b:a', '128k',
           '-movflags', '+faststart',
@@ -764,7 +687,7 @@
         currentObjectUrl = URL.createObjectURL(outputBlob);
         downloadLink.href = currentObjectUrl;
         const baseName = selectedFile.name.replace(/\.[^/.]+$/, '');
-        downloadLink.download = `${baseName}_compressed.mp4`;
+        downloadLink.download = `${baseName}_${targetHeight}p.mp4`;
         outputArea.classList.remove('hidden');
         statusMessage.textContent = '✅ Conversion complete!';
         progressBar.style.width = '100%';
@@ -797,17 +720,15 @@
         resolutionStat.textContent = meta.width && meta.height ? `${meta.width}×${meta.height}` : '—';
         durationStat.textContent = formatDuration(meta.duration);
 
-        const originalBitrateMbps = meta.bitrate / 1_000_000;
-        let defaultBitrate = Math.min(8, Math.max(0.2, originalBitrateMbps * 0.7));
-        defaultBitrate = Math.round(defaultBitrate * 10) / 10;
-        bitrateSlider.value = defaultBitrate;
-
-        let defaultHeight = meta.height || 720;
-        defaultHeight = Math.min(2160, Math.max(240, defaultHeight));
-        resolutionSlider.value = defaultHeight;
-
-        bitrateValue.textContent = defaultBitrate.toFixed(1) + ' Mbps';
-        resolutionValue.textContent = resolutionLabel(defaultHeight);
+        // Auto-select a sensible default resolution based on original height.
+        // Choose the largest standard resolution that does not exceed the original.
+        const origHeight = meta.height || 720;
+        let defaultHeight = 720;
+        if (origHeight >= 1080) defaultHeight = 1080;
+        else if (origHeight >= 720) defaultHeight = 720;
+        else if (origHeight >= 480) defaultHeight = 480;
+        else defaultHeight = 360;
+        resolutionSelect.value = defaultHeight;
 
         statsSection.classList.remove('hidden');
         controlsSection.classList.remove('hidden');
@@ -822,8 +743,7 @@
       }
     });
 
-    bitrateSlider.addEventListener('input', updateEstimates);
-    resolutionSlider.addEventListener('input', updateEstimates);
+    resolutionSelect.addEventListener('change', updateEstimates);
     convertBtn.addEventListener('click', convertVideo);
 
     window.addEventListener('beforeunload', () => {
