@@ -1,755 +1,3841 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Compressor · FFmpeg.wasm</title>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <title>Video Compressor</title>
+
   <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --border: #e4e7ec;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning-bg: #fffbeb;
+      --warning-border: #fde68a;
+      --radius: 14px;
+    }
+
     * {
       box-sizing: border-box;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     }
+
     body {
-      background: #0b0d12;
       margin: 0;
-      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      width: min(980px, calc(100% - 32px));
+      margin: 40px auto 70px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 34px;
+      letter-spacing: -0.8px;
+    }
+
+    .header p {
+      color: var(--muted);
+      margin: 8px 0 0;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-top: 18px;
+      box-shadow: 0 5px 20px rgba(16, 24, 40, 0.045);
+    }
+
+    /* Upload */
+
+    .drop-zone {
+      border: 2px dashed #c8ced8;
+      border-radius: 13px;
+      min-height: 180px;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: 0.2s;
+      padding: 25px;
     }
-    .card {
-      background: #151a22;
-      border-radius: 28px;
-      padding: 28px 32px;
-      width: 100%;
-      max-width: 680px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
-      border: 1px solid #2a313c;
+
+    .drop-zone:hover,
+    .drop-zone.dragging {
+      border-color: var(--primary);
+      background: #f8faff;
     }
-    h1 {
-      margin: 0 0 8px;
-      font-size: 26px;
-      font-weight: 600;
-      color: #f0f4fc;
-      letter-spacing: -0.4px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    h1 span {
-      background: #2b7aff;
-      font-size: 14px;
-      font-weight: 500;
-      padding: 4px 12px;
-      border-radius: 40px;
-      color: white;
-      letter-spacing: 0.2px;
-    }
-    .sub {
-      color: #8f9bb3;
-      margin: 0 0 28px;
-      font-size: 15px;
-      border-left: 3px solid #2b7aff;
-      padding-left: 14px;
-    }
-    .file-area {
-      background: #0e1219;
-      border-radius: 18px;
-      padding: 22px 24px;
-      border: 1px solid #262e3b;
-      margin-bottom: 24px;
-      transition: border-color 0.2s;
-    }
-    .file-area:hover {
-      border-color: #3e4a5c;
-    }
-    .label {
-      font-size: 13px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      color: #7f8b9f;
+
+    .drop-icon {
+      font-size: 38px;
       margin-bottom: 8px;
     }
-    input[type="file"] {
+
+    .drop-title {
+      font-weight: 750;
+      font-size: 18px;
+    }
+
+    .drop-subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* Preview */
+
+    .preview {
       width: 100%;
-      padding: 10px 14px;
-      background: #1c2330;
-      border: 1px solid #2f3a4a;
-      border-radius: 12px;
-      color: #eef3fd;
-      font-size: 15px;
-      cursor: pointer;
+      max-height: 440px;
+      display: none;
+      margin-top: 18px;
+      background: #000;
+      border-radius: 11px;
     }
-    input[type="file"]::file-selector-button {
-      background: #2b7aff;
-      border: none;
-      padding: 8px 18px;
-      border-radius: 40px;
-      color: white;
-      font-weight: 500;
-      margin-right: 18px;
-      cursor: pointer;
-      transition: background 0.2s;
+
+    /* Headings */
+
+    .section-title {
+      margin: 0 0 18px;
+      font-size: 20px;
     }
-    input[type="file"]::file-selector-button:hover {
-      background: #1e62d0;
+
+    .section-description {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: -10px;
+      margin-bottom: 18px;
     }
+
+    /* Stats */
+
     .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .stat {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fafbfc;
+      min-width: 0;
+    }
+
+    .stat-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+
+    .stat-value {
+      display: block;
+      font-weight: 750;
+      font-size: 15px;
+      word-break: break-word;
+    }
+
+    /* Presets */
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .preset {
+      border: 1px solid var(--border);
+      background: white;
+      border-radius: 10px;
+      padding: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: 0.15s;
+    }
+
+    .preset:hover {
+      border-color: #9ca3af;
+    }
+
+    .preset.active {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+
+    .preset-title {
+      display: block;
+      font-weight: 750;
+      margin-bottom: 4px;
+    }
+
+    .preset-description {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* Controls */
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .field {
+      min-width: 0;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      display: block;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 7px;
+    }
+
+    .field-help {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    select,
+    input[type="number"] {
+      width: 100%;
+      border: 1px solid #d0d5dd;
+      border-radius: 8px;
+      background: white;
+      padding: 11px 12px;
+      outline: none;
+    }
+
+    select:focus,
+    input[type="number"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    /* Quality slider */
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .range-row input {
+      flex: 1;
+    }
+
+    .range-value {
+      width: 50px;
+      text-align: right;
+      font-weight: 750;
+    }
+
+    input[type="range"] {
+      accent-color: var(--primary);
+    }
+
+    /* Estimate */
+
+    .estimate {
+      margin-top: 20px;
+      border: 1px solid #dbeafe;
+      background: #eff6ff;
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .estimate-header {
+      font-weight: 800;
+      margin-bottom: 13px;
+    }
+
+    .estimate-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .estimate-item {
+      background: white;
+      border-radius: 9px;
+      padding: 12px;
+    }
+
+    .estimate-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .estimate-value {
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .green {
+      color: var(--success);
+    }
+
+    .orange {
+      color: #b45309;
+    }
+
+    /* Checkboxes */
+
+    .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-top: 5px;
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .checkbox-label input {
+      width: 17px;
+      height: 17px;
+    }
+
+    /* Buttons */
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 9px;
+      padding: 12px 19px;
+      cursor: pointer;
+      font-weight: 750;
+      transition: 0.15s;
+    }
+
+    .button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .button-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .button-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    .button-danger {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+
+    .button-secondary {
+      background: #eef2f6;
+      color: #344054;
+    }
+
+    /* Progress */
+
+    .progress-area {
+      display: none;
+      margin-top: 20px;
+    }
+
+    progress {
+      width: 100%;
+      height: 15px;
+    }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 7px;
+    }
+
+    /* Result */
+
+    .result {
+      display: none;
+    }
+
+    .result-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 14px;
-      margin: 20px 0 8px;
     }
-    .stat-item {
-      background: #0e1219;
-      border-radius: 14px;
-      padding: 14px 18px;
-      border: 1px solid #232c38;
+
+    .result-box {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 16px;
     }
-    .stat-label {
-      font-size: 12px;
-      font-weight: 500;
-      text-transform: uppercase;
-      color: #6e7b91;
-      letter-spacing: 0.3px;
-      margin-bottom: 5px;
-    }
-    .stat-value {
-      font-size: 20px;
-      font-weight: 600;
-      color: #eef3fd;
-      word-break: break-word;
-    }
-    .controls {
-      background: #0e1219;
-      border-radius: 20px;
-      padding: 22px 24px;
-      margin: 18px 0 24px;
-      border: 1px solid #232c38;
-    }
-    .control-row {
-      display: flex;
-      align-items: center;
-      gap: 18px;
-      margin-bottom: 22px;
-    }
-    .control-row:last-child {
-      margin-bottom: 0;
-    }
-    .control-label {
-      width: 130px;
+
+    .result-box h3 {
+      margin: 0 0 13px;
       font-size: 15px;
-      font-weight: 500;
-      color: #cbd5e6;
-      flex-shrink: 0;
     }
-    .control-input {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    select {
-      width: 100%;
-      padding: 12px 16px;
-      background: #1c2330;
-      border: 1px solid #2f3a4a;
-      border-radius: 12px;
-      color: #eef3fd;
-      font-size: 15px;
-      font-weight: 500;
-      cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f9bb3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      background-size: 18px;
-      padding-right: 44px;
-      transition: border-color 0.2s;
-    }
-    select:hover {
-      border-color: #3e4a5c;
-    }
-    select:focus {
-      outline: none;
-      border-color: #2b7aff;
-    }
-    select option {
-      background: #1c2330;
-      color: #eef3fd;
-    }
-    .bitrate-info {
-      background: #131b26;
-      border-radius: 12px;
-      padding: 12px 16px;
-      margin-top: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      border: 1px solid #1f2a38;
-    }
-    .bitrate-info-label {
-      font-size: 13px;
-      color: #7f8b9f;
-      font-weight: 500;
-    }
-    .bitrate-info-value {
-      font-size: 15px;
-      font-weight: 600;
-      color: #7bb3ff;
-    }
-    .estimate-box {
+
+    .result-line {
       display: flex;
       justify-content: space-between;
-      align-items: center;
-      background: #0e1219;
-      border-radius: 18px;
-      padding: 18px 24px;
-      margin: 20px 0 16px;
-      border: 1px solid #2a3442;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .estimate-item {
-      display: flex;
-      flex-direction: column;
-    }
-    .estimate-label {
-      font-size: 13px;
-      color: #7b879b;
-      letter-spacing: 0.2px;
-      margin-bottom: 2px;
-    }
-    .estimate-number {
-      font-size: 22px;
-      font-weight: 700;
-      color: #eef3fd;
-      line-height: 1.2;
-    }
-    .estimate-number.diff {
-      color: #66d9a0;
-    }
-    .estimate-number.diff.negative {
-      color: #ff7b7b;
-    }
-    .estimate-number small {
-      font-size: 13px;
-      font-weight: 500;
-      color: #7f8b9f;
-      margin-left: 6px;
-    }
-    .convert-btn {
-      width: 100%;
-      background: #2b7aff;
-      border: none;
-      border-radius: 60px;
-      padding: 18px 24px;
-      font-size: 18px;
-      font-weight: 600;
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 12px;
-      border: 1px solid #3b6ed6;
-      box-shadow: 0 8px 18px rgba(43, 122, 255, 0.25);
-    }
-    .convert-btn:hover:not(:disabled) {
-      background: #1e62d0;
-      box-shadow: 0 12px 24px rgba(43, 122, 255, 0.35);
-      transform: translateY(-1px);
-    }
-    .convert-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
-    .progress-container {
-      margin-top: 16px;
-      background: #0e1219;
-      border-radius: 40px;
-      height: 8px;
-      overflow: hidden;
-      border: 1px solid #1f2835;
-    }
-    .progress-bar {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #2b7aff, #6aa6ff);
-      transition: width 0.15s ease;
-      border-radius: 40px;
-    }
-    .status {
+      gap: 15px;
+      padding: 5px 0;
       font-size: 14px;
-      color: #9aa8bf;
-      margin-top: 10px;
-      text-align: center;
-      min-height: 22px;
     }
-    .output-area {
-      margin-top: 20px;
+
+    .result-line span:first-child {
+      color: var(--muted);
     }
-    .download-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      background: #1e2a3a;
-      border-radius: 60px;
-      padding: 14px 26px;
-      color: #7bb3ff;
-      font-weight: 600;
+
+    .result-line span:last-child {
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .download-button {
+      display: inline-block;
+      margin-top: 18px;
+      background: var(--success);
+      color: white;
       text-decoration: none;
-      border: 1px solid #2b7aff33;
-      transition: 0.15s;
-      width: 100%;
-      font-size: 16px;
+      padding: 13px 20px;
+      border-radius: 9px;
+      font-weight: 800;
     }
-    .download-link:hover {
-      background: #25354a;
-      color: #a5c9ff;
+
+    /* Warnings */
+
+    .notice {
+      padding: 12px 14px;
+      border-radius: 9px;
+      font-size: 13px;
+      margin-top: 15px;
     }
+
+    .notice.warning {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      color: #92400e;
+    }
+
+    .notice.info {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    /* Utility */
+
     .hidden {
-      display: none;
+      display: none !important;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 760px) {
+      .stats-grid,
+      .estimate-grid,
+      .preset-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .field.full {
+        grid-column: auto;
+      }
+    }
+
+    @media (max-width: 500px) {
+      .app {
+        width: min(100% - 20px, 980px);
+        margin-top: 20px;
+      }
+
+      .card {
+        padding: 17px;
+      }
+
+      .stats-grid,
+      .estimate-grid,
+      .preset-grid,
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header h1 {
+        font-size: 28px;
+      }
     }
   </style>
 </head>
+
 <body>
-<div class="card">
-  <h1>
-    Video Compressor
-    <span>ffmpeg.wasm</span>
-  </h1>
-  <p class="sub">Reduce video size · client-side · no upload</p>
 
-  <!-- file selection -->
-  <div class="file-area">
-    <div class="label">Select video</div>
-    <input type="file" id="videoInput" accept="video/*">
-  </div>
+<div class="app">
 
-  <!-- stats -->
-  <div id="statsSection" class="hidden">
-    <div class="stats-grid">
-      <div class="stat-item">
-        <div class="stat-label">File size</div>
-        <div class="stat-value" id="fileSizeStat">—</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Bitrate</div>
-        <div class="stat-value" id="bitrateStat">—</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Resolution</div>
-        <div class="stat-value" id="resolutionStat">—</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">Duration</div>
-        <div class="stat-value" id="durationStat">—</div>
-      </div>
-    </div>
-  </div>
+  <header class="header">
+    <h1>Video Compressor</h1>
+    <p>
+      Compress videos directly in your browser.
+      Your video is not uploaded to a server.
+    </p>
+  </header>
 
-  <!-- controls -->
-  <div id="controlsSection" class="hidden">
-    <div class="controls">
-      <div class="control-row">
-        <div class="control-label">Target resolution</div>
-        <div class="control-input">
-          <select id="resolutionSelect">
-            <option value="360">360p (640×360)</option>
-            <option value="480">480p (854×480)</option>
-            <option value="720" selected>720p (1280×720)</option>
-            <option value="1080">1080p (1920×1080)</option>
-          </select>
+
+  <!-- =========================================================
+       UPLOAD
+       ========================================================= -->
+
+  <section class="card">
+
+    <label
+      id="dropZone"
+      class="drop-zone"
+      for="fileInput"
+    >
+      <div>
+
+        <div class="drop-icon">🎬</div>
+
+        <div class="drop-title">
+          Drop your video here
         </div>
+
+        <div class="drop-subtitle">
+          or click to select a video
+        </div>
+
+        <div class="small" style="margin-top:10px;">
+          MP4, MOV, WebM, AVI and other FFmpeg-supported formats
+        </div>
+
       </div>
-      <div class="bitrate-info">
-        <span class="bitrate-info-label">Auto bitrate (optimized)</span>
-        <span class="bitrate-info-value" id="autoBitrateValue">—</span>
+    </label>
+
+    <input
+      id="fileInput"
+      type="file"
+      accept="video/*"
+    />
+
+    <video
+      id="preview"
+      class="preview"
+      controls
+    ></video>
+
+  </section>
+
+
+  <!-- =========================================================
+       ORIGINAL INFORMATION
+       ========================================================= -->
+
+  <section
+    id="originalCard"
+    class="card hidden"
+  >
+
+    <h2 class="section-title">
+      Original Video
+    </h2>
+
+    <div class="stats-grid">
+
+      <div class="stat">
+        <span class="stat-label">File size</span>
+        <span
+          id="statSize"
+          class="stat-value"
+        >—</span>
       </div>
+
+      <div class="stat">
+        <span class="stat-label">Resolution</span>
+        <span
+          id="statResolution"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">Duration</span>
+        <span
+          id="statDuration"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">FPS</span>
+        <span
+          id="statFPS"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">Video codec</span>
+        <span
+          id="statVideoCodec"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">Video bitrate</span>
+        <span
+          id="statVideoBitrate"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">Audio codec</span>
+        <span
+          id="statAudioCodec"
+          class="stat-value"
+        >—</span>
+      </div>
+
+      <div class="stat">
+        <span class="stat-label">Audio bitrate</span>
+        <span
+          id="statAudioBitrate"
+          class="stat-value"
+        >—</span>
+      </div>
+
     </div>
 
-    <!-- estimation: only video estimated size -->
-    <div class="estimate-box">
-      <div class="estimate-item">
-        <span class="estimate-label">Original size</span>
-        <span class="estimate-number" id="origSizeValue">—</span>
-      </div>
-      <div class="estimate-item">
-        <span class="estimate-label">Estimated new size</span>
-        <span class="estimate-number" id="newSizeValue">—</span>
-      </div>
-      <div class="estimate-item">
-        <span class="estimate-label">Difference</span>
-        <span class="estimate-number diff" id="diffValue">—</span>
-      </div>
+    <div class="notice info">
+      FFmpeg analyzes the selected file locally to obtain stream information.
     </div>
 
-    <!-- convert -->
-    <button class="convert-btn" id="convertBtn" disabled>
-      <span>⚡</span> Convert video
-    </button>
-    <div class="progress-container">
-      <div class="progress-bar" id="progressBar"></div>
-    </div>
-    <div class="status" id="statusMessage"></div>
+  </section>
 
-    <!-- output download -->
-    <div id="outputArea" class="output-area hidden">
-      <a id="downloadLink" class="download-link" href="#" download="compressed_video.mp4">
-        ⬇ Download compressed video
-      </a>
+
+  <!-- =========================================================
+       SETTINGS
+       ========================================================= -->
+
+  <section
+    id="settingsCard"
+    class="card hidden"
+  >
+
+    <h2 class="section-title">
+      Compression
+    </h2>
+
+    <p class="section-description">
+      Choose a preset or customize the compression settings.
+    </p>
+
+
+    <!-- PRESETS -->
+
+    <div class="preset-grid">
+
+      <button
+        type="button"
+        class="preset active"
+        data-preset="balanced"
+      >
+        <span class="preset-title">
+          Balanced
+        </span>
+
+        <span class="preset-description">
+          Good quality and size
+        </span>
+      </button>
+
+
+      <button
+        type="button"
+        class="preset"
+        data-preset="small"
+      >
+        <span class="preset-title">
+          Smaller
+        </span>
+
+        <span class="preset-description">
+          More compression
+        </span>
+      </button>
+
+
+      <button
+        type="button"
+        class="preset"
+        data-preset="quality"
+      >
+        <span class="preset-title">
+          High Quality
+        </span>
+
+        <span class="preset-description">
+          Preserve more detail
+        </span>
+      </button>
+
+
+      <button
+        type="button"
+        class="preset"
+        data-preset="target"
+      >
+        <span class="preset-title">
+          Target Size
+        </span>
+
+        <span class="preset-description">
+          Choose output MB
+        </span>
+      </button>
+
     </div>
+
+
+    <div style="height:20px;"></div>
+
+
+    <!-- CONTROLS -->
+
+    <div class="controls">
+
+      <!-- Resolution -->
+
+      <div class="field">
+
+        <label for="resolution">
+          Resolution
+        </label>
+
+        <select id="resolution">
+
+          <option value="original">
+            Keep original
+          </option>
+
+          <option value="3840">
+            4K — 3840px
+          </option>
+
+          <option value="2560">
+            1440p — 2560px
+          </option>
+
+          <option value="1920">
+            1080p — 1920px
+          </option>
+
+          <option value="1280">
+            720p — 1280px
+          </option>
+
+          <option value="854">
+            480p — 854px
+          </option>
+
+          <option value="640">
+            360p — 640px
+          </option>
+
+          <option value="426">
+            240p — 426px
+          </option>
+
+        </select>
+
+        <div
+          id="resolutionHelp"
+          class="field-help"
+        >
+          —
+        </div>
+
+      </div>
+
+
+      <!-- Mode -->
+
+      <div class="field">
+
+        <label for="mode">
+          Compression mode
+        </label>
+
+        <select id="mode">
+
+          <option value="auto">
+            ⚡ Auto bitrate
+          </option>
+
+          <option value="bitrate">
+            Target bitrate
+          </option>
+
+          <option value="crf">
+            Quality / CRF
+          </option>
+
+          <option value="target">
+            Target file size
+          </option>
+
+        </select>
+
+      </div>
+
+
+      <!-- Bitrate -->
+
+      <div
+        id="bitrateField"
+        class="field"
+      >
+
+        <label for="bitrate">
+          Video bitrate
+        </label>
+
+        <select id="bitrate">
+
+          <option value="auto">
+            Auto
+          </option>
+
+          <option value="16000">
+            16 Mbps
+          </option>
+
+          <option value="12000">
+            12 Mbps
+          </option>
+
+          <option value="10000">
+            10 Mbps
+          </option>
+
+          <option value="8000">
+            8 Mbps
+          </option>
+
+          <option value="6000">
+            6 Mbps
+          </option>
+
+          <option value="5000">
+            5 Mbps
+          </option>
+
+          <option value="4000">
+            4 Mbps
+          </option>
+
+          <option value="3000">
+            3 Mbps
+          </option>
+
+          <option value="2500">
+            2.5 Mbps
+          </option>
+
+          <option value="2000">
+            2 Mbps
+          </option>
+
+          <option value="1500">
+            1.5 Mbps
+          </option>
+
+          <option value="1200">
+            1.2 Mbps
+          </option>
+
+          <option value="1000">
+            1 Mbps
+          </option>
+
+          <option value="800">
+            800 Kbps
+          </option>
+
+          <option value="500">
+            500 Kbps
+          </option>
+
+        </select>
+
+        <div
+          id="autoBitrateHelp"
+          class="field-help"
+        >
+          —
+        </div>
+
+      </div>
+
+
+      <!-- CRF -->
+
+      <div
+        id="crfField"
+        class="field hidden"
+      >
+
+        <label for="crf">
+          Quality
+        </label>
+
+        <div class="range-row">
+
+          <input
+            id="crf"
+            type="range"
+            min="18"
+            max="32"
+            value="23"
+          />
+
+          <span
+            id="crfValue"
+            class="range-value"
+          >
+            23
+          </span>
+
+        </div>
+
+        <div class="field-help">
+          Lower = higher quality and larger file.
+          23 is a good general-purpose setting.
+        </div>
+
+      </div>
+
+
+      <!-- Target size -->
+
+      <div
+        id="targetSizeField"
+        class="field hidden"
+      >
+
+        <label for="targetSize">
+          Target file size
+        </label>
+
+        <input
+          id="targetSize"
+          type="number"
+          min="1"
+          step="1"
+          value="50"
+        />
+
+        <div class="field-help">
+          Approximate final file size in MB.
+        </div>
+
+      </div>
+
+
+      <!-- Audio -->
+
+      <div class="field">
+
+        <label for="audio">
+          Audio
+        </label>
+
+        <select id="audio">
+
+          <option value="128">
+            AAC — 128 Kbps
+          </option>
+
+          <option value="96">
+            AAC — 96 Kbps
+          </option>
+
+          <option value="64">
+            AAC — 64 Kbps
+          </option>
+
+          <option value="48">
+            AAC — 48 Kbps
+          </option>
+
+          <option value="0">
+            Remove audio
+          </option>
+
+        </select>
+
+      </div>
+
+
+      <!-- Preset -->
+
+      <div class="field">
+
+        <label for="speed">
+          Encoding speed
+        </label>
+
+        <select id="speed">
+
+          <option value="veryfast">
+            Fast
+          </option>
+
+          <option value="medium" selected>
+            Balanced
+          </option>
+
+          <option value="slow">
+            Smaller file
+          </option>
+
+        </select>
+
+      </div>
+
+
+      <!-- Checkboxes -->
+
+      <div class="field full">
+
+        <label>
+          Options
+        </label>
+
+        <div class="checkbox-row">
+
+          <label class="checkbox-label">
+            <input
+              id="removeMetadata"
+              type="checkbox"
+              checked
+            />
+            Remove metadata
+          </label>
+
+          <label class="checkbox-label">
+            <input
+              id="fastStart"
+              type="checkbox"
+              checked
+            />
+            Web optimized
+          </label>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- ESTIMATE -->
+
+    <div class="estimate">
+
+      <div class="estimate-header">
+        Estimated Output
+      </div>
+
+      <div class="estimate-grid">
+
+        <div class="estimate-item">
+
+          <span class="estimate-label">
+            Resolution
+          </span>
+
+          <span
+            id="estimateResolution"
+            class="estimate-value"
+          >
+            —
+          </span>
+
+        </div>
+
+
+        <div class="estimate-item">
+
+          <span class="estimate-label">
+            Video bitrate
+          </span>
+
+          <span
+            id="estimateBitrate"
+            class="estimate-value"
+          >
+            —
+          </span>
+
+        </div>
+
+
+        <div class="estimate-item">
+
+          <span class="estimate-label">
+            Estimated size
+          </span>
+
+          <span
+            id="estimateSize"
+            class="estimate-value"
+          >
+            —
+          </span>
+
+        </div>
+
+
+        <div class="estimate-item">
+
+          <span class="estimate-label">
+            Difference
+          </span>
+
+          <span
+            id="estimateDifference"
+            class="estimate-value green"
+          >
+            —
+          </span>
+
+        </div>
+
+      </div>
+
+      <div
+        id="estimatePercent"
+        style="
+          margin-top:12px;
+          font-weight:800;
+        "
+      >
+        —
+      </div>
+
+    </div>
+
+
+    <div
+      id="warning"
+      class="notice warning hidden"
+    >
+      —
+    </div>
+
+
+    <!-- ACTIONS -->
+
+    <div class="actions">
+
+      <button
+        id="convertButton"
+        class="button button-primary"
+      >
+        Compress Video
+      </button>
+
+      <button
+        id="cancelButton"
+        class="button button-danger hidden"
+      >
+        Cancel
+      </button>
+
+    </div>
+
+
+    <!-- PROGRESS -->
+
+    <div
+      id="progressArea"
+      class="progress-area"
+    >
+
+      <progress
+        id="progress"
+        value="0"
+        max="100"
+      ></progress>
+
+      <div class="progress-info">
+
+        <span id="progressText">
+          Preparing...
+        </span>
+
+        <span id="progressPercent">
+          0%
+        </span>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================================================
+       RESULT
+       ========================================================= -->
+
+  <section
+    id="resultCard"
+    class="card result"
+  >
+
+    <h2 class="section-title">
+      Compression Complete
+    </h2>
+
+    <div class="result-grid">
+
+      <div class="result-box">
+
+        <h3>
+          Before
+        </h3>
+
+        <div class="result-line">
+          <span>Size</span>
+          <span id="beforeSize">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Resolution</span>
+          <span id="beforeResolution">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Duration</span>
+          <span id="beforeDuration">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Video bitrate</span>
+          <span id="beforeBitrate">—</span>
+        </div>
+
+      </div>
+
+
+      <div class="result-box">
+
+        <h3>
+          After
+        </h3>
+
+        <div class="result-line">
+          <span>Size</span>
+          <span id="afterSize">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Resolution</span>
+          <span id="afterResolution">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Duration</span>
+          <span id="afterDuration">—</span>
+        </div>
+
+        <div class="result-line">
+          <span>Video bitrate</span>
+          <span id="afterBitrate">—</span>
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <div
+      style="
+        margin-top:20px;
+        padding:18px;
+        background:#f0fdf4;
+        border:1px solid #bbf7d0;
+        border-radius:11px;
+      "
+    >
+
+      <div
+        style="
+          font-size:13px;
+          color:#667085;
+        "
+      >
+        File size reduction
+      </div>
+
+      <div
+        id="resultReduction"
+        style="
+          font-size:28px;
+          font-weight:850;
+          margin-top:4px;
+        "
+      >
+        —
+      </div>
+
+    </div>
+
+
+    <a
+      id="downloadButton"
+      class="download-button"
+      href="#"
+      download
+    >
+      Download Compressed Video
+    </a>
+
+  </section>
+
+
+  <div
+    class="small"
+    style="
+      text-align:center;
+      margin-top:25px;
+    "
+  >
+    Processing is performed locally in your browser using FFmpeg.wasm.
   </div>
+
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ffmpeg/0.12.15/umd/ffmpeg.min.js"></script>
-<script>
-  (function(){
-    // DOM elements
-    const videoInput = document.getElementById('videoInput');
-    const statsSection = document.getElementById('statsSection');
-    const controlsSection = document.getElementById('controlsSection');
-    const fileSizeStat = document.getElementById('fileSizeStat');
-    const bitrateStat = document.getElementById('bitrateStat');
-    const resolutionStat = document.getElementById('resolutionStat');
-    const durationStat = document.getElementById('durationStat');
-    const resolutionSelect = document.getElementById('resolutionSelect');
-    const autoBitrateValue = document.getElementById('autoBitrateValue');
-    const origSizeValue = document.getElementById('origSizeValue');
-    const newSizeValue = document.getElementById('newSizeValue');
-    const diffValue = document.getElementById('diffValue');
-    const convertBtn = document.getElementById('convertBtn');
-    const progressBar = document.getElementById('progressBar');
-    const statusMessage = document.getElementById('statusMessage');
-    const outputArea = document.getElementById('outputArea');
-    const downloadLink = document.getElementById('downloadLink');
 
-    // state
-    let selectedFile = null;
-    let videoMetadata = {
-      duration: 0,
+<!-- ===========================================================
+     JAVASCRIPT
+     =========================================================== -->
+
+<script type="module">
+
+  import {
+    FFmpeg
+  } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/+esm";
+
+  import {
+    fetchFile,
+    toBlobURL
+  } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.2/+esm";
+
+
+  // ==========================================================
+  // DOM
+  // ==========================================================
+
+  const $ = id =>
+    document.getElementById(id);
+
+
+  const dropZone =
+    $("dropZone");
+
+  const fileInput =
+    $("fileInput");
+
+  const preview =
+    $("preview");
+
+  const originalCard =
+    $("originalCard");
+
+  const settingsCard =
+    $("settingsCard");
+
+  const resultCard =
+    $("resultCard");
+
+
+  const resolution =
+    $("resolution");
+
+  const mode =
+    $("mode");
+
+  const bitrate =
+    $("bitrate");
+
+  const crf =
+    $("crf");
+
+  const audio =
+    $("audio");
+
+  const speed =
+    $("speed");
+
+  const targetSize =
+    $("targetSize");
+
+  const crfField =
+    $("crfField");
+
+  const bitrateField =
+    $("bitrateField");
+
+  const targetSizeField =
+    $("targetSizeField");
+
+
+  const convertButton =
+    $("convertButton");
+
+  const cancelButton =
+    $("cancelButton");
+
+
+  const progressArea =
+    $("progressArea");
+
+  const progress =
+    $("progress");
+
+  const progressText =
+    $("progressText");
+
+  const progressPercent =
+    $("progressPercent");
+
+
+  // ==========================================================
+  // STATE
+  // ==========================================================
+
+  let selectedFile = null;
+
+  let previewURL = null;
+
+  let outputURL = null;
+
+  let ffmpeg = null;
+
+  let ffmpegLoaded = false;
+
+  let converting = false;
+
+  let cancelRequested = false;
+
+  let inputName = null;
+
+  let outputName = null;
+
+
+  let metadata = {
+    width: 0,
+    height: 0,
+    duration: 0,
+    fps: 0,
+    videoCodec: "",
+    audioCodec: "",
+    videoBitrate: 0,
+    audioBitrate: 0
+  };
+
+
+  // ==========================================================
+  // FORMATTING
+  // ==========================================================
+
+  function formatBytes(bytes) {
+
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return "0 B";
+    }
+
+    const units = [
+      "B",
+      "KB",
+      "MB",
+      "GB"
+    ];
+
+    const index =
+      Math.min(
+        units.length - 1,
+        Math.floor(
+          Math.log(bytes) / Math.log(1024)
+        )
+      );
+
+    const value =
+      bytes / Math.pow(1024, index);
+
+    return (
+      value.toFixed(
+        index === 0 ? 0 : 2
+      )
+      + " "
+      + units[index]
+    );
+  }
+
+
+  function formatMB(bytes) {
+
+    return (
+      bytes / 1024 / 1024
+    ).toFixed(2)
+    + " MB";
+  }
+
+
+  function formatDuration(seconds) {
+
+    if (!Number.isFinite(seconds)) {
+      return "—";
+    }
+
+    const h =
+      Math.floor(seconds / 3600);
+
+    const m =
+      Math.floor(
+        (seconds % 3600) / 60
+      );
+
+    const s =
+      Math.floor(seconds % 60);
+
+    if (h > 0) {
+      return `${h}h ${m}m ${s}s`;
+    }
+
+    if (m > 0) {
+      return `${m}m ${s}s`;
+    }
+
+    return `${s}s`;
+  }
+
+
+  function formatBitrate(bps) {
+
+    if (
+      !Number.isFinite(bps) ||
+      bps <= 0
+    ) {
+      return "Unknown";
+    }
+
+    if (bps >= 1000000) {
+
+      return (
+        bps / 1000000
+      ).toFixed(2)
+      + " Mbps";
+    }
+
+    return (
+      bps / 1000
+    ).toFixed(0)
+    + " Kbps";
+  }
+
+
+  function cleanCodec(codec) {
+
+    if (!codec) {
+      return "Unknown";
+    }
+
+    const map = {
+      h264: "H.264",
+      hevc: "H.265 / HEVC",
+      vp8: "VP8",
+      vp9: "VP9",
+      av1: "AV1",
+      avc1: "H.264",
+      "mpeg4": "MPEG-4",
+      aac: "AAC",
+      opus: "Opus",
+      vorbis: "Vorbis",
+      mp3: "MP3"
+    };
+
+    return map[codec.toLowerCase()]
+      || codec;
+  }
+
+
+  // ==========================================================
+  // VIDEO RESOLUTION
+  // ==========================================================
+
+  function getOutputResolution() {
+
+    if (
+      resolution.value === "original"
+    ) {
+      return {
+        width: metadata.width,
+        height: metadata.height
+      };
+    }
+
+
+    const maxWidth =
+      Number(resolution.value);
+
+
+    if (
+      !metadata.width ||
+      !metadata.height
+    ) {
+      return {
+        width: maxWidth,
+        height: Math.round(
+          maxWidth * 9 / 16
+        )
+      };
+    }
+
+
+    /*
+     * Never enlarge the original.
+     */
+
+    if (
+      metadata.width <= maxWidth
+    ) {
+      return {
+        width: metadata.width,
+        height: metadata.height
+      };
+    }
+
+
+    let width =
+      maxWidth;
+
+    let height =
+      Math.round(
+        metadata.height *
+        width /
+        metadata.width
+      );
+
+
+    /*
+     * H.264 works best with even dimensions.
+     */
+
+    width -= width % 2;
+    height -= height % 2;
+
+
+    return {
+      width,
+      height
+    };
+  }
+
+
+  // ==========================================================
+  // AUTO BITRATE
+  // ==========================================================
+
+  function getAutoBitrateKbps() {
+
+    const output =
+      getOutputResolution();
+
+
+    const pixels =
+      output.width *
+      output.height;
+
+
+    let bitrateKbps;
+
+
+    /*
+     * Base bitrate by resolution.
+     */
+
+    if (
+      pixels >= 3840 * 2160
+    ) {
+
+      bitrateKbps = 12000;
+
+    } else if (
+      pixels >= 2560 * 1440
+    ) {
+
+      bitrateKbps = 8000;
+
+    } else if (
+      pixels >= 1920 * 1080
+    ) {
+
+      bitrateKbps = 5000;
+
+    } else if (
+      pixels >= 1280 * 720
+    ) {
+
+      bitrateKbps = 2500;
+
+    } else if (
+      pixels >= 854 * 480
+    ) {
+
+      bitrateKbps = 1200;
+
+    } else if (
+      pixels >= 640 * 360
+    ) {
+
+      bitrateKbps = 800;
+
+    } else {
+
+      bitrateKbps = 500;
+    }
+
+
+    /*
+     * 60 FPS needs more bitrate than 30 FPS.
+     */
+
+    if (
+      metadata.fps >= 50
+    ) {
+
+      bitrateKbps *= 1.45;
+
+    } else if (
+      metadata.fps >= 40
+    ) {
+
+      bitrateKbps *= 1.25;
+
+    } else if (
+      metadata.fps > 0 &&
+      metadata.fps < 24
+    ) {
+
+      bitrateKbps *= 0.85;
+    }
+
+
+    /*
+     * Round to sensible values.
+     */
+
+    bitrateKbps =
+      Math.round(
+        bitrateKbps / 50
+      ) * 50;
+
+
+    return Math.max(
+      400,
+      bitrateKbps
+    );
+  }
+
+
+  // ==========================================================
+  // TARGET BITRATE
+  // ==========================================================
+
+  function getTargetBitrateKbps() {
+
+    if (
+      mode.value === "auto"
+    ) {
+      return getAutoBitrateKbps();
+    }
+
+
+    if (
+      mode.value === "bitrate"
+    ) {
+
+      return Number(
+        bitrate.value
+      );
+    }
+
+
+    if (
+      mode.value === "target"
+    ) {
+
+      const targetMB =
+        Number(
+          targetSize.value
+        );
+
+
+      if (
+        !targetMB ||
+        !metadata.duration
+      ) {
+        return 500;
+      }
+
+
+      const totalBits =
+        targetMB *
+        1024 *
+        1024 *
+        8;
+
+
+      const audioKbps =
+        Number(audio.value);
+
+
+      const totalKbps =
+        totalBits /
+        metadata.duration /
+        1000;
+
+
+      /*
+       * Leave audio bitrate available.
+       */
+
+      return Math.max(
+        200,
+        Math.floor(
+          totalKbps -
+          audioKbps -
+          20
+        )
+      );
+    }
+
+
+    /*
+     * CRF has no fixed bitrate.
+     *
+     * We estimate using auto bitrate and
+     * adjust according to CRF.
+     */
+
+    if (
+      mode.value === "crf"
+    ) {
+
+      const auto =
+        getAutoBitrateKbps();
+
+
+      const crfNumber =
+        Number(crf.value);
+
+
+      /*
+       * Rough estimate only.
+       */
+
+      const ratio =
+        Math.pow(
+          0.88,
+          crfNumber - 23
+        );
+
+
+      return Math.max(
+        300,
+        Math.round(
+          auto * ratio
+        )
+      );
+    }
+
+
+    return getAutoBitrateKbps();
+  }
+
+
+  // ==========================================================
+  // ESTIMATION
+  // ==========================================================
+
+  function calculateEstimate() {
+
+    if (
+      !selectedFile ||
+      !metadata.duration
+    ) {
+      return null;
+    }
+
+
+    const output =
+      getOutputResolution();
+
+
+    const videoKbps =
+      getTargetBitrateKbps();
+
+
+    const audioKbps =
+      Number(audio.value);
+
+
+    const totalKbps =
+      videoKbps +
+      audioKbps;
+
+
+    const estimatedBytes =
+      totalKbps *
+      1000 *
+      metadata.duration /
+      8;
+
+
+    return {
+      width: output.width,
+      height: output.height,
+      videoKbps,
+      audioKbps,
+      estimatedBytes
+    };
+  }
+
+
+  function updateEstimate() {
+
+    if (!selectedFile) {
+      return;
+    }
+
+
+    const estimate =
+      calculateEstimate();
+
+
+    if (!estimate) {
+      return;
+    }
+
+
+    $("estimateResolution")
+      .textContent =
+      `${estimate.width} × ${estimate.height}`;
+
+
+    $("estimateBitrate")
+      .textContent =
+      formatBitrate(
+        estimate.videoKbps * 1000
+      );
+
+
+    $("estimateSize")
+      .textContent =
+      formatBytes(
+        estimate.estimatedBytes
+      );
+
+
+    const difference =
+      selectedFile.size -
+      estimate.estimatedBytes;
+
+
+    const percent =
+      difference /
+      selectedFile.size *
+      100;
+
+
+    $("estimateDifference")
+      .textContent =
+      difference >= 0
+        ? `-${formatBytes(difference)}`
+        : `+${formatBytes(
+            Math.abs(difference)
+          )}`;
+
+
+    $("estimateDifference")
+      .className =
+      "estimate-value "
+      + (
+        difference >= 0
+          ? "green"
+          : "orange"
+      );
+
+
+    $("estimatePercent")
+      .textContent =
+      difference >= 0
+        ? `${percent.toFixed(1)}% smaller`
+        : `${Math.abs(percent).toFixed(1)}% larger`;
+
+
+    $("autoBitrateHelp")
+      .textContent =
+      `Auto: approximately ${
+        formatBitrate(
+          getAutoBitrateKbps() * 1000
+        )
+      } for the selected resolution/FPS.`;
+  }
+
+
+  // ==========================================================
+  // DISPLAY SETTINGS
+  // ==========================================================
+
+  function updateModeUI() {
+
+    const currentMode =
+      mode.value;
+
+
+    bitrateField.classList.toggle(
+      "hidden",
+      currentMode !== "auto" &&
+      currentMode !== "bitrate"
+    );
+
+
+    crfField.classList.toggle(
+      "hidden",
+      currentMode !== "crf"
+    );
+
+
+    targetSizeField.classList.toggle(
+      "hidden",
+      currentMode !== "target"
+    );
+
+
+    if (
+      currentMode === "auto"
+    ) {
+
+      bitrate.value = "auto";
+
+    }
+
+
+    updateEstimate();
+  }
+
+
+  // ==========================================================
+  // METADATA
+  // ==========================================================
+
+  function parseFPS(value) {
+
+    if (!value) {
+      return 0;
+    }
+
+
+    const parts =
+      value.split("/");
+
+
+    if (
+      parts.length === 2
+    ) {
+
+      const a =
+        Number(parts[0]);
+
+      const b =
+        Number(parts[1]);
+
+
+      if (
+        Number.isFinite(a) &&
+        Number.isFinite(b) &&
+        b !== 0
+      ) {
+        return a / b;
+      }
+    }
+
+
+    const n =
+      Number(value);
+
+
+    return Number.isFinite(n)
+      ? n
+      : 0;
+  }
+
+
+  function parseFFmpegMetadata(logText) {
+
+    const result = {
       width: 0,
       height: 0,
-      bitrate: 0,
-      size: 0,
-    };
-    let ffmpeg = null;
-    let isConverting = false;
-    let currentObjectUrl = null;
-
-    // ---------- Efficient bitrate table (bits per pixel per second) ----------
-    // These values are based on H.264 (libx264) with 'fast' preset, targeting
-    // good quality (~CRF 22-24). Expressed in bits per pixel per second (bpp).
-    // Lower bpp = smaller file, higher bpp = better quality.
-    // Values empirically chosen for a good size/quality tradeoff.
-    const BPP_TABLE = {
-      360:  0.08,   // ~ 0.08 bpp  → ~ 250 kbps for 640x360
-      480:  0.085,  // ~ 0.085 bpp → ~ 500 kbps for 854x480
-      720:  0.09,   // ~ 0.09 bpp  → ~ 1.2 Mbps for 1280x720
-      1080: 0.095,  // ~ 0.095 bpp → ~ 2.7 Mbps for 1920x1080
+      duration: 0,
+      fps: 0,
+      videoCodec: "",
+      audioCodec: "",
+      videoBitrate: 0,
+      audioBitrate: 0
     };
 
-    // Standard widths for each target height (16:9)
-    const STD_WIDTHS = {
-      360: 640,
-      480: 854,
-      720: 1280,
-      1080: 1920,
-    };
 
-    // ---------- helpers ----------
-    function formatBytes(bytes, decimals = 2) {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const dm = decimals < 0 ? 0 : decimals;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
-      return (bytes < 0 ? '−' : '') + parseFloat((Math.abs(bytes) / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    /*
+     * Duration
+     *
+     * Example:
+     * Duration: 00:01:23.45
+     */
+
+    const durationMatch =
+      logText.match(
+        /Duration:\s*(\d+):(\d+):([\d.]+)/
+      );
+
+
+    if (durationMatch) {
+
+      result.duration =
+        Number(durationMatch[1]) * 3600 +
+        Number(durationMatch[2]) * 60 +
+        Number(durationMatch[3]);
     }
 
-    function formatBitrate(bps) {
-      if (!bps || bps <= 0) return '—';
-      if (bps >= 1_000_000) return (bps / 1_000_000).toFixed(2) + ' Mbps';
-      if (bps >= 1_000) return (bps / 1_000).toFixed(0) + ' kbps';
-      return bps + ' bps';
+
+    /*
+     * Video stream.
+     *
+     * Example:
+     * Video: h264, yuv420p, 1920x1080
+     */
+
+    const videoMatch =
+      logText.match(
+        /Stream #\d+:\d+(?:\([^)]*\))?: Video:\s*([^,\s]+)[^]*?(\d{2,5})x(\d{2,5})/
+      );
+
+
+    if (videoMatch) {
+
+      result.videoCodec =
+        videoMatch[1];
+
+      result.width =
+        Number(videoMatch[2]);
+
+      result.height =
+        Number(videoMatch[3]);
     }
 
-    function formatDuration(seconds) {
-      if (!seconds || seconds <= 0) return '—';
-      const h = Math.floor(seconds / 3600);
-      const m = Math.floor((seconds % 3600) / 60);
-      const s = Math.floor(seconds % 60);
-      return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
-    }
 
-    // Compute optimized bitrate for a target resolution using bpp model.
-    // Also enforce a max bitrate based on the original bitrate so we never
-    // increase the size beyond the original (unless user is upscaling).
-    function computeAutoBitrate(targetHeight) {
-      const stdWidth = STD_WIDTHS[targetHeight] || Math.round(targetHeight * 16 / 9);
-      const pixels = stdWidth * targetHeight;
-      const bpp = BPP_TABLE[targetHeight] || 0.09;
-      let bitrate = pixels * bpp;
+    /*
+     * Find video bitrate.
+     */
 
-      // Clamp to sensible bounds (200 kbps – 15 Mbps)
-      bitrate = Math.max(200_000, Math.min(15_000_000, bitrate));
+    const videoLines =
+      logText
+        .split("\n")
+        .filter(
+          line =>
+            /Stream #.*Video:/.test(line)
+        );
 
-      // If original bitrate is known and smaller than computed, cap it
-      // so we never produce a larger file than the original.
-      if (videoMetadata.bitrate > 0) {
-        bitrate = Math.min(bitrate, videoMetadata.bitrate);
+
+    if (videoLines.length) {
+
+      const line =
+        videoLines[0];
+
+
+      const bitrateMatch =
+        line.match(
+          /(\d+(?:\.\d+)?)\s*(?:kb\/s|kbits\/s)/
+        );
+
+
+      if (bitrateMatch) {
+
+        result.videoBitrate =
+          Number(
+            bitrateMatch[1]
+          ) * 1000;
       }
 
-      return Math.round(bitrate);
+
+      const fpsMatch =
+        line.match(
+          /(\d+(?:\.\d+)?)\s*(?:fps|tbr)/
+        );
+
+
+      if (fpsMatch) {
+
+        result.fps =
+          Number(
+            fpsMatch[1]
+          );
+      }
     }
 
-    // Estimate new file size based on auto bitrate and duration
-    function estimateNewSize(targetHeight) {
-      if (!videoMetadata.duration) return 0;
-      const bitrate = computeAutoBitrate(targetHeight);
-      return (bitrate * videoMetadata.duration) / 8;
+
+    /*
+     * Audio.
+     */
+
+    const audioLine =
+      logText
+        .split("\n")
+        .find(
+          line =>
+            /Stream #.*Audio:/.test(line)
+        );
+
+
+    if (audioLine) {
+
+      const codecMatch =
+        audioLine.match(
+          /Audio:\s*([^,\s]+)/
+        );
+
+
+      if (codecMatch) {
+        result.audioCodec =
+          codecMatch[1];
+      }
+
+
+      const bitrateMatch =
+        audioLine.match(
+          /(\d+(?:\.\d+)?)\s*(?:kb\/s|kbits\/s)/
+        );
+
+
+      if (bitrateMatch) {
+
+        result.audioBitrate =
+          Number(
+            bitrateMatch[1]
+          ) * 1000;
+      }
     }
 
-    function resolutionLabel(height) {
-      const map = { 240: '240p', 360: '360p', 480: '480p', 720: '720p', 1080: '1080p', 1440: '1440p', 2160: '4K' };
-      return map[height] || `${height}p`;
+
+    /*
+     * Sometimes FFmpeg places bitrate elsewhere.
+     */
+
+    if (
+      !result.videoBitrate
+    ) {
+
+      const overall =
+        logText.match(
+          /bitrate:\s*(\d+(?:\.\d+)?)\s*kb\/s/i
+        );
+
+
+      if (overall) {
+
+        result.videoBitrate =
+          Number(
+            overall[1]
+          ) * 1000;
+      }
     }
 
-    // Update all UI estimates based on current resolution selection
-    function updateEstimates() {
-      if (!selectedFile || !videoMetadata.duration) return;
 
-      const targetHeight = parseInt(resolutionSelect.value, 10);
-      const origSize = videoMetadata.size;
-      const newSize = estimateNewSize(targetHeight);
-      const autoBitrate = computeAutoBitrate(targetHeight);
+    return result;
+  }
 
-      // Update auto bitrate display
-      autoBitrateValue.textContent = formatBitrate(autoBitrate);
 
-      // Update size estimates
-      origSizeValue.textContent = formatBytes(origSize);
-      newSizeValue.textContent = formatBytes(newSize);
+  // ==========================================================
+  // FFmpeg
+  // ==========================================================
 
-      const diffBytes = newSize - origSize;
-      const diffAbs = Math.abs(diffBytes);
+  async function loadFFmpeg() {
 
-      if (diffBytes < 0) {
-        diffValue.textContent = '−' + formatBytes(diffAbs);
-        diffValue.classList.remove('negative');
-      } else if (diffBytes > 0) {
-        diffValue.textContent = '+' + formatBytes(diffAbs);
-        diffValue.classList.add('negative');
+    if (ffmpegLoaded) {
+      return;
+    }
+
+
+    ffmpeg =
+      new FFmpeg();
+
+
+    ffmpeg.on(
+      "progress",
+      ({ progress: p }) => {
+
+        if (!converting) {
+          return;
+        }
+
+
+        const percent =
+          Math.max(
+            0,
+            Math.min(
+              100,
+              Math.round(
+                p * 100
+              )
+            )
+          );
+
+
+        progress.value =
+          percent;
+
+
+        progressPercent.textContent =
+          `${percent}%`;
+
+
+        progressText.textContent =
+          "Converting video...";
+      }
+    );
+
+
+    ffmpeg.on(
+      "log",
+      ({ message }) => {
+
+        /*
+         * Metadata extraction is handled
+         * by the analysis function below.
+         *
+         * During conversion we don't display
+         * the raw FFmpeg log.
+         */
+        console.debug(
+          "[FFmpeg]",
+          message
+        );
+      }
+    );
+
+
+    const baseURL =
+      "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+
+
+    progressText.textContent =
+      "Loading FFmpeg engine...";
+
+
+    await ffmpeg.load({
+
+      coreURL:
+        await toBlobURL(
+          `${baseURL}/ffmpeg-core.js`,
+          "text/javascript"
+        ),
+
+      wasmURL:
+        await toBlobURL(
+          `${baseURL}/ffmpeg-core.wasm`,
+          "application/wasm"
+        )
+
+    });
+
+
+    ffmpegLoaded = true;
+  }
+
+
+  // ==========================================================
+  // ANALYZE VIDEO
+  // ==========================================================
+
+  async function analyzeVideo(file) {
+
+    await loadFFmpeg();
+
+
+    const name =
+      "analyze-input" +
+      getExtension(file.name);
+
+
+    let logOutput = "";
+
+
+    const logHandler =
+      ({ message }) => {
+
+        logOutput +=
+          message + "\n";
+      };
+
+
+    ffmpeg.on(
+      "log",
+      logHandler
+    );
+
+
+    try {
+
+      await ffmpeg.writeFile(
+        name,
+        await fetchFile(file)
+      );
+
+
+      /*
+       * FFmpeg will print stream metadata
+       * while opening the input.
+       *
+       * The null output avoids creating
+       * another video file.
+       */
+
+      await ffmpeg.exec([
+        "-hide_banner",
+        "-i",
+        name,
+        "-f",
+        "null",
+        "-"
+      ]);
+
+
+    } catch (error) {
+
+      /*
+       * FFmpeg returns non-zero here because
+       * the input is being sent to null and
+       * some formats/logging combinations can
+       * still report an error.
+       *
+       * We continue if metadata was collected.
+       */
+
+      console.debug(
+        "Metadata command:",
+        error
+      );
+
+    } finally {
+
+      try {
+        await ffmpeg.deleteFile(name);
+      } catch {}
+    }
+
+
+    /*
+     * Remove handler by recreating FFmpeg's
+     * logging is not directly supported by all
+     * builds, so we simply retain the result.
+     */
+
+    const parsed =
+      parseFFmpegMetadata(
+        logOutput
+      );
+
+
+    /*
+     * HTML video metadata is more reliable for
+     * dimensions/duration if FFmpeg parsing
+     * didn't find them.
+     */
+
+    if (
+      !parsed.width &&
+      preview.videoWidth
+    ) {
+      parsed.width =
+        preview.videoWidth;
+
+      parsed.height =
+        preview.videoHeight;
+    }
+
+
+    if (
+      !parsed.duration &&
+      Number.isFinite(preview.duration)
+    ) {
+      parsed.duration =
+        preview.duration;
+    }
+
+
+    /*
+     * Estimate total bitrate when stream bitrate
+     * isn't available.
+     */
+
+    if (
+      !parsed.videoBitrate &&
+      parsed.duration
+    ) {
+
+      const totalBitrate =
+        file.size *
+        8 /
+        parsed.duration;
+
+
+      const audio =
+        parsed.audioBitrate ||
+        128000;
+
+
+      parsed.videoBitrate =
+        Math.max(
+          0,
+          totalBitrate - audio
+        );
+    }
+
+
+    return parsed;
+  }
+
+
+  // ==========================================================
+  // LOAD FILE
+  // ==========================================================
+
+  async function selectFile(file) {
+
+    if (!file) {
+      return;
+    }
+
+
+    if (
+      !file.type.startsWith("video/")
+    ) {
+
+      alert(
+        "Please select a video file."
+      );
+
+      return;
+    }
+
+
+    /*
+     * Browser memory warning.
+     */
+
+    if (
+      file.size >
+      1024 * 1024 * 1024
+    ) {
+
+      const proceed =
+        confirm(
+          "This video is larger than 1 GB. " +
+          "Browser-based FFmpeg processing can use a lot of memory. " +
+          "Continue?"
+        );
+
+
+      if (!proceed) {
+        return;
+      }
+    }
+
+
+    selectedFile =
+      file;
+
+
+    resultCard.style.display =
+      "none";
+
+
+    if (outputURL) {
+
+      URL.revokeObjectURL(
+        outputURL
+      );
+
+      outputURL = null;
+    }
+
+
+    if (previewURL) {
+
+      URL.revokeObjectURL(
+        previewURL
+      );
+    }
+
+
+    previewURL =
+      URL.createObjectURL(file);
+
+
+    preview.src =
+      previewURL;
+
+    preview.style.display =
+      "block";
+
+
+    /*
+     * First get browser metadata.
+     */
+
+    await new Promise(
+      resolve => {
+
+        if (
+          preview.readyState >= 1
+        ) {
+          resolve();
+          return;
+        }
+
+
+        preview.addEventListener(
+          "loadedmetadata",
+          resolve,
+          {
+            once: true
+          }
+        );
+      }
+    );
+
+
+    metadata.width =
+      preview.videoWidth;
+
+    metadata.height =
+      preview.videoHeight;
+
+    metadata.duration =
+      preview.duration;
+
+
+    originalCard.classList.remove(
+      "hidden"
+    );
+
+
+    settingsCard.classList.remove(
+      "hidden"
+    );
+
+
+    updateOriginalStats();
+
+
+    /*
+     * Analyze with FFmpeg.
+     */
+
+    try {
+
+      const parsed =
+        await analyzeVideo(file);
+
+
+      metadata = {
+        ...metadata,
+        ...parsed
+      };
+
+
+      updateOriginalStats();
+
+
+    } catch (error) {
+
+      console.error(
+        "Metadata analysis failed:",
+        error
+      );
+    }
+
+
+    /*
+     * Automatically choose an appropriate
+     * target resolution.
+     */
+
+    setDefaultResolution();
+
+
+    mode.value =
+      "auto";
+
+
+    updateModeUI();
+
+    updateEstimate();
+
+  }
+
+
+  function setDefaultResolution() {
+
+    const width =
+      metadata.width;
+
+
+    if (!width) {
+      return;
+    }
+
+
+    /*
+     * Don't enlarge.
+     *
+     * For videos larger than 1080p,
+     * start at 1080p.
+     */
+
+    if (
+      width >= 3840
+    ) {
+
+      resolution.value =
+        "1920";
+
+    } else if (
+      width > 1920
+    ) {
+
+      resolution.value =
+        "1920";
+
+    } else if (
+      width > 1280
+    ) {
+
+      resolution.value =
+        "1280";
+
+    } else {
+
+      resolution.value =
+        "original";
+    }
+  }
+
+
+  // ==========================================================
+  // ORIGINAL STATS
+  // ==========================================================
+
+  function updateOriginalStats() {
+
+    if (!selectedFile) {
+      return;
+    }
+
+
+    $("statSize").textContent =
+      formatBytes(
+        selectedFile.size
+      );
+
+
+    $("statResolution").textContent =
+      metadata.width
+        ? `${metadata.width} × ${metadata.height}`
+        : "Unknown";
+
+
+    $("statDuration").textContent =
+      formatDuration(
+        metadata.duration
+      );
+
+
+    $("statFPS").textContent =
+      metadata.fps
+        ? `${metadata.fps.toFixed(2)} FPS`
+        : "Unknown";
+
+
+    $("statVideoCodec").textContent =
+      cleanCodec(
+        metadata.videoCodec
+      );
+
+
+    $("statAudioCodec").textContent =
+      cleanCodec(
+        metadata.audioCodec
+      );
+
+
+    $("statVideoBitrate").textContent =
+      formatBitrate(
+        metadata.videoBitrate
+      );
+
+
+    $("statAudioBitrate").textContent =
+      formatBitrate(
+        metadata.audioBitrate
+      );
+
+
+    $("resolutionHelp").textContent =
+      metadata.width
+        ? `Original: ${metadata.width} × ${metadata.height}`
+        : "";
+  }
+
+
+  // ==========================================================
+  // FILE EVENTS
+  // ==========================================================
+
+  fileInput.addEventListener(
+    "change",
+    () => {
+
+      const file =
+        fileInput.files[0];
+
+      selectFile(file);
+    }
+  );
+
+
+  dropZone.addEventListener(
+    "dragover",
+    event => {
+
+      event.preventDefault();
+
+      dropZone.classList.add(
+        "dragging"
+      );
+    }
+  );
+
+
+  dropZone.addEventListener(
+    "dragleave",
+    () => {
+
+      dropZone.classList.remove(
+        "dragging"
+      );
+    }
+  );
+
+
+  dropZone.addEventListener(
+    "drop",
+    event => {
+
+      event.preventDefault();
+
+      dropZone.classList.remove(
+        "dragging"
+      );
+
+
+      const file =
+        event.dataTransfer.files[0];
+
+
+      selectFile(file);
+    }
+  );
+
+
+  // ==========================================================
+  // CONTROL EVENTS
+  // ==========================================================
+
+  resolution.addEventListener(
+    "change",
+    () => {
+
+      updateEstimate();
+    }
+  );
+
+
+  mode.addEventListener(
+    "change",
+    updateModeUI
+  );
+
+
+  bitrate.addEventListener(
+    "change",
+    () => {
+
+      /*
+       * If the user manually selects bitrate,
+       * switch from Auto mode to Target bitrate.
+       */
+
+      if (
+        bitrate.value !== "auto" &&
+        mode.value === "auto"
+      ) {
+
+        mode.value =
+          "bitrate";
+      }
+
+
+      updateModeUI();
+    }
+  );
+
+
+  audio.addEventListener(
+    "change",
+    updateEstimate
+  );
+
+
+  targetSize.addEventListener(
+    "input",
+    updateEstimate
+  );
+
+
+  crf.addEventListener(
+    "input",
+    () => {
+
+      $("crfValue")
+        .textContent =
+        crf.value;
+
+      updateEstimate();
+    }
+  );
+
+
+  // ==========================================================
+  // PRESETS
+  // ==========================================================
+
+  document
+    .querySelectorAll(".preset")
+    .forEach(button => {
+
+      button.addEventListener(
+        "click",
+        () => {
+
+          document
+            .querySelectorAll(".preset")
+            .forEach(
+              b =>
+                b.classList.remove(
+                  "active"
+                )
+            );
+
+
+          button.classList.add(
+            "active"
+          );
+
+
+          const preset =
+            button.dataset.preset;
+
+
+          applyPreset(
+            preset
+          );
+        }
+      );
+    });
+
+
+  function applyPreset(preset) {
+
+    if (!selectedFile) {
+      return;
+    }
+
+
+    if (
+      preset === "balanced"
+    ) {
+
+      mode.value =
+        "auto";
+
+      audio.value =
+        "128";
+
+      speed.value =
+        "medium";
+
+      crf.value =
+        "23";
+
+    }
+
+
+    if (
+      preset === "small"
+    ) {
+
+      mode.value =
+        "auto";
+
+      audio.value =
+        "96";
+
+      speed.value =
+        "slow";
+
+      /*
+       * Lower bitrate than Auto.
+       */
+
+      const auto =
+        getAutoBitrateKbps();
+
+
+      const lower =
+        Math.max(
+          400,
+          Math.round(
+            auto * 0.70 / 50
+          ) * 50
+        );
+
+
+      const matching =
+        Array.from(
+          bitrate.options
+        ).find(
+          option =>
+            Number(option.value) ===
+            lower
+        );
+
+
+      if (matching) {
+
+        mode.value =
+          "bitrate";
+
+        bitrate.value =
+          String(lower);
+
       } else {
-        diffValue.textContent = '± 0 B';
-        diffValue.classList.remove('negative');
+
+        mode.value =
+          "auto";
       }
     }
 
-    // reset UI after new file
-    function resetUI() {
-      statsSection.classList.add('hidden');
-      controlsSection.classList.add('hidden');
-      outputArea.classList.add('hidden');
-      convertBtn.disabled = true;
-      statusMessage.textContent = '';
-      progressBar.style.width = '0%';
-      if (currentObjectUrl) {
-        URL.revokeObjectURL(currentObjectUrl);
-        currentObjectUrl = null;
-      }
-      downloadLink.href = '#';
+
+    if (
+      preset === "quality"
+    ) {
+
+      mode.value =
+        "crf";
+
+      crf.value =
+        "20";
+
+      audio.value =
+        "128";
+
+      speed.value =
+        "medium";
     }
 
-    // load metadata using video element
-    function loadVideoMetadata(file) {
-      return new Promise((resolve, reject) => {
-        const video = document.createElement('video');
-        video.preload = 'metadata';
-        video.muted = true;
-        const url = URL.createObjectURL(file);
-        video.src = url;
 
-        video.onloadedmetadata = () => {
-          const duration = video.duration;
-          const width = video.videoWidth;
-          const height = video.videoHeight;
-          URL.revokeObjectURL(url);
+    if (
+      preset === "target"
+    ) {
 
-          const sizeBits = file.size * 8;
-          const bitrateBps = duration > 0 ? sizeBits / duration : 0;
+      mode.value =
+        "target";
 
-          resolve({
-            duration,
-            width,
-            height,
-            bitrate: bitrateBps,
-            size: file.size,
-          });
-        };
-        video.onerror = () => {
-          URL.revokeObjectURL(url);
-          reject(new Error('Could not load video metadata'));
-        };
-      });
+      targetSize.value =
+        Math.max(
+          10,
+          Math.round(
+            selectedFile.size /
+            1024 /
+            1024 *
+            0.35
+          )
+        );
+
+      audio.value =
+        "128";
     }
 
-    // ---------- ffmpeg setup ----------
-    async function initFFmpeg() {
-      if (ffmpeg) return ffmpeg;
-      statusMessage.textContent = 'Loading FFmpeg...';
 
-      // Fix: In ffmpeg.wasm 0.12.x, the UMD build exposes FFmpeg directly on window.
-      const FFmpegClass = window.FFmpeg && window.FFmpeg.FFmpeg
-        ? window.FFmpeg.FFmpeg
-        : window.FFmpeg;
+    $("crfValue")
+      .textContent =
+      crf.value;
 
-      if (!FFmpegClass) {
-        throw new Error('FFmpeg library not loaded. Check the script tag.');
-      }
 
-      ffmpeg = new FFmpegClass();
-      ffmpeg.on('log', ({ message }) => { /* console.log(message) */ });
-      ffmpeg.on('progress', ({ progress }) => {
-        const percent = Math.min(100, Math.round(progress * 100));
-        progressBar.style.width = percent + '%';
-        statusMessage.textContent = `Converting... ${percent}%`;
-      });
+    updateModeUI();
 
-      await ffmpeg.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
-      });
+    updateEstimate();
+  }
 
-      statusMessage.textContent = 'FFmpeg ready';
-      return ffmpeg;
+
+  // ==========================================================
+  // FFmpeg COMMAND
+  // ==========================================================
+
+  function buildFFmpegArgs() {
+
+    const args = [
+      "-hide_banner",
+      "-i",
+      inputName
+    ];
+
+
+    /*
+     * Video codec
+     */
+
+    args.push(
+      "-c:v",
+      "libx264"
+    );
+
+
+    /*
+     * Encoding speed
+     */
+
+    args.push(
+      "-preset",
+      speed.value
+    );
+
+
+    /*
+     * Resolution
+     */
+
+    const output =
+      getOutputResolution();
+
+
+    if (
+      output.width &&
+      output.height &&
+      (
+        output.width !==
+          metadata.width ||
+        output.height !==
+          metadata.height
+      )
+    ) {
+
+      args.push(
+        "-vf",
+        `scale=${output.width}:${output.height}:force_original_aspect_ratio=decrease`
+      );
     }
 
-    // ---------- convert ----------
-    async function convertVideo() {
-      if (!selectedFile || isConverting) return;
-      isConverting = true;
-      convertBtn.disabled = true;
-      outputArea.classList.add('hidden');
-      if (currentObjectUrl) {
-        URL.revokeObjectURL(currentObjectUrl);
-        currentObjectUrl = null;
+
+    /*
+     * Video rate control
+     */
+
+    if (
+      mode.value === "crf"
+    ) {
+
+      args.push(
+        "-crf",
+        String(crf.value)
+      );
+
+    } else {
+
+      const kbps =
+        getTargetBitrateKbps();
+
+
+      args.push(
+        "-b:v",
+        `${kbps}k`,
+
+        "-maxrate",
+        `${kbps}k`,
+
+        "-bufsize",
+        `${kbps * 2}k`
+      );
+    }
+
+
+    /*
+     * Audio
+     */
+
+    const audioKbps =
+      Number(audio.value);
+
+
+    if (
+      audioKbps > 0
+    ) {
+
+      args.push(
+        "-c:a",
+        "aac",
+
+        "-b:a",
+        `${audioKbps}k`
+      );
+
+    } else {
+
+      args.push(
+        "-an"
+      );
+    }
+
+
+    /*
+     * Remove metadata
+     */
+
+    if (
+      $("removeMetadata").checked
+    ) {
+
+      args.push(
+        "-map_metadata",
+        "-1"
+      );
+    }
+
+
+    /*
+     * Optimize MP4 for web playback.
+     */
+
+    if (
+      $("fastStart").checked
+    ) {
+
+      args.push(
+        "-movflags",
+        "+faststart"
+      );
+    }
+
+
+    /*
+     * MP4 output.
+     */
+
+    args.push(
+      "-y",
+      outputName
+    );
+
+
+    return args;
+  }
+
+
+  // ==========================================================
+  // CONVERSION
+  // ==========================================================
+
+  convertButton.addEventListener(
+    "click",
+    startConversion
+  );
+
+
+  async function startConversion() {
+
+    if (
+      !selectedFile ||
+      converting
+    ) {
+      return;
+    }
+
+
+    converting = true;
+
+    cancelRequested = false;
+
+
+    convertButton.disabled =
+      true;
+
+    cancelButton.classList.remove(
+      "hidden"
+    );
+
+
+    progressArea.style.display =
+      "block";
+
+
+    progress.value =
+      0;
+
+    progressPercent.textContent =
+      "0%";
+
+    progressText.textContent =
+      "Preparing...";
+
+
+    resultCard.style.display =
+      "none";
+
+
+    try {
+
+      await loadFFmpeg();
+
+
+      if (cancelRequested) {
+        throw new Error(
+          "Conversion cancelled."
+        );
       }
 
-      try {
-        const ff = await initFFmpeg();
 
-        statusMessage.textContent = 'Reading file...';
-        const fileData = new Uint8Array(await selectedFile.arrayBuffer());
-        const inputName = 'input.' + (selectedFile.name.split('.').pop() || 'mp4');
-        await ff.writeFile(inputName, fileData);
+      inputName =
+        "input" +
+        getExtension(
+          selectedFile.name
+        );
 
-        const targetHeight = parseInt(resolutionSelect.value, 10);
-        const targetWidth = STD_WIDTHS[targetHeight] || Math.round(targetHeight * 16 / 9);
-        const targetBitrateBps = computeAutoBitrate(targetHeight);
 
-        const outputName = 'output.mp4';
+      outputName =
+        "compressed-output.mp4";
 
-        // Efficient H.264 encoding settings:
-        // - CRF 23 for constant quality baseline
-        // - maxrate/bufsize to cap peak bitrate
-        // - faststart for streaming
-        const args = [
-          '-i', inputName,
-          '-vf', `scale=${targetWidth}:${targetHeight}`,
-          '-c:v', 'libx264',
-          '-preset', 'fast',
-          '-crf', '23',
-          '-maxrate', `${targetBitrateBps}`,
-          '-bufsize', `${targetBitrateBps * 2}`,
-          '-c:a', 'aac',
-          '-b:a', '128k',
-          '-movflags', '+faststart',
+
+      /*
+       * Write input into WASM filesystem.
+       */
+
+      progressText.textContent =
+        "Loading video into memory...";
+
+
+      await ffmpeg.writeFile(
+        inputName,
+        await fetchFile(
+          selectedFile
+        )
+      );
+
+
+      if (cancelRequested) {
+        throw new Error(
+          "Conversion cancelled."
+        );
+      }
+
+
+      const args =
+        buildFFmpegArgs();
+
+
+      console.log(
+        "FFmpeg command:",
+        args.join(" ")
+      );
+
+
+      progressText.textContent =
+        "Converting video...";
+
+
+      await ffmpeg.exec(
+        args
+      );
+
+
+      if (cancelRequested) {
+        throw new Error(
+          "Conversion cancelled."
+        );
+      }
+
+
+      progress.value =
+        100;
+
+      progressPercent.textContent =
+        "100%";
+
+
+      progressText.textContent =
+        "Preparing download...";
+
+
+      /*
+       * Read output.
+       */
+
+      const data =
+        await ffmpeg.readFile(
           outputName
-        ];
+        );
 
-        statusMessage.textContent = 'Starting conversion...';
-        progressBar.style.width = '0%';
 
-        await ff.exec(args);
+      const blob =
+        new Blob(
+          [data.buffer],
+          {
+            type: "video/mp4"
+          }
+        );
 
-        const outputData = await ff.readFile(outputName);
-        const outputBlob = new Blob([outputData.buffer], { type: 'video/mp4' });
 
-        currentObjectUrl = URL.createObjectURL(outputBlob);
-        downloadLink.href = currentObjectUrl;
-        const baseName = selectedFile.name.replace(/\.[^/.]+$/, '');
-        downloadLink.download = `${baseName}_${targetHeight}p.mp4`;
-        outputArea.classList.remove('hidden');
-        statusMessage.textContent = '✅ Conversion complete!';
-        progressBar.style.width = '100%';
+      outputURL =
+        URL.createObjectURL(
+          blob
+        );
 
-        await ff.deleteFile(inputName);
-        await ff.deleteFile(outputName);
-      } catch (err) {
-        console.error(err);
-        statusMessage.textContent = '❌ Error: ' + (err.message || 'Conversion failed');
-      } finally {
-        isConverting = false;
-        convertBtn.disabled = false;
-      }
-    }
 
-    // ---------- event listeners ----------
-    videoInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+      /*
+       * Show result.
+       */
 
-      resetUI();
-      selectedFile = file;
+      showResult(
+        blob
+      );
+
+
+      /*
+       * Clean virtual filesystem.
+       */
 
       try {
-        const meta = await loadVideoMetadata(file);
-        videoMetadata = meta;
 
-        fileSizeStat.textContent = formatBytes(meta.size);
-        bitrateStat.textContent = formatBitrate(meta.bitrate);
-        resolutionStat.textContent = meta.width && meta.height ? `${meta.width}×${meta.height}` : '—';
-        durationStat.textContent = formatDuration(meta.duration);
+        await ffmpeg.deleteFile(
+          inputName
+        );
 
-        // Auto-select a sensible default resolution based on original height.
-        // Choose the largest standard resolution that does not exceed the original.
-        const origHeight = meta.height || 720;
-        let defaultHeight = 720;
-        if (origHeight >= 1080) defaultHeight = 1080;
-        else if (origHeight >= 720) defaultHeight = 720;
-        else if (origHeight >= 480) defaultHeight = 480;
-        else defaultHeight = 360;
-        resolutionSelect.value = defaultHeight;
+      } catch {}
 
-        statsSection.classList.remove('hidden');
-        controlsSection.classList.remove('hidden');
 
-        updateEstimates();
-        convertBtn.disabled = false;
-      } catch (err) {
-        console.error(err);
-        statusMessage.textContent = 'Could not read video metadata.';
-        statsSection.classList.add('hidden');
-        controlsSection.classList.add('hidden');
+      try {
+
+        await ffmpeg.deleteFile(
+          outputName
+        );
+
+      } catch {}
+
+
+    } catch (error) {
+
+      console.error(
+        "Conversion error:",
+        error
+      );
+
+
+      if (
+        cancelRequested ||
+        String(error.message)
+          .toLowerCase()
+          .includes("cancel")
+      ) {
+
+        progressText.textContent =
+          "Conversion cancelled.";
+
+      } else {
+
+        progressText.textContent =
+          "Conversion failed.";
+
+        $("warning")
+          .textContent =
+          "Conversion failed: " +
+          (
+            error?.message ||
+            String(error)
+          );
+
+        $("warning")
+          .classList.remove(
+            "hidden"
+          );
       }
-    });
 
-    resolutionSelect.addEventListener('change', updateEstimates);
-    convertBtn.addEventListener('click', convertVideo);
 
-    window.addEventListener('beforeunload', () => {
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+    } finally {
+
+      converting =
+        false;
+
+      convertButton.disabled =
+        false;
+
+      cancelButton.classList.add(
+        "hidden"
+      );
+    }
+  }
+
+
+  // ==========================================================
+  // CANCEL
+  // ==========================================================
+
+  cancelButton.addEventListener(
+    "click",
+    async () => {
+
+      if (!converting) {
+        return;
+      }
+
+
+      cancelRequested =
+        true;
+
+
+      progressText.textContent =
+        "Stopping FFmpeg...";
+
+
+      /*
+       * terminate() stops the current FFmpeg
+       * worker/process.
+       *
+       * A new instance is created next time
+       * conversion is requested.
+       */
+
+      try {
+
+        ffmpeg.terminate();
+
+      } catch (error) {
+
+        console.error(
+          error
+        );
+      }
+
+
+      ffmpeg =
+        null;
+
+      ffmpegLoaded =
+        false;
+
+
+      converting =
+        false;
+
+
+      convertButton.disabled =
+        false;
+
+
+      cancelButton.classList.add(
+        "hidden"
+      );
+    }
+  );
+
+
+  // ==========================================================
+  // RESULT
+  // ==========================================================
+
+  function showResult(blob) {
+
+    const outputSize =
+      blob.size;
+
+
+    const difference =
+      selectedFile.size -
+      outputSize;
+
+
+    const percent =
+      difference /
+      selectedFile.size *
+      100;
+
+
+    /*
+     * Before
+     */
+
+    $("beforeSize")
+      .textContent =
+      formatBytes(
+        selectedFile.size
+      );
+
+
+    $("beforeResolution")
+      .textContent =
+      `${metadata.width} × ${metadata.height}`;
+
+
+    $("beforeDuration")
+      .textContent =
+      formatDuration(
+        metadata.duration
+      );
+
+
+    $("beforeBitrate")
+      .textContent =
+      formatBitrate(
+        metadata.videoBitrate
+      );
+
+
+    /*
+     * After
+     */
+
+    const outputResolution =
+      getOutputResolution();
+
+
+    $("afterSize")
+      .textContent =
+      formatBytes(
+        outputSize
+      );
+
+
+    $("afterResolution")
+      .textContent =
+      `${outputResolution.width} × ${outputResolution.height}`;
+
+
+    $("afterDuration")
+      .textContent =
+      formatDuration(
+        metadata.duration
+      );
+
+
+    if (
+      mode.value === "crf"
+    ) {
+
+      $("afterBitrate")
+        .textContent =
+        `CRF ${crf.value}`;
+
+    } else {
+
+      $("afterBitrate")
+        .textContent =
+        formatBitrate(
+          getTargetBitrateKbps() *
+          1000
+        );
+    }
+
+
+    /*
+     * Reduction
+     */
+
+    if (
+      difference >= 0
+    ) {
+
+      $("resultReduction")
+        .textContent =
+        `${formatBytes(
+          difference
+        )} smaller — ${percent.toFixed(1)}%`;
+
+    } else {
+
+      $("resultReduction")
+        .textContent =
+        `${formatBytes(
+          Math.abs(difference)
+        )} larger`;
+    }
+
+
+    /*
+     * Download
+     */
+
+    const baseName =
+      selectedFile.name
+        .replace(
+          /\.[^/.]+$/,
+          ""
+        );
+
+
+    $("downloadButton").href =
+      outputURL;
+
+
+    $("downloadButton").download =
+      `${baseName}-compressed.mp4`;
+
+
+    resultCard.style.display =
+      "block";
+
+
+    /*
+     * Scroll result into view.
+     */
+
+    resultCard.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
     });
-  })();
+  }
+
+
+  // ==========================================================
+  // HELPERS
+  // ==========================================================
+
+  function getExtension(filename) {
+
+    const dot =
+      filename.lastIndexOf(".");
+
+
+    if (
+      dot === -1
+    ) {
+      return ".mp4";
+    }
+
+
+    return filename.slice(
+      dot
+    );
+  }
+
+
+  // ==========================================================
+  // INITIAL STATE
+  // ==========================================================
+
+  updateModeUI();
+
 </script>
+
 </body>
 </html>
