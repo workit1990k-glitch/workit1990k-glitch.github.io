@@ -57,7 +57,9 @@ function clearState() {
 const dom = document;
 const leaves = dom.baseURI.split("/");
 const novelIndex = leaves.indexOf("novel");
+const language = leaves[novelIndex - 1];
 const id = leaves[novelIndex + 1];
+const slug = leaves[leaves.length - 1].split("?")[0];
 const novelLink = document.querySelector('a[href*="/novel/"]');
 const novelTitle = novelLink ? novelLink.textContent.trim().replace(/[\/\\?%*:|"<>]/g, '-') : "Unknown Novel";
 
@@ -68,6 +70,9 @@ const chaptersResp = await fetch(`https://wtr-lab.com/api/chapters/${id}`, { cre
 const chaptersJson = await chaptersResp.json();
 const allChapters = chaptersJson.chapters;
 downloadState.totalChapters = allChapters.length;
+
+// Get serie_id for user terms filtering
+const serieId = allChapters[0]?.serie_id || id;
 
 // --- Parse Chapter Range ---
 function parseChapterRange(rangeStr, total) {
@@ -115,7 +120,7 @@ ${allChapters.map(ch => `<div style="padding:4px 0; border-bottom:1px solid #eee
 </div>`;
 document.body.appendChild(menu);
 
-// Toggle Menu Button - higher z-index so always clickable
+// Toggle Menu Button
 const toggleBtn = document.createElement("button");
 toggleBtn.textContent = "📥 Download";
 toggleBtn.style.cssText = `position: fixed; top: 10px; right: 10px; z-index: 6000; padding: 8px 12px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size:13px;`;
@@ -125,7 +130,7 @@ toggleBtn.onclick = () => {
 };
 document.body.appendChild(toggleBtn);
 
-// --- EPUB Modal - Centered, lower z-index, allows text selection ---
+// --- EPUB Modal ---
 const epubModal = document.createElement("div");
 epubModal.style.cssText = `
     position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -185,7 +190,7 @@ async function fetchUserTerms() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const json = await resp.json();
         const terms = json?.config?.terms || [];
-        const filtered = terms.filter(a => a[4] == null || (Array.isArray(a[4]) && a[4].includes(downloadState.novelId)));
+        const filtered = terms.filter(a => a[4] == null || (Array.isArray(a[4]) && a[4].includes(serieId)));
         userTermsCache = [];
         for (const term of filtered) {
             if (term[2] && term[1]) {
@@ -274,28 +279,62 @@ function applyTermReplacements(text, chapterTerms, storyTerms, userTerms, patche
     return result;
 }
 
-// --- 4. Fetch Chapter Content (with full term support) ---
+// --- 4. Fetch Chapter Content (with NEW two-step API) ---
 async function fetchChapterContent(order) {
-    const formData = { translate: "ai", language: leaves[novelIndex - 1], raw_id: id, chapter_no: order };
+    // Step 1: POST to get content_url
+    const formData = {
+        translate: "ai",
+        language: language,
+        raw_id: id,
+        chapter_no: order,
+        retry: false,
+        force_retry: false
+    };
+    
     const res = await fetch("https://wtr-lab.com/api/reader/get", {
-        method: "POST", headers: { "Content-Type": "application/json;charset=UTF-8" },
-        body: JSON.stringify(formData), credentials: "include"
+        method: "POST",
+        headers: { "Content-Type": "application/json;charset=UTF-8" },
+        body: JSON.stringify(formData),
+        credentials: "include"
     });
+    
     let json;
-    try { json = await res.json(); } catch { throw new Error("Invalid JSON"); }
-    if (!json?.data?.data?.body) throw new Error("Missing body");
+    try { json = await res.json(); } catch { throw new Error("Invalid JSON response"); }
+    
+    // Check for errors
+    if (json?.code === "CHAPTER_LOCKED") {
+        throw new Error("Chapter is not AI translated (CHAPTER_LOCKED)");
+    }
+    if (json?.requireTurnstile || json?.code == 1401) {
+        throw new Error("Turnstile verification required. Please open the chapter in browser first.");
+    }
+    if (!json?.content_url) {
+        throw new Error("No content_url in response. Chapter may not be available.");
+    }
+    
+    // Step 2: Fetch actual content from content_url
+    const contentResp = await fetch(`https://wtr-lab.com${json.content_url}`, {
+        credentials: "include"
+    });
+    
+    let contentJson;
+    try { contentJson = await contentResp.json(); } catch { throw new Error("Invalid content JSON"); }
+    
+    if (!contentJson?.data?.data?.body) {
+        throw new Error("Missing chapter body in content response");
+    }
     
     // Fetch terms (cached)
     const [userTerms, storyTerms] = await Promise.all([fetchUserTerms(), fetchStoryTerms(id)]);
-    const chapterTerms = json?.data?.data?.glossary_data?.terms || [];
-    const patches = json?.data?.data?.patch || [];
+    const chapterTerms = contentJson?.data?.data?.glossary_data?.terms || [];
+    const patches = contentJson?.data?.data?.patch || [];
     
     const tempDiv = document.createElement("div");
     let imgCounter = 0;
     
-    json.data.data.body.forEach(el => {
+    contentJson.data.data.body.forEach(el => {
         if (el === "[image]") {
-            const src = json.data.data?.images?.[imgCounter++] ?? "";
+            const src = contentJson.data.data?.images?.[imgCounter++] ?? "";
             if (src) {
                 const img = document.createElement("img");
                 img.src = src; img.alt = "Chapter image"; img.style.maxWidth = "100%";
@@ -313,7 +352,11 @@ async function fetchChapterContent(order) {
     });
     
     const contentText = Array.from(tempDiv.querySelectorAll("p")).map(p => p.textContent).filter(t => t).join("\n").trim();
-    return { order, title: json.chapter?.title ?? `Chapter ${order}`, content: contentText };
+    return { 
+        order, 
+        title: contentJson.data.data.title ?? `Chapter ${order}`, 
+        content: contentText 
+    };
 }
 
 // --- 5. Download Logic ---
@@ -350,7 +393,6 @@ document.getElementById("downloadEpubBtn").onclick = () => {
         if (start !== 1 || end !== downloadState.totalChapters)
             document.getElementById("epubTitle").value = `${downloadState.novelTitle} ${start}-${end}`;
     }
-    // Auto-fill cover from __NEXT_DATA__ (optional, user can override)
     const currentCover = document.getElementById("epubCover").value.trim();
     if (!currentCover) {
         const autoCover = getCoverFromNextData();
@@ -382,7 +424,7 @@ document.getElementById("epubConfirm").onclick = async () => {
     }
 };
 
-// --- 🎨 Cover: Extract from __NEXT_DATA__ ---
+// --- Cover extraction ---
 function getCoverFromNextData() {
     try {
         const script = document.querySelector('script#__NEXT_DATA__');
@@ -392,13 +434,11 @@ function getCoverFromNextData() {
     } catch { return null; }
 }
 
-// --- 🔗 wsrv.nl CORS Proxy Wrapper ---
 function getProxyCoverUrl(userUrl) {
     if (!userUrl) return null;
     return `https://wsrv.nl/?url=${encodeURIComponent(userUrl)}&output=jpg&maxage=7d`;
 }
 
-// --- 🖼️ Fetch cover via proxy ---
 async function tryEmbedCover(proxyUrl) {
     if (!proxyUrl) return null;
     try {
@@ -413,7 +453,6 @@ async function tryEmbedCover(proxyUrl) {
     return null;
 }
 
-// --- Helper: Get file extension ---
 function getImageExtension(url, mimeType) {
     if (mimeType?.startsWith('image/')) {
         const map = { 'image/jpeg':'jpg', 'image/jpg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/webp':'webp' };
@@ -429,14 +468,14 @@ function getImageExtension(url, mimeType) {
     return 'jpg';
 }
 
-// --- Helper: Sanitize filename - dashes only, NO underscores ---
 function sanitizeFilename(str) {
     return str.replace(/[^a-z0-9\-]/gi, ' ').replace(/-+/g, ' ').replace(/^-+|-+$/g, '').slice(0, 100) || 'novel';
 }
-// --- Chapter Title Formatter ---
+
 function formatChapterTitle(order, title) {
     return `${order}. ${title}`;
 }
+
 // --- EPUB Generation ---
 async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     const chapters = downloadState.chapters.filter(c => c.order >= startOrder && c.order <= endOrder).sort((a,b) => a.order - b.order);
@@ -460,15 +499,14 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
     
     const oebps = zip.folder("OEBPS");
     
-    // Enhanced CSS with info page styles
     oebps.file("styles.css", `
         body { font-family: serif; line-height: 1.6; margin: 1rem; }
+        .chapter-title { margin-bottom: 1.5em; }
     `);
     
     let manifestItems = '', spineItems = '';
     let coverFilename = null;
     
-    // Handle cover image
     if (metadata.cover) {
         if (progressText) progressText.textContent = `Fetching cover via proxy...`;
         const coverBlob = await tryEmbedCover(metadata.cover);
@@ -480,14 +518,12 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
         }
     }
     
-    // --- Cover Page ---
     const coverContent = coverFilename 
         ? `<div style="margin:0;padding:0;text-align:center;background:#fff"><img src="${coverFilename}" alt="Cover" style="max-width:100%;max-height:100vh;display:block;margin:0 auto"/></div>`
         : `<div style="margin-top:35vh;text-align:center;padding:20px"><h1 style="font-size:1.8em;margin-bottom:0.5em">${escapeXml(metadata.title)}</h1>${metadata.author ? `<p style="font-size:1.2em;color:#555">by ${escapeXml(metadata.author)}</p>` : ''}${metadata.description ? `<p style="margin-top:1.5em;font-style:italic;color:#666">${escapeXml(metadata.description.slice(0,200))}${metadata.description.length>200?'...':''}</p>`:''}</div>`;
     
     oebps.file("cover.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Cover</title><style>body{margin:0;padding:0;text-align:center;background:#fff;font-family:serif}</style></head><body>${coverContent}</body></html>`);
     
-    // --- ✨ NEW: Info Page with Metadata ---
     const genresHtml = metadata.tags && metadata.tags.length > 0 
         ? `<p><strong>Genres:</strong> ${metadata.tags.map(t => escapeXml(t)).join(', ')}</p>` 
         : '';
@@ -511,32 +547,29 @@ async function generateAndDownloadEpub(metadata, startOrder, endOrder) {
 
     oebps.file("info.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(metadata.title)} - Info</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body>${infoContent}</body></html>`);
 
-    // Add cover and info to manifest/spine FIRST
     manifestItems += '<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';
     manifestItems += '<item id="info" href="info.xhtml" media-type="application/xhtml+xml"/>\n';
     manifestItems += '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n';
     
     spineItems += '<itemref idref="cover"/>\n';
-    spineItems += '<itemref idref="info"/>\n';  // ← Info page comes after cover
+    spineItems += '<itemref idref="info"/>\n';
     
-    // --- Chapter Files ---
     for (const ch of chapters) {
         const escapedContent = ch.content.split('\n').map(line => escapeXml(line.trim())).filter(line => line).join('</p><p>');
-const numberedTitle = formatChapterTitle(ch.order, ch.title);
-const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(numberedTitle)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(numberedTitle)}</h1><p>${escapedContent || ' '}</p></body></html>`;        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
+        const numberedTitle = formatChapterTitle(ch.order, ch.title);
+        const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>${escapeXml(numberedTitle)}</title><link rel="stylesheet" type="text/css" href="styles.css"/></head><body><h1 class="chapter-title">${escapeXml(numberedTitle)}</h1><p>${escapedContent || ' '}</p></body></html>`;
+        const filename = `chapter_${String(ch.order).padStart(4, '0')}.xhtml`;
         oebps.file(filename, xhtml);
         manifestItems += `<item id="ch${ch.order}" href="${filename}" media-type="application/xhtml+xml"/>\n`;
         spineItems += `<itemref idref="ch${ch.order}"/>\n`;
     }
     
-    // --- content.opf ---
     const safeTitle = escapeXml(metadata.title), safeAuthor = escapeXml(metadata.author || 'Unknown');
     const safeDesc = metadata.description ? escapeXml(metadata.description) : '';
     const tagsXml = metadata.tags.filter(t => t).map(tag => `<dc:subject>${escapeXml(tag)}</dc:subject>`).join('\n    ');
     
     oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="uid">${uid}</dc:identifier><dc:title>${safeTitle}</dc:title><dc:creator>${safeAuthor}</dc:creator><dc:language>en</dc:language><dc:date>${timestamp}</dc:date>${safeDesc ? `<dc:description>${safeDesc}</dc:description>` : ''}${tagsXml ? '\n    ' + tagsXml : ''}</metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="css" href="styles.css" media-type="text/css"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
     
-    // --- toc.ncx with info page ---
     const navPoints = [
         `<navPoint id="navpoint-0" playOrder="0"><navLabel><text>📋 Novel Info</text></navLabel><content src="info.xhtml"/></navPoint>`,
         ...chapters.map((ch, idx) => `\n    <navPoint id="navpoint-${idx+1}" playOrder="${idx+1}"><navLabel><text>${escapeXml(formatChapterTitle(ch.order, ch.title))}</text></navLabel><content src="chapter_${String(ch.order).padStart(4, '0')}.xhtml"/></navPoint>`)
@@ -544,7 +577,6 @@ const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns=
     
     oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uid}"/></head><docTitle><text>${safeTitle}</text></docTitle><docAuthor><text>${safeAuthor}</text></docAuthor><navMap>${navPoints}\n  </navMap></ncx>`);
     
-    // --- nav.xhtml with info page ---
     const navItems = [
         `<li><a href="info.xhtml">📋 Novel Info</a></li>`,
         ...chapters.map(ch => `<li><a href="chapter_${String(ch.order).padStart(4, '0')}.xhtml">${escapeXml(formatChapterTitle(ch.order, ch.title))}</a></li>`)
@@ -552,7 +584,6 @@ const xhtml = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns=
     
     oebps.file("nav.xhtml", `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Table of Contents</title></head><body><nav epub:type="toc"><h1>Contents</h1><ol>${navItems}</ol></nav></body></html>`);
     
-    // --- Generate and Download ---
     const safeFilename = sanitizeFilename(metadata.title);
     const filename = `${safeFilename}.epub`;
     
@@ -604,6 +635,6 @@ if (rangeInput) {
     });
 }
 
-console.log("🔍 WTR Downloader loaded - Full term support, wsrv.nl cover proxy, modal fixed, info page added");
+console.log("🔍 WTR Downloader loaded - NEW API support (content_url flow), full term support, wsrv.nl cover proxy");
 
 })();
