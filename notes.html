@@ -127,6 +127,82 @@
             flex: 1;
             margin: 0;
         }
+        .list-favicon {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            object-fit: cover;
+            flex-shrink: 0;
+            margin-right: 8px;
+        }
+        .list-favicon-placeholder {
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+            margin-right: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            background: #eee;
+            border-radius: 4px;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        .toolbar button {
+            font-size: 14px;
+            padding: 8px 14px;
+        }
+        #syncStatus {
+            font-size: 13px;
+            color: #666;
+            margin-left: 8px;
+        }
+        .token-section {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+        .token-section label {
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        .token-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .token-row input {
+            flex: 1;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .token-row button {
+            font-size: 13px;
+            padding: 6px 10px;
+            background-color: #607D8B;
+        }
+        .token-row button:hover {
+            background-color: #455A64;
+        }
+        .token-hint {
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+        }
+        #tokenStatus {
+            font-size: 12px;
+            color: #4CAF50;
+            margin-left: 6px;
+        }
     </style>
 </head>
 <body>
@@ -154,8 +230,26 @@
     <div id="message"></div>
     <hr>
     <h2>Read Later List</h2>
-    <button id="loadListButton">Load Read Later List</button>
-    <button id="epubButton">📚 Export All as EPUB</button>
+
+    <!-- GitHub Token Section -->
+    <div class="token-section" id="tokenSection">
+        <label for="tokenInput">🔑 GitHub Personal Access Token (repo scope):</label>
+        <div class="token-row">
+            <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+            <button id="toggleTokenVisibility" type="button">👁 Show</button>
+            <button id="clearTokenButton" type="button" style="background-color: #f44336;">✕ Clear</button>
+            <span id="tokenStatus"></span>
+        </div>
+        <div class="token-hint">Token is kept in memory only — never saved to disk. Required for Save JSON to GitHub.</div>
+    </div>
+
+    <div class="toolbar">
+        <button id="loadListButton">Load Read Later List</button>
+        <button id="epubButton">📚 Export All as EPUB</button>
+        <button id="saveJsonButton" style="background-color: #ff9800;">💾 Save JSON to GitHub</button>
+        <button id="loadJsonButton" style="background-color: #2196F3;">📂 Load JSON from GitHub</button>
+        <span id="syncStatus"></span>
+    </div>
     <input type="text" id="searchInput" placeholder="Search saved items..." style="width: 100%; padding: 8px; margin-bottom: 10px; display: none;">
     <button id="toggleOrderBtn" style="margin-bottom: 10px; display: none;">Show Newest First</button>
     <div id="readLaterList" style="margin-top: 20px;"></div>
@@ -167,7 +261,7 @@
         <button id="backToList" style="margin-top: 20px;">← Back to List</button>
     </div>
 
-    <!-- JSZip for building the EPUB (which is a ZIP file) -->
+    <!-- JSZip for building the EPUB and ZIP -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <script>
@@ -180,9 +274,46 @@
             const cancelEditButton = document.getElementById('cancelEditButton');
             const messageDiv = document.getElementById('message');
             const faviconContainer = document.getElementById('faviconContainer');
+            const syncStatus = document.getElementById('syncStatus');
+
+            // Token elements
+            const tokenInput = document.getElementById('tokenInput');
+            const toggleTokenVisibility = document.getElementById('toggleTokenVisibility');
+            const clearTokenButton = document.getElementById('clearTokenButton');
+            const tokenStatus = document.getElementById('tokenStatus');
 
             const STORAGE_KEY = 'readLaterItems';
             let editingId = null;
+            let githubToken = ''; // kept in memory only
+
+            // ---------- Token UI ----------
+            tokenInput.addEventListener('input', () => {
+                githubToken = tokenInput.value.trim();
+                if (githubToken) {
+                    tokenStatus.textContent = '✓ token set';
+                    tokenStatus.style.color = '#4CAF50';
+                } else {
+                    tokenStatus.textContent = '';
+                }
+            });
+
+            toggleTokenVisibility.addEventListener('click', () => {
+                if (tokenInput.type === 'password') {
+                    tokenInput.type = 'text';
+                    toggleTokenVisibility.textContent = '🙈 Hide';
+                } else {
+                    tokenInput.type = 'password';
+                    toggleTokenVisibility.textContent = '👁 Show';
+                }
+            });
+
+            clearTokenButton.addEventListener('click', () => {
+                tokenInput.value = '';
+                githubToken = '';
+                tokenStatus.textContent = '';
+                tokenInput.type = 'password';
+                toggleTokenVisibility.textContent = '👁 Show';
+            });
 
             // ---------- Storage helpers ----------
             function getStoredItems() {
@@ -356,6 +487,8 @@
             const searchInput = document.getElementById('searchInput');
             const toggleOrderBtn = document.getElementById('toggleOrderBtn');
             const epubButton = document.getElementById('epubButton');
+            const saveJsonButton = document.getElementById('saveJsonButton');
+            const loadJsonButton = document.getElementById('loadJsonButton');
 
             let originalItems = [];
             let isReversed = true;
@@ -403,6 +536,16 @@
                 return null;
             }
 
+            function getFaviconUrl(link) {
+                if (!link) return null;
+                try {
+                    const urlObj = new URL(link);
+                    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(urlObj.hostname)}&sz=32`;
+                } catch (e) {
+                    return null;
+                }
+            }
+
             function renderList() {
                 let displayedItems = [...originalItems];
 
@@ -425,11 +568,14 @@
 
                 const listHtml = displayedItems.map(item => {
                     const originalIndex = originalItems.indexOf(item);
-                    const firstImgUrl = extractFirstImageUrl(item.content);
-                    const imgHtml = firstImgUrl
-                        ? `<img src="${firstImgUrl}" alt="" width="32" height="32" loading="lazy"
-                                style="margin-left: 10px; border-radius: 4px; object-fit: cover;">`
+                    const faviconUrl = getFaviconUrl(item.link);
+                    const faviconHtml = faviconUrl
+                        ? `<img src="${faviconUrl}" alt="" class="list-favicon" loading="lazy"
+                                onerror="this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.style.display='flex')">`
                         : '';
+                    const placeholderHtml = faviconUrl
+                        ? `<span class="list-favicon-placeholder" style="display:none;">🔗</span>`
+                        : `<span class="list-favicon-placeholder">🔗</span>`;
 
                     return `
                         <div class="item-row" data-item-id="${item.id}">
@@ -437,10 +583,11 @@
                                 style="text-align: left; padding: 10px; border: 1px solid #ccc; 
                                        border-radius: 4px; background: white; cursor: pointer; 
                                        display: flex; align-items: center; justify-content: space-between;">
-                                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center;">
+                                    ${faviconHtml}
+                                    ${placeholderHtml}
                                     ${escapeHtml(item.title) || '(No title)'}
                                 </span>
-                                ${imgHtml}
                             </button>
                             <button class="action-btn edit-btn" data-action="edit" data-item-id="${item.id}">Edit</button>
                             <button class="action-btn delete-btn" data-action="delete" data-item-id="${item.id}">Delete</button>
@@ -541,6 +688,9 @@
                 readLaterList.style.display = 'block';
                 loadListButton.style.display = 'inline-block';
 
+                // Always reload from storage to ensure fresh state
+                originalItems = getStoredItems();
+
                 if (originalItems.length > 0) {
                     searchInput.style.display = 'block';
                     toggleOrderBtn.style.display = 'block';
@@ -559,6 +709,250 @@
                 isReversed = !isReversed;
                 toggleOrderBtn.textContent = isReversed ? 'Show Oldest First' : 'Show Newest First';
                 renderList();
+            });
+
+            // ============================================================
+            // JSON SAVE / LOAD TO GITHUB (password protected ZIP)
+            // ============================================================
+            const GITHUB_USER = 'workit1990k-glitch';
+            const GITHUB_REPO = 'notes';
+            const GITHUB_BRANCH = 'main';
+            const ZIP_PASSWORD = 'F5dkSfC';
+            const ZIP_FILENAME = 'notes.zip';
+
+            function getGitHubRawUrl() {
+                return `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/${ZIP_FILENAME}`;
+            }
+
+            function getGitHubApiUrl() {
+                return `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${ZIP_FILENAME}`;
+            }
+
+            // Encrypt JSON string with AES-GCM using password-derived key
+            async function encryptJson(jsonStr, password) {
+                const enc = new TextEncoder();
+                const salt = crypto.getRandomValues(new Uint8Array(16));
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+
+                const keyMaterial = await crypto.subtle.importKey(
+                    'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+                );
+
+                const key = await crypto.subtle.deriveKey(
+                    {
+                        name: 'PBKDF2',
+                        salt: salt,
+                        iterations: 100000,
+                        hash: 'SHA-256'
+                    },
+                    keyMaterial,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['encrypt']
+                );
+
+                const encrypted = await crypto.subtle.encrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    enc.encode(jsonStr)
+                );
+
+                // Format: salt(16) + iv(12) + ciphertext
+                const result = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
+                result.set(salt, 0);
+                result.set(iv, salt.length);
+                result.set(new Uint8Array(encrypted), salt.length + iv.length);
+                return result;
+            }
+
+            // Decrypt with AES-GCM
+            async function decryptJson(encryptedData, password) {
+                const enc = new TextEncoder();
+                const dec = new TextDecoder();
+
+                if (encryptedData.length < 28) throw new Error('Invalid encrypted data');
+
+                const salt = encryptedData.slice(0, 16);
+                const iv = encryptedData.slice(16, 28);
+                const ciphertext = encryptedData.slice(28);
+
+                const keyMaterial = await crypto.subtle.importKey(
+                    'raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+                );
+
+                const key = await crypto.subtle.deriveKey(
+                    {
+                        name: 'PBKDF2',
+                        salt: salt,
+                        iterations: 100000,
+                        hash: 'SHA-256'
+                    },
+                    keyMaterial,
+                    { name: 'AES-GCM', length: 256 },
+                    false,
+                    ['decrypt']
+                );
+
+                const decrypted = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    ciphertext
+                );
+
+                return dec.decode(decrypted);
+            }
+
+            // Save JSON to GitHub as password-protected ZIP
+            saveJsonButton.addEventListener('click', async () => {
+                if (!githubToken) {
+                    showMessage('Please enter your GitHub token in the field above.', 'error');
+                    tokenInput.focus();
+                    return;
+                }
+
+                saveJsonButton.disabled = true;
+                syncStatus.textContent = 'Encrypting & uploading...';
+                showMessage('Preparing JSON and uploading to GitHub...', 'processing');
+
+                try {
+                    const items = getStoredItems();
+                    const jsonStr = JSON.stringify(items, null, 2);
+
+                    // Encrypt JSON with password
+                    const encryptedBytes = await encryptJson(jsonStr, ZIP_PASSWORD);
+
+                    // Create ZIP containing the encrypted file
+                    const zip = new JSZip();
+                    zip.file('notes.json.enc', encryptedBytes);
+                    const zipBlob = await zip.generateAsync({
+                        type: 'blob',
+                        compression: 'DEFLATE'
+                    });
+
+                    // Convert blob to base64 for GitHub API
+                    const reader = new FileReader();
+                    const base64Promise = new Promise((resolve, reject) => {
+                        reader.onload = () => resolve(reader.result.split(',')[1]);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(zipBlob);
+                    });
+                    const base64Content = await base64Promise;
+
+                    // Get current file SHA if it exists
+                    let sha = null;
+                    try {
+                        const getRes = await fetch(getGitHubApiUrl(), {
+                            headers: {
+                                'Authorization': `token ${githubToken}`,
+                                'Accept': 'application/vnd.github.v3+json'
+                            }
+                        });
+                        if (getRes.ok) {
+                            const data = await getRes.json();
+                            sha = data.sha;
+                        }
+                    } catch (e) {
+                        // File doesn't exist, will create new
+                    }
+
+                    // Upload to GitHub
+                    const body = {
+                        message: `Update notes.zip (${new Date().toISOString()})`,
+                        content: base64Content,
+                        branch: GITHUB_BRANCH
+                    };
+                    if (sha) body.sha = sha;
+
+                    const putRes = await fetch(getGitHubApiUrl(), {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `token ${githubToken}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(body)
+                    });
+
+                    if (!putRes.ok) {
+                        const errData = await putRes.json().catch(() => ({}));
+                        throw new Error(errData.message || `GitHub API error: ${putRes.status}`);
+                    }
+
+                    syncStatus.textContent = `Saved at ${new Date().toLocaleTimeString()}`;
+                    showMessage(`✅ Saved ${items.length} items to GitHub (${ZIP_FILENAME}).`, 'success');
+                } catch (err) {
+                    console.error('Save to GitHub failed:', err);
+                    syncStatus.textContent = 'Save failed';
+                    showMessage(`Save error: ${err.message}`, 'error');
+                } finally {
+                    saveJsonButton.disabled = false;
+                }
+            });
+
+            // Load JSON from GitHub (password-protected ZIP)
+            loadJsonButton.addEventListener('click', async () => {
+                if (!confirm('Load notes.zip from GitHub and replace local data? This cannot be undone.')) return;
+
+                loadJsonButton.disabled = true;
+                syncStatus.textContent = 'Downloading & decrypting...';
+                showMessage('Fetching notes.zip from GitHub...', 'processing');
+
+                try {
+                    // Fetch the raw ZIP file from GitHub
+                    const response = await fetch(getGitHubRawUrl() + '?t=' + Date.now());
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch ZIP: ${response.status} ${response.statusText}`);
+                    }
+
+                    const zipBlob = await response.blob();
+
+                    // Unzip with JSZip
+                    const zip = await JSZip.loadAsync(zipBlob);
+                    const encFile = zip.file('notes.json.enc');
+                    if (!encFile) {
+                        throw new Error('notes.json.enc not found inside the ZIP.');
+                    }
+
+                    const encBytes = await encFile.async('uint8array');
+
+                    // Decrypt with password
+                    const jsonStr = await decryptJson(encBytes, ZIP_PASSWORD);
+
+                    // Parse and validate
+                    const parsed = JSON.parse(jsonStr);
+                    if (!Array.isArray(parsed)) {
+                        throw new Error('Decrypted data is not a valid array.');
+                    }
+
+                    // Replace localStorage
+                    setStoredItems(parsed);
+                    originalItems = parsed;
+
+                    // Refresh UI
+                    if (parsed.length > 0) {
+                        readLaterList.style.display = 'block';
+                        loadListButton.style.display = 'inline-block';
+                        searchInput.style.display = 'block';
+                        toggleOrderBtn.style.display = 'block';
+                        epubButton.style.display = 'inline-block';
+                        blogPostView.style.display = 'none';
+                        renderList();
+                    } else {
+                        readLaterList.innerHTML = '<p>No items saved yet.</p>';
+                        searchInput.style.display = 'none';
+                        toggleOrderBtn.style.display = 'none';
+                        epubButton.style.display = 'none';
+                    }
+
+                    syncStatus.textContent = `Loaded at ${new Date().toLocaleTimeString()}`;
+                    showMessage(`✅ Loaded ${parsed.length} items from GitHub.`, 'success');
+                } catch (err) {
+                    console.error('Load from GitHub failed:', err);
+                    syncStatus.textContent = 'Load failed';
+                    showMessage(`Load error: ${err.message}`, 'error');
+                } finally {
+                    loadJsonButton.disabled = false;
+                }
             });
 
             // ============================================================
@@ -743,10 +1137,7 @@ ${spineItems}
             // Render stored content into XHTML-safe HTML
             function renderContentToHtml(content) {
                 if (!content) return '';
-                // Escape first
                 let escaped = escapeXml(content);
-                // If it looks like it contains HTML tags originally, this will have escaped them.
-                // We want basic text with line breaks preserved.
                 return escaped.replace(/\n/g, '<br/>');
             }
 
