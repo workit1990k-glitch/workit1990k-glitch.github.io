@@ -586,7 +586,7 @@ function createBookElement(book) {
 
   div.innerHTML = `
     <img src="${thumbURL || PLACEHOLDER}" loading="lazy" alt="">
-    ${isNested ? '<span class="nested-badge">nested</span>' : ''}
+    ${isNested ? '' : ''}
     <span title="${book.name}">${displayName}</span>
   `;
 
