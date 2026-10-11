@@ -983,7 +983,7 @@ function renderPlaceholders(entries) {
     ph.style.position = "relative";
     if (entry.isNested) {
       const b = document.createElement('span');
-      b.className = 'nested-badge'; b.textContent = 'nested';
+      b.className = 'nested-badge'; b.textContent = '';
       ph.appendChild(b);
     }
     if (folder && chapterStartIndex[folder].element === null) chapterStartIndex[folder].element = ph;
