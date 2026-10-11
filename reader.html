@@ -961,7 +961,7 @@ async function loadZipFile(file) {
 
   currentFolder = ""; folderSelect.value = "";
   renderPlaceholders(imageEntries);
-  showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? ' (nested)' : ''));
+  showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? '' : ''));
   window.scrollTo(0, 0);
   if (!getMangaFromHash()) setHashForManga(currentZipName);
 }
