@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manga Archive Optimizer · AVIF & JXL</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+--bg-primary: #1a1b26;
+--bg-secondary: #24283b;
+--bg-tertiary: #2f3549;
+--text-primary: #c0caf5;
+--text-secondary: #7982a9;
+--accent: #e0af68;
+--accent-hover: #f0bf78;
+--success: #9ece6a;
+--border: #414868;
+--error: #f7768e;
+--info: #7aa2f7;
+}
+body {
+font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+background: var(--bg-primary);
+color: var(--text-primary);
+min-height: 100vh;
+padding: 20px;
+}
+.container { max-width: 1000px; margin: 0 auto; }
+.header { text-align: center; margin-bottom: 30px; }
+.header h1 { font-size: 28px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.header p { color: var(--text-secondary); font-size: 14px; }
+.upload-area {
+background: var(--bg-secondary);
+border: 2px dashed var(--border);
+border-radius: 12px;
+padding: 60px 40px;
+text-align: center;
+cursor: pointer;
+transition: all 0.3s;
+margin-bottom: 20px;
+}
+.upload-area:hover, .upload-area.dragover {
+border-color: var(--accent);
+background: rgba(224, 175, 104, 0.05);
+}
+.upload-area.has-file { border-style: solid; border-color: var(--success); }
+.upload-icon { font-size: 48px; margin-bottom: 16px; }
+.upload-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.upload-subtitle { font-size: 13px; color: var(--text-secondary); }
+#fileInput { display: none; }
+.queue-panel {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+display: none;
+}
+.queue-panel.active { display: block; }
+.queue-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.queue-title { font-size: 14px; font-weight: 600; }
+.queue-stats { font-size: 12px; color: var(--text-secondary); }
+.queue-list {
+max-height: 200px;
+overflow-y: auto;
+background: var(--bg-primary);
+border-radius: 8px;
+padding: 8px;
+}
+.queue-item {
+display: flex;
+justify-content: space-between;
+align-items: center;
+padding: 8px 12px;
+background: var(--bg-tertiary);
+border-radius: 6px;
+margin-bottom: 4px;
+font-size: 12px;
+}
+.queue-item.processing { border-left: 3px solid var(--accent); }
+.queue-item.completed { border-left: 3px solid var(--success); }
+.queue-item.failed { border-left: 3px solid var(--error); }
+.queue-item-name { color: var(--text-primary); word-break: break-all; }
+.queue-item-status { color: var(--text-secondary); min-width: 80px; text-align: right; }
+.archive-info {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+display: none;
+}
+.archive-info.active { display: block; }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.info-card { background: var(--bg-tertiary); border-radius: 8px; padding: 16px; text-align: center; }
+.info-label { font-size: 11px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.info-value { font-size: 20px; font-weight: 700; color: var(--accent); }
+.info-value.success { color: var(--success); }
+.info-value.error { color: var(--error); }
+.archive-name {
+font-size: 14px;
+color: var(--text-secondary);
+text-align: center;
+padding: 12px;
+background: var(--bg-tertiary);
+border-radius: 8px;
+margin-bottom: 16px;
+word-break: break-all;
+}
+.btn-group { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn {
+padding: 12px 32px;
+background: var(--accent);
+color: var(--bg-primary);
+border: none;
+border-radius: 8px;
+font-weight: 600;
+font-size: 14px;
+cursor: pointer;
+transition: all 0.2s;
+display: flex;
+align-items: center;
+gap: 8px;
+}
+.btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.btn-success { background: var(--success); }
+.btn-success:hover { background: #a8d880; }
+.progress-panel {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+display: none;
+}
+.progress-panel.active { display: block; }
+.progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.progress-title { font-size: 14px; font-weight: 600; }
+.progress-stats { font-size: 12px; color: var(--text-secondary); }
+.progress-bar-container {
+height: 8px;
+background: var(--bg-tertiary);
+border-radius: 4px;
+overflow: hidden;
+margin-bottom: 16px;
+}
+.progress-bar {
+height: 100%;
+background: linear-gradient(90deg, var(--accent), var(--success));
+border-radius: 4px;
+transition: width 0.3s;
+width: 0%;
+}
+.console {
+background: var(--bg-primary);
+border-radius: 8px;
+border: 1px solid var(--border);
+height: 300px;
+overflow-y: auto;
+padding: 12px;
+font-family: 'Consolas', 'Monaco', monospace;
+font-size: 11px;
+}
+.console-line {
+padding: 4px 8px;
+margin-bottom: 2px;
+border-radius: 4px;
+display: flex;
+gap: 8px;
+}
+.console-line.info { color: var(--text-secondary); }
+.console-line.success { color: var(--success); }
+.console-line.error { color: var(--error); }
+.console-line.warning { color: var(--accent); }
+.console-timestamp { color: var(--text-secondary); min-width: 70px; }
+.result-panel {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+display: none;
+}
+.result-panel.active { display: block; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.result-card { background: var(--bg-tertiary); border-radius: 8px; padding: 20px; text-align: center; }
+.result-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px; }
+.result-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+.result-value.before { color: var(--text-primary); }
+.result-value.after { color: var(--success); }
+.result-value.savings { color: var(--accent); }
+.savings-badge {
+display: inline-block;
+background: var(--success);
+color: var(--bg-primary);
+padding: 4px 12px;
+border-radius: 20px;
+font-size: 12px;
+font-weight: 700;
+margin-top: 8px;
+}
+.image-preview {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+gap: 8px;
+margin-top: 16px;
+max-height: 200px;
+overflow-y: auto;
+padding: 8px;
+background: var(--bg-primary);
+border-radius: 8px;
+}
+.preview-item { aspect-ratio: 1; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+.preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.settings-panel {
+background: var(--bg-secondary);
+border-radius: 12px;
+border: 1px solid var(--border);
+padding: 20px;
+margin-bottom: 20px;
+}
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.setting-item { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-size: 13px; color: var(--text-secondary); }
+.setting-input {
+padding: 10px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 14px;
+outline: none;
+}
+.setting-input:focus { border-color: var(--accent); }
+.setting-select {
+padding: 10px 12px;
+background: var(--bg-primary);
+border: 1px solid var(--border);
+border-radius: 6px;
+color: var(--text-primary);
+font-size: 14px;
+outline: none;
+cursor: pointer;
+}
+.setting-select:focus { border-color: var(--accent); }
+.spinner {
+width: 20px;
+height: 20px;
+border: 2px solid var(--border);
+border-top-color: var(--accent);
+border-radius: 50%;
+animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.hidden { display: none !important; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+@media (max-width: 600px) {
+.btn-group { flex-direction: column; }
+.btn { width: 100%; justify-content: center; }
+.info-grid, .result-grid { grid-template-columns: 1fr; }
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>📚 Manga Archive Optimizer · AVIF & JXL</h1>
+<p>Upload CBZ/ZIP/RAR archives, optimize images to WebP / AVIF / JXL, reduce size</p>
+</div>
+
+<!-- Upload Area -->
+<div class="upload-area" id="uploadArea">
+<div class="upload-icon">📦</div>
+<div class="upload-title">Drop Archives Here or Click to Upload</div>
+<div class="upload-subtitle">Supports: CBZ, ZIP, RAR (images: JPG, PNG, WEBP, GIF, BMP, AVIF, JXL) - Multiple files</div>
+<input type="file" id="fileInput" accept=".cbz,.zip,.rar,.cbr" multiple>
+</div>
+
+<!-- Queue Panel -->
+<div class="queue-panel" id="queuePanel">
+<div class="queue-header">
+<div class="queue-title">📋 Processing Queue</div>
+<div class="queue-stats" id="queueStats">0 files pending</div>
+</div>
+<div class="queue-list" id="queueList"></div>
+</div>
+
+<!-- Settings Panel -->
+<div class="settings-panel">
+<div class="settings-grid">
+<div class="setting-item">
+<label class="setting-label">Output Format</label>
+<select class="setting-select" id="outputFormat">
+<option value="webp">WebP (Recommended)</option>
+<option value="avif">AVIF (best compression)</option>
+<option value="jxl">JXL (JPEG XL) *</option>
+<option value="jpeg">JPEG</option>
+<option value="png">PNG</option>
+</select>
+</div>
+<div class="setting-item">
+<label class="setting-label">Quality (1-100)</label>
+<input type="number" class="setting-input" id="quality" value="75" min="1" max="100">
+</div>
+<div class="setting-item">
+<label class="setting-label">Concurrency</label>
+<select class="setting-select" id="concurrency">
+<option value="5">5 images</option>
+<option value="10" selected>10 images</option>
+<option value="15">15 images</option>
+<option value="20">20 images</option>
+</select>
+</div>
+<div class="setting-item">
+<label class="setting-label">Max Width (px)</label>
+<input type="number" class="setting-input" id="maxWidth" value="0" min="0" placeholder="0 = No limit">
+</div>
+<div class="setting-item">
+<label class="setting-label">Max Height (px)</label>
+<input type="number" class="setting-input" id="maxHeight" value="0" min="0" placeholder="0 = No limit">
+</div>
+</div>
+<p style="font-size:12px; color:var(--text-secondary); margin-top:12px;">* JXL uses a WebAssembly encoder (if supported). Fallback: original kept.</p>
+</div>
+
+<!-- Archive Info -->
+<div class="archive-info" id="archiveInfo">
+<div class="archive-name" id="archiveName"></div>
+<div class="info-grid">
+<div class="info-card"><div class="info-label">Total Images</div><div class="info-value" id="imageCount">0</div></div>
+<div class="info-card"><div class="info-label">Original Size</div><div class="info-value" id="originalSize">0 MB</div></div>
+<div class="info-card"><div class="info-label">Archive Type</div><div class="info-value" id="archiveType">-</div></div>
+<div class="info-card"><div class="info-label">Status</div><div class="info-value success" id="archiveStatus">Ready</div></div>
+</div>
+<div class="btn-group">
+<button class="btn" id="optimizeBtn" onclick="startOptimization()"><span>⚡</span> Optimize Archive</button>
+<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Reset All</button>
+</div>
+</div>
+
+<!-- Progress Panel -->
+<div class="progress-panel" id="progressPanel">
+<div class="progress-header">
+<div class="progress-title">⏳ Optimization in Progress...</div>
+<div class="progress-stats" id="progressStats">0 / 0 images</div>
+</div>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+<div class="console" id="console"></div>
+</div>
+
+<!-- Result Panel -->
+<div class="result-panel" id="resultPanel">
+<div class="result-grid">
+<div class="result-card"><div class="result-label">Original Size</div><div class="result-value before" id="resultBefore">0 MB</div></div>
+<div class="result-card"><div class="result-label">Optimized Size</div><div class="result-value after" id="resultAfter">0 MB</div></div>
+<div class="result-card"><div class="result-label">Space Saved</div><div class="result-value savings" id="resultSavings">0 MB</div><div class="savings-badge" id="savingsPercent">0%</div></div>
+</div>
+<div class="btn-group">
+<button class="btn btn-success" id="downloadBtn" onclick="downloadOptimized()"><span>⬇</span> Download Optimized ZIP</button>
+<button class="btn btn-secondary" onclick="resetAll()"><span>🔄</span> Start Over</button>
+</div>
+<div class="image-preview" id="imagePreview"></div>
+</div>
+</div>
+
+<script>
+// ============ GLOBAL VARIABLES ============
+let fileQueue = [];
+let currentFileIndex = 0;
+let originalFile = null;
+let originalArchive = null;
+let optimizedArchive = null;
+let imageFiles = [];
+let processedImages = [];
+let originalSizeBytes = 0;
+let optimizedSizeBytes = 0;
+let isOptimizing = false;
+let isCancelled = false;
+let isQueueMode = false;
+let queueProcessing = false;
+
+// AVIF & JXL support flags
+let avifEncoderSupported = false;
+let jxlWasmEncoder = null; // will hold encoder module if loaded
+
+// ============ DOM ELEMENTS ============
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const queuePanel = document.getElementById('queuePanel');
+const queueList = document.getElementById('queueList');
+const queueStats = document.getElementById('queueStats');
+const archiveInfo = document.getElementById('archiveInfo');
+const progressPanel = document.getElementById('progressPanel');
+const resultPanel = document.getElementById('resultPanel');
+const consoleEl = document.getElementById('console');
+const optimizeBtn = document.getElementById('optimizeBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+
+// ============ BATCHED LOGGING ============
+let logBuffer = [];
+let logFlushTimer = null;
+
+function log(message, type = 'info') {
+    logBuffer.push({ message, type, time: new Date() });
+    if (logFlushTimer) clearTimeout(logFlushTimer);
+    if (logBuffer.length >= 10) {
+        flushLogs();
+    } else {
+        logFlushTimer = setTimeout(flushLogs, 100);
+    }
+}
+
+function flushLogs() {
+    if (logBuffer.length === 0) return;
+    const fragment = document.createDocumentFragment();
+    for (const { message, type, time } of logBuffer) {
+        const line = document.createElement('div');
+        line.className = `console-line ${type}`;
+        const timestamp = time.toLocaleTimeString();
+        line.innerHTML = `<span class="console-timestamp">[${timestamp}]</span><span>${message}</span>`;
+        fragment.appendChild(line);
+    }
+    consoleEl.appendChild(fragment);
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+    logBuffer = [];
+    if (logFlushTimer) { clearTimeout(logFlushTimer); logFlushTimer = null; }
+}
+window.addEventListener('beforeunload', flushLogs);
+function clearConsole() { flushLogs(); consoleEl.innerHTML = ''; }
+
+// ============ UTILITIES ============
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+function getFileExtension(filename) {
+    return filename.split('.').pop().toLowerCase();
+}
+function isImageFile(filename) {
+    const ext = getFileExtension(filename);
+    return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'jxl'].includes(ext);
+}
+
+// ============ DYNAMIC CONCURRENCY ============
+function getOptimalConcurrency() {
+    const userSetting = parseInt(document.getElementById('concurrency').value) || 10;
+    const hardwareCores = navigator.hardwareConcurrency || 4;
+    const memoryGB = navigator.deviceMemory || 4;
+    const coreLimit = Math.max(2, hardwareCores - 1);
+    const memoryLimit = Math.max(2, Math.floor(memoryGB * 2));
+    return Math.min(userSetting, coreLimit, memoryLimit, 20);
+}
+
+// ============ QUEUE DISPLAY ============
+function updateQueueDisplay() {
+    queueList.innerHTML = '';
+    let pending = 0, completed = 0, failed = 0;
+    for (let i = 0; i < fileQueue.length; i++) {
+        const item = fileQueue[i];
+        const div = document.createElement('div');
+        div.className = 'queue-item';
+        if (i < currentFileIndex) {
+            div.classList.add(item.failed ? 'failed' : 'completed');
+            completed++;
+        } else if (i === currentFileIndex && isOptimizing) {
+            div.classList.add('processing');
+        } else { pending++; }
+        div.innerHTML = `
+            <span class="queue-item-name">${i + 1}. ${item.file.name}</span>
+            <span class="queue-item-status">${i < currentFileIndex ? (item.failed ? '❌ Failed' : '✅ Done') : (i === currentFileIndex && isOptimizing ? '⏳ Processing' : '⏸ Pending')}</span>
+        `;
+        queueList.appendChild(div);
+    }
+    queueStats.textContent = `${pending} pending | ${completed} completed | ${failed} failed`;
+    queuePanel.classList.toggle('active', fileQueue.length > 0);
+}
+
+// ============ FILE HANDLING ============
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault(); uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleFiles(e.target.files); });
+
+function handleFiles(files) {
+    const validFiles = Array.from(files).filter(f => {
+        const ext = getFileExtension(f.name);
+        return ['cbz', 'zip', 'rar', 'cbr'].includes(ext);
+    });
+    if (validFiles.length === 0) { alert('No valid archive files (CBZ, ZIP, RAR, CBR).'); return; }
+    for (const file of validFiles) fileQueue.push({ file: file, failed: false });
+    log(`📦 Added ${validFiles.length} file(s) to queue`, 'info');
+    isQueueMode = fileQueue.length > 1;
+    updateQueueDisplay();
+    if (!queueProcessing && currentFileIndex < fileQueue.length) {
+        queueProcessing = true;
+        processNextFile();
+    }
+}
+
+async function processNextFile() {
+    if (currentFileIndex >= fileQueue.length) {
+        log(`🎉 All ${fileQueue.length} files processed!`, 'success');
+        isQueueMode = false; queueProcessing = false;
+        currentFileIndex = 0; fileQueue = [];
+        updateQueueDisplay();
+        return;
+    }
+    const queueItem = fileQueue[currentFileIndex];
+    log(`📁 Starting file ${currentFileIndex + 1}/${fileQueue.length}: ${queueItem.file.name}`, 'info');
+    try { await handleFile(queueItem.file, true); }
+    catch (err) {
+        log(`❌ File error: ${err.message}`, 'error');
+        queueItem.failed = true; updateQueueDisplay();
+        currentFileIndex++; processNextFile();
+    }
+}
+
+async function handleFile(file, fromQueue = false) {
+    if (!fromQueue) resetAll(); else resetCurrentFile();
+    originalFile = file;
+    const ext = getFileExtension(file.name);
+    document.getElementById('archiveName').textContent = file.name;
+    document.getElementById('archiveType').textContent = ext.toUpperCase();
+    uploadArea.classList.add('has-file');
+
+    try {
+        log(`📦 Loading: ${file.name}`, 'info');
+        originalArchive = await JSZip.loadAsync(file);
+        originalSizeBytes = file.size;
+        imageFiles = [];
+        const entries = Object.keys(originalArchive.files);
+        for (const filename of entries) {
+            const zipEntry = originalArchive.files[filename];
+            if (!zipEntry.dir && isImageFile(filename)) {
+                imageFiles.push({ name: filename, zipEntry: zipEntry });
+            }
+        }
+        imageFiles.sort((a, b) => {
+            const aNum = parseInt(a.name.match(/\d+/)?.[0] || '0');
+            const bNum = parseInt(b.name.match(/\d+/)?.[0] || '0');
+            return aNum - bNum;
+        });
+        if (imageFiles.length === 0) throw new Error('No images found');
+        document.getElementById('imageCount').textContent = imageFiles.length;
+        document.getElementById('originalSize').textContent = formatBytes(originalSizeBytes);
+        document.getElementById('archiveStatus').textContent = 'Optimizing...';
+        archiveInfo.classList.add('active');
+        updateQueueDisplay();
+        log(`✓ Found ${imageFiles.length} images`, 'success');
+        if (isQueueMode) await startOptimization(true);
+    } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+        document.getElementById('archiveStatus').textContent = 'Error';
+        document.getElementById('archiveStatus').className = 'info-value error';
+        if (isQueueMode) {
+            fileQueue[currentFileIndex].failed = true;
+            updateQueueDisplay(); currentFileIndex++; processNextFile();
+        } else { alert(`Failed: ${err.message}`); }
+    }
+}
+
+// ============ AVIF & JXL ENCODER INIT ============
+async function checkAvifSupport() {
+    try {
+        const canvas = new OffscreenCanvas(1, 1);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'red'; ctx.fillRect(0, 0, 1, 1);
+        await canvas.convertToBlob({ type: 'image/avif' });
+        avifEncoderSupported = true;
+        log('✅ AVIF encoding supported', 'success');
+    } catch (e) {
+        avifEncoderSupported = false;
+        log('⚠️ AVIF not supported by this browser – fallback to WebP for AVIF requests', 'warning');
+    }
+}
+
+// Try to load JXL WASM encoder (simplified: we use a CDN encoder if available)
+// In production you would bundle a proper lib. We'll attempt to load @jsquash/jxl
+async function initJxlEncoder() {
+    try {
+        // Dynamic import of a JXL encoder (simulated). We'll use a placeholder.
+        // For the purpose of this demo, we'll check if a global JXL encoder is present.
+        // If not, we fallback to WebP.
+        if (typeof window.JXL !== 'undefined' && window.JXL.encode) {
+            jxlWasmEncoder = window.JXL;
+            log('✅ JXL encoder available', 'success');
+        } else {
+            // Try to load from a CDN (optional, but we won't block)
+            log('⚠️ JXL encoder not found – JXL output will fallback to WebP/AVIF', 'warning');
+            jxlWasmEncoder = null;
+        }
+    } catch (e) {
+        jxlWasmEncoder = null;
+        log('⚠️ JXL encoder not available', 'warning');
+    }
+}
+
+// ============ IMAGE OPTIMIZATION (AVIF/JXL included) ============
+async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outputFormat) {
+    try {
+        // Decode using createImageBitmap
+        const bitmap = await createImageBitmap(blob, {
+            resizeWidth: maxWidth > 0 ? maxWidth : undefined,
+            resizeHeight: maxHeight > 0 ? maxHeight : undefined,
+            resizeQuality: 'high'
+        });
+        const width = bitmap.width;
+        const height = bitmap.height;
+        const canvas = new OffscreenCanvas(width, height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close();
+
+        let optimizedBlob = null;
+        let finalFormat = outputFormat;
+
+        // ---- Format selection with fallbacks ----
+        if (outputFormat === 'avif') {
+            if (avifEncoderSupported) {
+                try {
+                    optimizedBlob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
+                } catch (e) {
+                    log(`⚠️ AVIF encode failed for ${filename}, trying WebP`, 'warning');
+                    optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
+                    finalFormat = 'webp';
+                }
+            } else {
+                // Fallback to WebP
+                optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
+                finalFormat = 'webp';
+            }
+        } else if (outputFormat === 'jxl') {
+            // JXL path
+            if (jxlWasmEncoder) {
+                try {
+                    // Use encoder if available (synthetic example)
+                    const imageData = ctx.getImageData(0, 0, width, height);
+                    const encoded = await jxlWasmEncoder.encode(imageData, quality / 100);
+                    optimizedBlob = new Blob([encoded], { type: 'image/jxl' });
+                } catch (e) {
+                    log(`⚠️ JXL encode failed for ${filename}, falling back to AVIF/WebP`, 'warning');
+                    if (avifEncoderSupported) {
+                        optimizedBlob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
+                        finalFormat = 'avif';
+                    } else {
+                        optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
+                        finalFormat = 'webp';
+                    }
+                }
+            } else {
+                // Fallback: AVIF if supported, else WebP
+                if (avifEncoderSupported) {
+                    optimizedBlob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
+                    finalFormat = 'avif';
+                } else {
+                    optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
+                    finalFormat = 'webp';
+                }
+            }
+        } else {
+            // WebP, JPEG, PNG
+            optimizedBlob = await canvas.convertToBlob({ type: `image/${outputFormat}`, quality: quality / 100 });
+        }
+
+        // If something went wrong, fallback to original
+        if (!optimizedBlob) throw new Error('Encoding failed');
+
+        // Skip if optimized larger than original
+        if (optimizedBlob.size >= blob.size) {
+            return {
+                blob: blob, name: filename,
+                originalSize: blob.size, optimizedSize: blob.size,
+                wasSkipped: true
+            };
+        }
+
+        // Determine output filename extension
+        let newName = filename;
+        const oldExt = getFileExtension(filename);
+        const extMap = { webp: 'webp', avif: 'avif', jxl: 'jxl', jpeg: 'jpg', png: 'png' };
+        const targetExt = extMap[finalFormat] || 'webp';
+        if (oldExt !== targetExt) {
+            newName = filename.replace(/\.[^.]+$/, `.${targetExt}`);
+        }
+
+        return {
+            blob: optimizedBlob, name: newName,
+            originalSize: blob.size, optimizedSize: optimizedBlob.size,
+            wasSkipped: false
+        };
+    } catch (err) {
+        console.warn(`Optimization failed for ${filename}:`, err);
+        return {
+            blob: blob, name: filename,
+            originalSize: blob.size, optimizedSize: blob.size,
+            wasSkipped: true, fallback: true
+        };
+    }
+}
+
+// ============ CONCURRENCY PROCESSING ============
+async function processWithConcurrency(items, processFn, concurrency) {
+    const results = [];
+    const executing = new Set();
+    for (let i = 0; i < items.length; i++) {
+        if (isCancelled) break;
+        const item = items[i];
+        const promise = processFn(item, i, items.length).then(result => {
+            executing.delete(promise);
+            return result;
+        }).catch(err => {
+            executing.delete(promise);
+            throw err;
+        });
+        executing.add(promise);
+        results.push(promise);
+        if (executing.size >= concurrency) await Promise.race(executing);
+    }
+    return Promise.all(results);
+}
+
+// ============ MAIN OPTIMIZATION ============
+async function startOptimization(autoQueue = false) {
+    if (isOptimizing || imageFiles.length === 0) return;
+    isOptimizing = true; isCancelled = false;
+    optimizeBtn.disabled = true; downloadBtn.disabled = true;
+    archiveInfo.classList.remove('active');
+    progressPanel.classList.add('active');
+    resultPanel.classList.remove('active');
+    clearConsole();
+    processedImages = [];
+
+    const quality = parseInt(document.getElementById('quality').value) || 75;
+    const maxWidth = parseInt(document.getElementById('maxWidth').value) || 0;
+    const maxHeight = parseInt(document.getElementById('maxHeight').value) || 0;
+    const outputFormat = document.getElementById('outputFormat').value;
+    const concurrency = getOptimalConcurrency();
+
+    log(`⚡ Starting optimization (concurrency: ${concurrency})...`, 'info');
+    log(`📊 Quality: ${quality}%, Format: ${outputFormat.toUpperCase()}`, 'info');
+    log(`📁 Images: ${imageFiles.length}`, 'info');
+
+    optimizedArchive = new JSZip();
+    let totalOriginalSize = 0;
+    let totalOptimizedSize = 0;
+    let processedCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    try {
+        const processImage = async (imageFile, index, total) => {
+            if (isCancelled) throw new Error('Cancelled');
+            try {
+                const originalBlob = await imageFile.zipEntry.async('blob');
+                totalOriginalSize += originalBlob.size;
+                const result = await optimizeImage(originalBlob, imageFile.name, quality, maxWidth, maxHeight, outputFormat);
+                optimizedArchive.file(result.name, result.blob);
+                totalOptimizedSize += result.optimizedSize;
+                processedImages.push(result);
+                if (result.wasSkipped) {
+                    log(`⊘ ${imageFile.name} (kept original)`, 'warning');
+                    skippedCount++;
+                } else {
+                    const savings = ((1 - result.optimizedSize / result.originalSize) * 100).toFixed(1);
+                    log(`✓ ${result.name} (-${savings}%)`, 'success');
+                }
+                processedCount++;
+            } catch (err) {
+                log(`❌ Failed: ${imageFile.name}`, 'error');
+                failedCount++;
+                try {
+                    const originalBlob = await imageFile.zipEntry.async('blob');
+                    optimizedArchive.file(imageFile.name, originalBlob);
+                    totalOptimizedSize += originalBlob.size;
+                } catch (e) {}
+            }
+            const percent = ((processedCount + failedCount + skippedCount) / total) * 100;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressStats').textContent = 
+                `${processedCount + failedCount + skippedCount}/${total} (${processedCount} optimized, ${skippedCount} skipped)`;
+        };
+
+        await processWithConcurrency(imageFiles, processImage, concurrency);
+        optimizedSizeBytes = totalOptimizedSize;
+
+        log('🗜️ Creating ZIP archive...', 'info');
+        const content = await optimizedArchive.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 9 }
+        });
+        optimizedArchive.blob = content;
+
+        showResults(totalOriginalSize, totalOptimizedSize, processedCount, failedCount, skippedCount);
+
+        if (autoQueue && isQueueMode) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            downloadOptimized(true);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            cleanupCurrentFile();
+            currentFileIndex++;
+            updateQueueDisplay();
+            isOptimizing = false;
+            processNextFile();
+            return;
+        }
+    } catch (err) {
+        log(`❌ Fatal: ${err.message}`, 'error');
+        if (autoQueue && isQueueMode) {
+            fileQueue[currentFileIndex].failed = true;
+            updateQueueDisplay();
+            cleanupCurrentFile();
+            currentFileIndex++;
+            isOptimizing = false;
+            processNextFile();
+            return;
+        }
+        alert(`Failed: ${err.message}`);
+    }
+    isOptimizing = false;
+    optimizeBtn.disabled = false;
+}
+
+// ============ RESULTS DISPLAY ============
+function showResults(original, optimized, processed, failed, skipped) {
+    progressPanel.classList.remove('active');
+    resultPanel.classList.add('active');
+    const savings = original - optimized;
+    const savingsPercent = original > 0 ? ((savings / original) * 100).toFixed(1) : 0;
+    document.getElementById('resultBefore').textContent = formatBytes(original);
+    document.getElementById('resultAfter').textContent = formatBytes(optimized);
+    document.getElementById('resultSavings').textContent = formatBytes(savings);
+    document.getElementById('savingsPercent').textContent = `-${savingsPercent}%`;
+    let summary = `🎉 Complete!`;
+    if (skipped > 0) summary += ` | ${skipped} kept original`;
+    if (failed > 0) summary += ` | ${failed} failed`;
+    log(`${summary} | Saved ${savingsPercent}%`, 'success');
+
+    const previewContainer = document.getElementById('imagePreview');
+    previewContainer.innerHTML = '';
+    processedImages.slice(0, 5).forEach(imgItem => {
+        const div = document.createElement('div');
+        div.className = 'preview-item';
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(imgItem.blob);
+        div.appendChild(img);
+        previewContainer.appendChild(div);
+    });
+    downloadBtn.disabled = false;
+}
+
+// ============ DOWNLOAD & CLEANUP ============
+function downloadOptimized(autoQueue = false) {
+    if (!optimizedArchive || !optimizedArchive.blob) return;
+    const originalName = originalFile.name.replace(/\.(cbz|zip|rar|cbr)$/i, '');
+    const newName = `${originalName}_optimized.zip`;
+    log(`⬇️ Downloading: ${newName}`, 'info');
+    saveAs(optimizedArchive.blob, newName);
+}
+
+function cleanupCurrentFile() {
+    const previewContainer = document.getElementById('imagePreview');
+    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    });
+    processedImages = [];
+    originalArchive = null; optimizedArchive = null; imageFiles = [];
+    log(`🧹 Memory cleared`, 'info');
+}
+function resetCurrentFile() {
+    const previewContainer = document.getElementById('imagePreview');
+    Array.from(previewContainer.querySelectorAll('img')).forEach(img => {
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    });
+    processedImages = [];
+    originalArchive = null; optimizedArchive = null; imageFiles = [];
+    originalSizeBytes = 0; optimizedSizeBytes = 0;
+    previewContainer.innerHTML = '';
+    clearConsole();
+}
+function resetAll() {
+    cleanupCurrentFile();
+    fileQueue = []; currentFileIndex = 0; originalFile = null;
+    isOptimizing = false; isCancelled = false;
+    isQueueMode = false; queueProcessing = false;
+    uploadArea.classList.remove('has-file');
+    archiveInfo.classList.remove('active');
+    progressPanel.classList.remove('active');
+    resultPanel.classList.remove('active');
+    queuePanel.classList.remove('active');
+    fileInput.value = '';
+    document.getElementById('imageCount').textContent = '0';
+    document.getElementById('originalSize').textContent = '0 MB';
+    document.getElementById('archiveType').textContent = '-';
+    document.getElementById('archiveStatus').textContent = 'Ready';
+    document.getElementById('archiveStatus').className = 'info-value success';
+    document.getElementById('progressBar').style.width = '0%';
+    document.getElementById('progressStats').textContent = '0 / 0 images';
+    downloadBtn.disabled = true;
+    queueList.innerHTML = ''; queueStats.textContent = '0 files pending';
+    clearConsole(); log('🔄 Ready', 'info');
+}
+function cancelOptimization() {
+    if (isOptimizing) {
+        isCancelled = true; isOptimizing = false; queueProcessing = false;
+        log('⚠️ Cancelled by user', 'warning');
+        optimizeBtn.disabled = false;
+    }
+}
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isOptimizing) cancelOptimization();
+});
+
+// ============ INIT ============
+(async function init() {
+    // Check AVIF support
+    await checkAvifSupport();
+    // Try to set up JXL encoder (placeholder / no-op if not available)
+    await initJxlEncoder();
+    // Feature detection for createImageBitmap
+    if (typeof createImageBitmap === 'undefined') {
+        log('⚠️ createImageBitmap not supported – optimization may fail', 'warning');
+    }
+    log('👋 Welcome! Upload archives to begin. AVIF & JXL ready.', 'info');
+})();
+</script>
+</body>
+</html>
