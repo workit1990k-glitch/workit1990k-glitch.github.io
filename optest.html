@@ -269,6 +269,7 @@ animation: spin 1s linear infinite;
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<base target="_blank">
 </head>
 <body>
 <div class="container">
@@ -329,7 +330,7 @@ animation: spin 1s linear infinite;
 <input type="number" class="setting-input" id="maxHeight" value="0" min="0" placeholder="0 = No limit">
 </div>
 </div>
-<p style="font-size:12px; color:var(--text-secondary); margin-top:12px;">* JXL uses a WebAssembly encoder (if supported). Fallback: original kept.</p>
+<p style="font-size:12px; color:var(--text-secondary); margin-top:12px;">* AVIF uses a WebAssembly encoder (@jsquash/avif) when available, so it works in all browsers with real quality control. JXL uses a WebAssembly encoder (if supported). Fallbacks: native canvas &rarr; WebP.</p>
 </div>
 
 <!-- Archive Info -->
@@ -390,6 +391,8 @@ let queueProcessing = false;
 
 // AVIF & JXL support flags
 let avifEncoderSupported = false;
+let avifWasmEncoder = null;   // @jsquash/avif module (WASM), once loaded
+let avifWasmLoading = null;   // promise while WASM is downloading/initialising
 let jxlWasmEncoder = null; // will hold encoder module if loaded
 
 // ============ DOM ELEMENTS ============
@@ -582,13 +585,37 @@ async function checkAvifSupport() {
         const canvas = new OffscreenCanvas(1, 1);
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = 'red'; ctx.fillRect(0, 0, 1, 1);
-        await canvas.convertToBlob({ type: 'image/avif' });
-        avifEncoderSupported = true;
-        log('✅ AVIF encoding supported', 'success');
+        const blob = await canvas.convertToBlob({ type: 'image/avif' });
+        // Browsers that can't encode AVIF silently return a PNG instead of throwing
+        avifEncoderSupported = (blob.type === 'image/avif');
+        if (avifEncoderSupported) {
+            log('✅ Native AVIF encoding supported (note: quality param ignored)', 'success');
+        } else {
+            log('⚠️ Native AVIF encoding not available – will use WASM encoder', 'warning');
+        }
     } catch (e) {
         avifEncoderSupported = false;
-        log('⚠️ AVIF not supported by this browser – fallback to WebP for AVIF requests', 'warning');
+        log('⚠️ Native AVIF encoding not available – will use WASM encoder', 'warning');
     }
+}
+
+// ============ AVIF WASM ENCODER (@jsquash/avif, libavif compiled to WASM) ============
+// Works in ALL modern browsers (Chrome/Firefox/Safari/Edge) and honours the quality setting.
+// Loaded lazily from esm.sh; subsequent calls reuse the cached promise/module.
+function initAvifWasmEncoder() {
+    if (avifWasmLoading) return avifWasmLoading;
+    avifWasmLoading = (async () => {
+        try {
+            const mod = await import('https://esm.sh/@jsquash/avif@2.1.1?target=es2022');
+            avifWasmEncoder = mod;
+            log('✅ AVIF WASM encoder ready (libavif) – quality control enabled', 'success');
+        } catch (e) {
+            avifWasmEncoder = null;
+            log('⚠️ AVIF WASM encoder failed to load (offline/CDN blocked?) – will try native canvas AVIF', 'warning');
+        }
+        return avifWasmEncoder;
+    })();
+    return avifWasmLoading;
 }
 
 // Try to load JXL WASM encoder (simplified: we use a CDN encoder if available)
@@ -633,16 +660,35 @@ async function optimizeImage(blob, filename, quality, maxWidth, maxHeight, outpu
 
         // ---- Format selection with fallbacks ----
         if (outputFormat === 'avif') {
-            if (avifEncoderSupported) {
+            let encoded = false;
+
+            // 1) Preferred: WASM encoder – real AVIF in every browser, quality honoured
+            if (avifWasmEncoder) {
                 try {
-                    optimizedBlob = await canvas.convertToBlob({ type: 'image/avif', quality: quality / 100 });
+                    const imageData = ctx.getImageData(0, 0, width, height);
+                    const buffer = await avifWasmEncoder.encode(imageData, {
+                        quality: quality,  // 1-100, same scale as the UI setting
+                        speed: 6           // 0 = slowest/best, 10 = fastest; 6 is a good balance
+                    });
+                    optimizedBlob = new Blob([buffer], { type: 'image/avif' });
+                    encoded = true;
                 } catch (e) {
-                    log(`⚠️ AVIF encode failed for ${filename}, trying WebP`, 'warning');
-                    optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
-                    finalFormat = 'webp';
+                    log(`⚠️ AVIF WASM encode failed for ${filename}: ${e.message}`, 'warning');
                 }
-            } else {
-                // Fallback to WebP
+            }
+
+            // 2) Fallback: native canvas AVIF (Chrome only; quality ignored)
+            if (!encoded && avifEncoderSupported) {
+                try {
+                    optimizedBlob = await canvas.convertToBlob({ type: 'image/avif' });
+                    encoded = true;
+                } catch (e) {
+                    log(`⚠️ Native AVIF encode failed for ${filename}, trying WebP`, 'warning');
+                }
+            }
+
+            // 3) Last resort: WebP
+            if (!encoded) {
                 optimizedBlob = await canvas.convertToBlob({ type: 'image/webp', quality: quality / 100 });
                 finalFormat = 'webp';
             }
@@ -932,6 +978,9 @@ document.addEventListener('keydown', (e) => {
 (async function init() {
     // Check AVIF support
     await checkAvifSupport();
+    // Start downloading the AVIF WASM encoder in the background
+    // (if the user picks WebP it's never awaited; if they pick AVIF it's usually ready by then)
+    initAvifWasmEncoder();
     // Try to set up JXL encoder (placeholder / no-op if not available)
     await initJxlEncoder();
     // Feature detection for createImageBitmap
