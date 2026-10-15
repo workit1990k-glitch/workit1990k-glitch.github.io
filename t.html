@@ -1,0 +1,63 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manga Downloader</title>
+<style>
+:root{color-scheme:dark;--bg:#10131b;--panel:#191f2b;--muted:#9ba8bc;--accent:#8b7cff;--line:#30394a}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(ellipse at top,#202844 0,#10131b 55%);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:#eef2ff}
+main{width:min(700px,100%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:clamp(22px,5vw,40px);box-shadow:0 24px 80px #0006}
+.kicker{color:#a99fff;font-weight:750;letter-spacing:.12em;text-transform:uppercase;font-size:.75rem}h1{font-size:clamp(1.8rem,5vw,2.7rem);line-height:1.1;margin:.6rem 0}p{color:var(--muted)}label{display:block;font-weight:650;margin:20px 0 8px}input{width:100%;padding:14px 15px;border:1px solid #414c62;border-radius:12px;background:#101520;color:#fff;font:inherit;outline:none}input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #8b7cff30}button{border:0;border-radius:12px;background:var(--accent);color:#fff;font:inherit;font-weight:750;padding:13px 18px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.actions{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}.secondary{background:#30394a}.status{margin-top:20px;padding:13px 15px;border-radius:12px;background:#111722;border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}.small{font-size:.88rem}.note{font-size:.85rem;border-left:3px solid #8b7cff;padding-left:12px;margin-top:22px}.bar{height:7px;background:#30394a;border-radius:99px;overflow:hidden;margin-top:12px;display:none}.bar span{height:100%;display:block;width:0;background:#a99fff;transition:width .2s}code{color:#d8d2ff}
+</style>
+</head>
+<body><main>
+<div class="kicker">Single-file starter</div>
+<h1>Manga downloader</h1>
+<p>Paste a chapter link and download its pages as a ZIP. This standalone HTML page can work directly only with image URLs the browser is allowed to access; most manga sites require a site-specific API or a small local server.</p>
+<label for="url">Manga chapter URL</label>
+<input id="url" type="url" placeholder="https://example.com/chapter/..." autocomplete="url">
+<div class="actions">
+<button id="go">Try download</button>
+<button class="secondary" id="clear">Clear</button>
+</div>
+<div class="bar" id="bar"><span id="fill"></span></div>
+<div class="status" id="status" role="status" aria-live="polite">Ready. Paste a chapter URL.</div>
+<p class="note"><b>Important:</b> a URL alone does not reveal every page image. This single-file version supports direct image URLs and simple chapter pages whose image elements are accessible to the browser. It cannot bypass CORS, logins, paywalls, or site protections. XComic's GraphQL chapter API generally needs a server-side request, so the previous XComic-specific downloader requires Node.js.</p>
+<p class="small">For best results, paste a direct image URL to download one image, or use a chapter page that exposes readable image links. Only save content you are authorized to download.</p>
+<script>
+const urlInput=document.querySelector('#url'),go=document.querySelector('#go'),clear=document.querySelector('#clear'),status=document.querySelector('#status'),bar=document.querySelector('#bar'),fill=document.querySelector('#fill');
+function say(s){status.textContent=s}
+function safeName(s){return (s||'manga-page').replace(/[^a-z0-9._-]+/gi,'_').slice(0,100)||'manga-page'}
+function downloadBlob(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1500)}
+go.addEventListener('click',async()=>{
+ const raw=urlInput.value.trim();if(!raw){say('Paste a URL first.');return}
+ let u;try{u=new URL(raw)}catch{say('That URL is not valid.');return}
+ if(!['http:','https:'].includes(u.protocol)){say('Only HTTP and HTTPS links are supported.');return}
+ go.disabled=true;bar.style.display='block';fill.style.width='20%';say('Trying to fetch the URL from your browser…');
+ try{
+   const response=await fetch(u.href,{mode:'cors',credentials:'omit'});
+   if(!response.ok)throw new Error('The site returned HTTP '+response.status+'.');
+   const type=(response.headers.get('content-type')||'').toLowerCase();fill.style.width='55%';
+   if(type.startsWith('image/')){
+     const blob=await response.blob();const ext=type.includes('png')?'png':type.includes('webp')?'webp':type.includes('gif')?'gif':type.includes('avif')?'avif':'jpg';
+     downloadBlob(blob,safeName(u.pathname.split('/').pop().split('?')[0]||'manga-page')+(u.pathname.split('/').pop().includes('.')?'':'.'+ext));fill.style.width='100%';say('Image download started.');
+   }else if(type.includes('text/html')||type.includes('application/xhtml')){
+     const text=await response.text();const doc=new DOMParser().parseFromString(text,'text/html');
+     const candidates=[...doc.querySelectorAll('img')].map(img=>img.getAttribute('src')||img.getAttribute('data-src')||img.getAttribute('data-original')).filter(Boolean).map(s=>{try{return new URL(s,u.href).href}catch{return null}}).filter(Boolean);
+     const unique=[...new Set(candidates)].filter(s=>/^https?:/i.test(s));
+     if(!unique.length)throw new Error('The page loaded, but no straightforward image links were found.');
+     say(`Found ${unique.length} image link(s). Browser restrictions may prevent downloading them all. Starting sequential downloads…`);
+     for(let i=0;i<unique.length;i++){
+       try{const r=await fetch(unique[i],{mode:'cors',credentials:'omit'});if(!r.ok)continue;const b=await r.blob();if(!b.type.startsWith('image/'))continue;const ext=b.type.includes('png')?'png':b.type.includes('webp')?'webp':b.type.includes('gif')?'gif':'jpg';downloadBlob(b,`manga_page_${String(i+1).padStart(3,'0')}.${ext}`);fill.style.width=Math.round((i+1)/unique.length*100)+'%';await new Promise(resolve=>setTimeout(resolve,250));}
+       catch(_){/* Cross-origin image blocked; continue with remaining pages. */}
+     }
+     say('Finished trying image downloads. If some pages are missing, the site likely blocks browser requests (CORS); a site-specific server is needed.');
+   }else throw new Error('The URL did not return an image or readable HTML page (content type: '+(type||'unknown')+').');
+ }catch(e){say('Could not download from this page: '+e.message+'\n\nMany manga sites block direct browser requests with CORS or require a site-specific API. This one-file page cannot bypass those restrictions.');fill.style.width='0%'}
+ finally{go.disabled=false;setTimeout(()=>{bar.style.display='none';fill.style.width='0%'},1800)}
+});
+clear.addEventListener('click',()=>{urlInput.value='';say('Ready. Paste a chapter URL.');urlInput.focus()});
+</script>
+</main></body></html>
