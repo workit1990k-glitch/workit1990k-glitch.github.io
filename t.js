@@ -13,9 +13,9 @@
 
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
-  const PAGE_CONCURRENCY = 2;   // parallel page downloads inside one chapter
+  const PAGE_CONCURRENCY = 3;   // parallel page downloads inside one chapter
   const IMG_RETRIES = 2;        // in-pass retries per image
-  const MIN_REQUEST_INTERVAL = 280; // ms between STARTS of image requests (global)
+  const MIN_REQUEST_INTERVAL = 100; // ms between STARTS of image requests (global)
 
   // Updated Proxies: Direct first, then your custom Cloudflare Worker
   // REPLACE 'https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev' with your actual Worker URL
