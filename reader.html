@@ -1055,10 +1055,16 @@ function setupImageObserver() {
       if (imageCache.has(path)) { replacePlaceholderWithImage(ph, imageCache.get(path)); continue; }
       try {
         const blob = await ie.entry.async("blob");
-        const url = URL.createObjectURL(blob);
-        imageCache.set(path, { url, blob });
-        currentBlobURLs.push(url);
-        replacePlaceholderWithImage(ph, { url, blob });
+        
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        
+        imageCache.set(path, { url: dataUrl, blob });
+        replacePlaceholderWithImage(ph, { url: dataUrl, blob });
       } catch(e) {
         ph.textContent = '❌ Failed to load'; ph.style.color = '#f66';
       }
