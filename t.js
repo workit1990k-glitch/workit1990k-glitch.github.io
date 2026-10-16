@@ -1,10 +1,8 @@
 /* ============================================================================
- * XCOMIC Downloader (Cloudflare Worker Only - Maximum Speed)
- * - Reads title id from https://xcomic.me/title/<id>
- * - Lets you pick an edition (language) and select chapters
- * - Downloads pages via Cloudflare Worker, resizes to max width 1280, converts to WebP q=0.75 (Client-side)
- * - Packs everything into one ZIP and triggers download
- * - Live counters, failed-pages list with retry
+ *  Downloader (Auto-Splitting ~495 MB, Simplified Naming)
+ * - Downloads via Cloudflare Worker, resizes to 1280px, WebP q=0.75 (Client-side)
+ * - Groups chapters into ~495 MB chunks.
+ * - File naming: TitleName_ch1-ch30.zip
  * ==========================================================================*/
 (async function () {
   'use strict';
@@ -13,13 +11,13 @@
 
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
-  const PAGE_CONCURRENCY = 3;   // Max browser concurrent connections per host
-  const IMG_RETRIES = 2;        // Reduced to 1 to fail fast and move on
+  const PAGE_CONCURRENCY = 6;
+  const IMG_RETRIES = 1;
+  const MAX_ZIP_BYTES = 495 * 1024 * 1024; // ~495 MB per ZIP part
 
   // ⚠️ REPLACE THIS WITH YOUR ACTUAL CLOUDFLARE WORKER URL
   const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
   
-  // Only use Cloudflare Worker. No direct attempts.
   const PROXIES = [
     { name: 'cloudflare', processed: false, make: (u) => CF_WORKER_URL + '/?url=' + encodeURIComponent(u) },
   ];
@@ -40,13 +38,14 @@
   .xcdl-row{display:flex;align-items:center;gap:6px;margin:4px 0}
   .xcdl-row select{flex:1;background:#0e1319;color:#e6e9ef;border:1px solid #2b3340;
     border-radius:6px;padding:5px}
-  .xcdl-btn{background:#2f6fed;border:none;color:#fff;border-radius:7px;padding:6px 12px;
-    cursor:pointer;font-size:12px}
-  .xcdl-btn.sec{background:#26303d}
+  .xcdl-btn{background:#2f6fed;border:none;color:#fff;border-radius:7px;padding:8px 12px;
+    cursor:pointer;font-size:12px;text-align:left;width:100%;margin-bottom:6px}
+  .xcdl-btn.sec{background:#26303d;width:auto;margin-bottom:0}
   .xcdl-btn:disabled{opacity:.45;cursor:default}
-  .xcdl-btn.danger{background:#b23b3b}
-  .xcdl-stats{padding:8px 12px 2px;border-top:1px solid #232b36;font-size:12px;color:#cfe0f5;
-    white-space:pre-line}
+  .xcdl-btn.danger{background:#b23b3b;width:auto;margin-bottom:0}
+  .xcdl-btn.part-btn{background:#1b2230;border:1px solid #2f6fed;display:flex;justify-content:space-between;align-items:center}
+  .xcdl-btn.part-btn:hover{background:#232d3d}
+  .xcdl-stats{padding:8px 12px 2px;border-top:1px solid #232b36;font-size:12px;color:#cfe0f5;white-space:pre-line}
   .xcdl-fails{max-height:110px;overflow-y:auto;padding:4px 12px;font-size:11px;color:#e08a8a}
   .xcdl-fails div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .xcdl-prog{padding:6px 12px 10px;font-size:11px;color:#7c8794;white-space:pre-line}
@@ -70,7 +69,7 @@
         <button class="xcdl-btn sec" id="xcdl-all">Select all</button>
         <button class="xcdl-btn sec" id="xcdl-none">None</button>
         <span style="flex:1"></span>
-        <button class="xcdl-btn sec" id="xcdl-retry" style="display:none">Retry failed</button>
+        <button class="xcdl-btn danger" id="xcdl-retry" style="display:none">Retry failed</button>
         <button class="xcdl-btn danger" id="xcdl-dl" disabled>Download ZIP</button>
       </div>
       <div class="xcdl-list" id="xcdl-list"><div class="xcdl-empty">Loading editions…</div></div>
@@ -85,6 +84,7 @@
   const $ = (sel) => root.querySelector(sel);
   const prog = (t) => { $('#xcdl-prog').textContent = t; };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
   /* ------------------------------------------------------------ JSZip */
   async function loadScript(src) {
@@ -96,9 +96,8 @@
   }
   try {
     if (!window.JSZip) {
-      const hosts = [];
-      try { hosts.push(new URL(document.currentScript.src).origin); } catch (_) {}
-      hosts.push('https://cdn.jsdelivr.net');
+      const hosts = ['https://cdn.jsdelivr.net'];
+      try { hosts.unshift(new URL(document.currentScript.src).origin); } catch (_) {}
       let ok = false;
       for (const h of hosts) {
         try { await loadScript(h + '/jszip.min.js'); ok = true; break; } catch (_) {}
@@ -127,7 +126,6 @@
   const m = location.pathname.match(/^\/title\/([^/]+)/i);
   if (!m) { prog('Open a /title/<id> page and run the bookmarklet again.'); return; }
   const titleId = m[1];
-  const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
   try {
     const html = await (await fetch(location.pathname)).text();
@@ -179,7 +177,7 @@
         label.className = 'xcdl-item';
         const num = ch.chaNum != null ? ch.chaNum : ch.serial;
         label.innerHTML = `<input type="checkbox" checked>
-          <span class="n">${ch.volNum ? 'v' + ch.volNum + ' ' : ''}c${num}</span>
+          <span class="n">${ch.volNum ? 'v' + ch.volNum + ' ' : ''}ch${num}</span>
           <span class="t" title=""></span>`;
         label.querySelector('.t').textContent = ch.dname || ('Chapter ' + num);
         label.dataset.id = ch.id;
@@ -195,7 +193,8 @@
     /* ------------------------------------------------------ download core */
     const stats = { chDone: 0, chTotal: 0, imgDone: 0, imgTotal: 0, failed: 0 };
     const failedList = [];
-    let zip = null;
+    let globalChaptersData = [];
+    let currentTitleName = '';
 
     function renderStats() {
       $('#xcdl-stats').textContent = `Chapters ${stats.chDone}/${stats.chTotal} · Images ${stats.imgDone}/${stats.imgTotal} · Failed ${stats.failed}`;
@@ -220,7 +219,6 @@
 
     async function grab(ch, idx, url, dir, label) {
       try {
-        let lastErr;
         for (const via of PROXIES) {
           try {
             const r = await fetch(via.make(url), { credentials: 'omit', mode: 'cors' });
@@ -229,94 +227,199 @@
             if (!b.type.startsWith('image/')) throw new Error('not an image (' + b.type + ')');
             
             const processedBlob = await toWebp(b, via.processed);
-            zip.file(`${dir}/${String(idx + 1).padStart(4, '0')}.webp`, processedBlob);
+            const fileName = `${dir}/${String(idx + 1).padStart(4, '0')}.webp`;
             
             stats.imgDone++;
             const fi = failedList.findIndex((f) => f.url === url && f.idx === idx && f.ch.id === ch.id);
             if (fi >= 0) { failedList.splice(fi, 1); stats.failed = failedList.length; }
             renderStats();
-            return true;
-          } catch (e) {
-            lastErr = e;
-          }
+            
+            return { name: fileName, blob: processedBlob, size: processedBlob.size };
+          } catch (e) { /* fall through to next proxy */ }
         }
         
         if (!failedList.some((f) => f.url === url && f.idx === idx && f.ch.id === ch.id)) {
           failedList.push({ ch, idx, url, dir, label });
+          stats.failed = failedList.length;
         }
-        stats.failed = failedList.length;
         renderStats();
-        return false;
+        return null;
       } catch (e) {
-        return false;
+        return null;
       }
     }
 
     async function downloadChapter(ch, dirBase) {
       const num = ch.chaNum != null ? ch.chaNum : ch.serial;
-      const label = `c${num}`;
-      const dir = `${dirBase}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}c${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
+      const label = `ch${num}`;
+      // Simplified internal folder structure: TitleName/ch1/
+      const dir = `${dirBase}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}ch${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
       const urls = (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls;
+      const files = [];
       
       for (let i = 0; i < urls.length; i += PAGE_CONCURRENCY) {
         const batch = urls.slice(i, i + PAGE_CONCURRENCY);
-        await Promise.all(batch.map((u, k) => grab(ch, i + k, u, dir, label)));
+        const results = await Promise.all(batch.map((u, k) => grab(ch, i + k, u, dir, label)));
+        for (const res of results) {
+          if (res) files.push(res);
+        }
         prog(`Chapter ${label}: ${Math.min(i + PAGE_CONCURRENCY, urls.length)}/${urls.length} pages`);
-        await sleep(50); // Let the UI event loop breathe to prevent "page unresponsive" warnings
+        await sleep(50);
       }
+      files.sort((a, b) => a.name.localeCompare(b.name));
+      return { ch, files };
+    }
+
+    function groupIntoParts(chaptersData, maxSizeBytes) {
+      const parts = [];
+      let currentPart = { startLabel: '', endLabel: '', totalSize: 0, chapters: [] };
+      
+      for (const chData of chaptersData) {
+        const num = chData.ch.chaNum != null ? chData.ch.chaNum : chData.ch.serial;
+        const label = `ch${num}`;
+        const chSize = chData.files.reduce((sum, f) => sum + f.size, 0);
+        
+        if (currentPart.totalSize + chSize > maxSizeBytes && currentPart.chapters.length > 0) {
+          parts.push(currentPart);
+          currentPart = { startLabel: label, endLabel: label, totalSize: chSize, chapters: [chData] };
+        } else {
+          if (currentPart.startLabel === '') currentPart.startLabel = label;
+          currentPart.endLabel = label;
+          currentPart.totalSize += chSize;
+          currentPart.chapters.push(chData);
+        }
+      }
+      if (currentPart.chapters.length > 0) {
+        parts.push(currentPart);
+      }
+      return parts;
+    }
+
+    function renderDownloadButtons(parts, titleName) {
+      const list = $('#xcdl-list');
+      list.innerHTML = '';
+      
+      const header = document.createElement('div');
+      header.style.padding = '10px';
+      header.style.color = '#cfe0f5';
+      header.innerHTML = `<strong>Ready!</strong> Split into ${parts.length} part(s) (~495 MB each).<br><small style="color:#7c8794">⚠ Click each button to download.</small>`;
+      list.appendChild(header);
+
+      parts.forEach((part, index) => {
+        const sizeMB = (part.totalSize / 1048576).toFixed(1);
+        const btn = document.createElement('button');
+        btn.className = 'xcdl-btn part-btn';
+        btn.innerHTML = `<span>⬇ ${part.startLabel} - ${part.endLabel}</span><span style="color:#8f9bad">${sizeMB} MB</span>`;
+        
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.querySelector('span:first-child').textContent = `⏳ Packing ${part.startLabel}-${part.endLabel}...`;
+          try {
+            const zip = new JSZip();
+            for (const chData of part.chapters) {
+              for (const file of chData.files) {
+                zip.file(file.name, file.blob);
+              }
+            }
+            prog(`Generating ZIP for ${part.startLabel}-${part.endLabel}...`);
+            const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            
+            // Simplified ZIP naming: TitleName_ch1-ch30.zip
+            a.download = `${titleName}_${part.startLabel}-${part.endLabel}.zip`;
+            
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+            
+            btn.querySelector('span:first-child').textContent = `✔ ${part.startLabel}-${part.endLabel}`;
+            btn.style.background = '#1b3a22';
+            btn.style.borderColor = '#2b8a3e';
+            prog(`${part.startLabel}-${part.endLabel} downloaded successfully.`);
+          } catch (e) {
+            btn.querySelector('span:first-child').textContent = `✗ Error: ${e.message}`;
+            btn.style.background = '#3a1b1b';
+            btn.style.borderColor = '#b23b3b';
+          }
+        };
+        list.appendChild(btn);
+      });
     }
 
     /* ---------------------------------------------------------- buttons */
     $('#xcdl-retry').onclick = async () => {
-      if (!failedList.length || !zip) return;
+      if (!failedList.length || !globalChaptersData.length) return;
       $('#xcdl-retry').disabled = true;
       const items = [...failedList];
       prog(`Retrying ${items.length} failed pages…`);
+      
       for (let i = 0; i < items.length; i++) {
         const f = items[i];
-        await grab(f.ch, f.idx, f.url, f.dir, f.label);
+        const chData = globalChaptersData.find(c => c.ch.id === f.ch.id);
+        if (chData) {
+          const result = await grab(f.ch, f.idx, f.url, f.dir, f.label);
+          if (result) {
+            chData.files.push(result);
+            chData.files.sort((a, b) => a.name.localeCompare(b.name));
+          }
+        }
         prog(`Retry ${i + 1}/${items.length}`);
       }
-      prog(failedList.length ? 'Some pages still failing — you can retry again.' : 'All failed pages recovered ✔');
+      
+      prog('Re-calculating ZIP parts...');
+      await sleep(100);
+      const parts = groupIntoParts(globalChaptersData, MAX_ZIP_BYTES);
+      renderDownloadButtons(parts, currentTitleName);
       $('#xcdl-retry').disabled = false;
-      renderStats();
     };
 
     $('#xcdl-dl').onclick = async () => {
       const picked = [...root.querySelectorAll('.xcdl-item input')].map((i, k) => [i.checked, chapters[k]])
         .filter(([c]) => c).map(([, ch]) => ch);
       if (!picked.length || !window.JSZip) return;
+      
       $('#xcdl-dl').disabled = true;
-      zip = new JSZip();
+      $('#xcdl-retry').style.display = 'none';
       failedList.length = 0;
-      const titleName = safe(await gql(Q_TITLE, { id: titleId }).then((d) => d.get_title_titleNode.data.title).catch(() => titleId));
       stats.chTotal = picked.length; stats.chDone = 0; stats.imgDone = 0; stats.failed = 0;
       stats.imgTotal = 0;
+      
       prog('Counting pages…');
       for (const ch of picked) {
         try { stats.imgTotal += (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls.length; }
         catch (_) { stats.imgTotal += 0; }
       }
       renderStats();
+      
+      currentTitleName = safe(await gql(Q_TITLE, { id: titleId }).then((d) => d.get_title_titleNode.data.title).catch(() => titleId));
+      const dirBase = currentTitleName;
+      globalChaptersData = [];
       const t0 = Date.now();
 
       for (const ch of picked) {
-        try { await downloadChapter(ch, titleName); }
-        catch (e) { prog(`Chapter failed: ${e.message}`); failedList.push({ ch, idx: -1, url: '', dir: '', label: `c${ch.chaNum ?? ch.serial}`, chapterFail: true }); }
+        try { 
+          const chData = await downloadChapter(ch, dirBase); 
+          if (chData) globalChaptersData.push(chData);
+        } catch (e) { 
+          prog(`Chapter failed: ${e.message}`); 
+          failedList.push({ ch, idx: -1, url: '', dir: '', label: `ch${ch.chaNum ?? ch.serial}`, chapterFail: true }); 
+        }
         stats.chDone++;
         renderStats();
       }
-      prog('Packing ZIP…');
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${titleName}.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      prog(`Done in ${((Date.now() - t0) / 1000).toFixed(0)}s → ${a.download} (${(blob.size / 1048576).toFixed(1)} MB)` +
-        (failedList.length ? `\n⚠ ${failedList.length} pages missing — press "Retry failed"` : ''));
-      renderStats();
-      $('#xcdl-dl').disabled = false;
+
+      prog('Calculating ZIP parts (Target: ~495 MB)...');
+      await sleep(100);
+      
+      const parts = groupIntoParts(globalChaptersData, MAX_ZIP_BYTES);
+      const totalTime = ((Date.now() - t0) / 1000).toFixed(0);
+      prog(`Processing complete in ${totalTime}s. Select a part below to download.`);
+      
+      renderDownloadButtons(parts, currentTitleName);
+      
+      if (failedList.length > 0) {
+        $('#xcdl-retry').style.display = '';
+      }
     };
   } catch (e) {
     prog('Error: ' + (e && e.message ? e.message : e));
