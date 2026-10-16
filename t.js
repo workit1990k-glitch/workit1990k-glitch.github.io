@@ -13,12 +13,21 @@
 
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
-  const PAGE_CONCURRENCY = 3;   // parallel page downloads inside one chapter
+  const PAGE_CONCURRENCY = 2;   // parallel page downloads inside one chapter
   const IMG_RETRIES = 2;        // in-pass retries per image
+  // weserv.nl fair-use: 2500 uncached requests / 10 min / IP -> keep <= ~4 req/s
+  const MIN_REQUEST_INTERVAL = 280; // ms between STARTS of image requests (global)
+  // Each entry: {name, make(url)} -> fetch URL. "processed" means the proxy
+  // already resized (w<=1280) and encoded WebP q75 for us.
   const PROXIES = [
-    (u) => u,
-    (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
-    (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+    { name: 'direct', processed: false, make: (u) => u },
+    { name: 'weserv', processed: true,
+      make: (u) => 'https://images.weserv.nl/?url=' + encodeURIComponent(u.replace(/^https?:\/\//, '')) +
+                   '&w=' + MAX_WIDTH + '&output=webp&q=' + Math.round(QUALITY * 100) },
+    { name: 'corsproxy', processed: false,
+      make: (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u) },
+    { name: 'allorigins', processed: false,
+      make: (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u) },
   ];
 
   /* ---------------------------------------------------------- UI scaffold */
@@ -209,16 +218,34 @@
       $('#xcdl-retry').textContent = `Retry failed (${failedList.length})`;
     }
 
+    // Global rate limiter: at most 1 request start per MIN_REQUEST_INTERVAL.
+    let lastReqStart = 0, rateChain = Promise.resolve();
+    function rateLimit() {
+      const p = rateChain.then(async () => {
+        const wait = Math.max(0, MIN_REQUEST_INTERVAL - (Date.now() - lastReqStart));
+        if (wait) await sleep(wait);
+        lastReqStart = Date.now();
+      });
+      rateChain = p.catch(() => {});
+      return p;
+    }
+
     async function fetchImage(url) {
       let lastErr;
       for (let attempt = 0; attempt <= IMG_RETRIES; attempt++) {
         for (const via of PROXIES) {
           try {
-            const r = await fetch(via(url), { credentials: 'omit', mode: 'cors' });
+            await rateLimit(); // one slot per image request, across ALL chapters/proxies
+            const r = await fetch(via.make(url), { credentials: 'omit', mode: 'cors' });
+            if (r.status === 429 || r.status === 403) {
+              const ra = parseInt(r.headers.get('retry-after') || '0', 10);
+              await sleep((ra || 10) * 1000); // back off, don't hammer
+              throw new Error('HTTP ' + r.status);
+            }
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const b = await r.blob();
-            if (!b.type.startsWith('image/')) throw new Error('not an image');
-            return b;
+            if (!b.type.startsWith('image/')) throw new Error('not an image (' + b.type + ')');
+            return { blob: b, processed: via.processed, via: via.name };
           } catch (e) { lastErr = e; }
         }
         if (attempt < IMG_RETRIES) await sleep(400 * (attempt + 1));
@@ -226,7 +253,8 @@
       throw lastErr || new Error('fetch failed');
     }
 
-    async function toWebp(blob) {
+    async function toWebp(blob, alreadyProcessed) {
+      if (alreadyProcessed && blob.type === 'image/webp') return blob; // weserv did the work
       const bmp = await createImageBitmap(blob);
       const scale = Math.min(1, MAX_WIDTH / bmp.width);
       const w = Math.max(1, Math.round(bmp.width * scale));
@@ -240,7 +268,8 @@
 
     async function grab(ch, idx, url, dir, label) {
       try {
-        const b = await toWebp(await fetchImage(url));
+        const { blob, processed, via } = await fetchImage(url);
+        const b = await toWebp(blob, processed);
         zip.file(`${dir}/${String(idx + 1).padStart(4, '0')}.webp`, b);
         stats.imgDone++;
         // success — remove from failed list if it was a retry
