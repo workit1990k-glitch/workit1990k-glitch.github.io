@@ -14,10 +14,10 @@
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
   const PAGE_CONCURRENCY = 3;   // Max browser concurrent connections per host
-  const IMG_RETRIES = 1;        // Reduced to 1 to fail fast and move on
+  const IMG_RETRIES = 2;        // Reduced to 1 to fail fast and move on
 
   // ⚠️ REPLACE THIS WITH YOUR ACTUAL CLOUDFLARE WORKER URL
-  const CF_WORKER_URL = 'https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev';
+  const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
   
   // Only use Cloudflare Worker. No direct attempts.
   const PROXIES = [
