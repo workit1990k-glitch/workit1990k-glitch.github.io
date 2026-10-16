@@ -8,7 +8,7 @@
 body { margin: 0; background: #111; color: white; font-family: sans-serif; user-select: none; }
 #reader { padding-bottom: 100px; }
 #reader img {
-  display: block; margin: 0 auto; width: 100%; height: auto; max-width: fit-content;
+  display: block; margin: 0 auto; width: var(--img-width, fit-content); height: auto;
   filter: contrast(var(--contrast, 1)) brightness(var(--brightness, 1))
           grayscale(var(--grayscale, 0)) saturate(var(--saturate, 1));
   min-height: 100px; background: #1a1a1a;
@@ -235,6 +235,17 @@ body.library-open #libHeader { display: flex; }
     <input type="range" id="saturate" min="0" max="200" value="100">
   </div>
   <label><input type="checkbox" id="grayscale"> Grayscale (100%)</label>
+  
+  <label>Image Width
+  <select id="imgWidth" style="width:100%;margin-top:4px;">
+    <option value="fit-content">Fit Content (default)</option>
+    <option value="1100px">1100px</option>
+    <option value="1200px">1200px</option>
+    <option value="1300px">1300px</option>
+    <option value="100%">100%</option>
+  </select>
+</label>
+  
   <button id="saveFiltersBtn">💾 Save Settings</button>
   <button id="resetFiltersBtn">↺ Reset to Default</button>
 </div>
@@ -323,7 +334,13 @@ function updateFilters() {
 }
 [contrast, brightness, saturate].forEach(el => el.oninput = updateFilters);
 grayscaleToggle.onchange = updateFilters;
-
+  
+const imgWidth = document.getElementById("imgWidth");
+imgWidth.onchange = () => {
+  root.style.setProperty('--img-width', imgWidth.value);
+  localStorage.setItem('mangaReaderImgWidth', imgWidth.value);
+};
+  
 function saveFilters() {
   localStorage.setItem('mangaReaderFilters', JSON.stringify({
     contrast: contrast.value, brightness: brightness.value,
@@ -342,12 +359,18 @@ function loadFilters() {
     if (s.saturate) saturate.value = s.saturate;
     if (s.grayscale !== undefined) grayscaleToggle.checked = s.grayscale;
     updateFilters();
-  } catch(e) {}
+  } 
+
+  catch(e) {}
 }
 function resetFilters() {
   contrast.value = DEFAULTS.contrast; brightness.value = DEFAULTS.brightness;
   saturate.value = DEFAULTS.saturate; grayscaleToggle.checked = DEFAULTS.grayscale;
   updateFilters();
+  
+  imgWidth.value = 'fit-content';
+root.style.setProperty('--img-width', 'fit-content');
+  
   resetFiltersBtn.textContent = '✓ Reset!';
   setTimeout(() => resetFiltersBtn.textContent = '↺ Reset to Default', 1500);
 }
