@@ -4,6 +4,7 @@
  * - Lets you pick an edition (language) and select chapters
  * - Downloads pages, resizes to max width 1280, converts to WebP q=0.75
  * - Packs everything into one ZIP and triggers download
+ * - Live counters, failed-pages list with retry
  * ==========================================================================*/
 (async function () {
   'use strict';
@@ -13,6 +14,7 @@
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
   const PAGE_CONCURRENCY = 3;   // parallel page downloads inside one chapter
+  const IMG_RETRIES = 2;        // in-pass retries per image
   const PROXIES = [
     (u) => u,
     (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
@@ -22,7 +24,7 @@
   /* ---------------------------------------------------------- UI scaffold */
   const style = document.createElement('style');
   style.textContent = `
-  #xcdl-root{position:fixed;top:60px;right:16px;width:420px;max-height:80vh;z-index:2147483647;
+  #xcdl-root{position:fixed;top:60px;right:16px;width:440px;max-height:85vh;z-index:2147483647;
     display:flex;flex-direction:column;font:13px/1.45 system-ui,Segoe UI,Roboto,sans-serif;
     background:#14181f;color:#e6e9ef;border:1px solid #2b3340;border-radius:12px;
     box-shadow:0 12px 40px rgba(0,0,0,.55);overflow:hidden}
@@ -40,8 +42,11 @@
   .xcdl-btn.sec{background:#26303d}
   .xcdl-btn:disabled{opacity:.45;cursor:default}
   .xcdl-btn.danger{background:#b23b3b}
-  .xcdl-prog{padding:8px 12px;border-top:1px solid #232b36;font-size:12px;color:#9fb3d1;
-    min-height:18px;white-space:pre-line}
+  .xcdl-stats{padding:8px 12px 2px;border-top:1px solid #232b36;font-size:12px;color:#cfe0f5;
+    white-space:pre-line}
+  .xcdl-fails{max-height:110px;overflow-y:auto;padding:4px 12px;font-size:11px;color:#e08a8a}
+  .xcdl-fails div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xcdl-prog{padding:6px 12px 10px;font-size:11px;color:#7c8794;white-space:pre-line}
   .xcdl-list{margin-top:8px;border-top:1px solid #232b36;padding-top:6px}
   .xcdl-item{display:flex;gap:8px;align-items:center;padding:3px 2px;border-radius:5px;cursor:pointer}
   .xcdl-item:hover{background:#1d2632}
@@ -62,10 +67,13 @@
         <button class="xcdl-btn sec" id="xcdl-all">Select all</button>
         <button class="xcdl-btn sec" id="xcdl-none">None</button>
         <span style="flex:1"></span>
+        <button class="xcdl-btn sec" id="xcdl-retry" style="display:none">Retry failed</button>
         <button class="xcdl-btn danger" id="xcdl-dl" disabled>Download ZIP</button>
       </div>
       <div class="xcdl-list" id="xcdl-list"><div class="xcdl-empty">Loading editions…</div></div>
     </div>
+    <div class="xcdl-stats" id="xcdl-stats">Chapters 0/0 · Images 0/0 · Failed 0</div>
+    <div class="xcdl-fails" id="xcdl-fails"></div>
     <div class="xcdl-prog" id="xcdl-prog"></div>`;
   document.body.appendChild(root);
   root.querySelector('.xcdl-x').onclick = close;
@@ -73,6 +81,29 @@
   function toggle() { if (root.isConnected) close(); }
   const $ = (sel) => root.querySelector(sel);
   const prog = (t) => { $('#xcdl-prog').textContent = t; };
+
+  /* ------------------------------------------------------------ JSZip */
+  async function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = () => rej(new Error('Failed to load ' + src));
+      document.head.appendChild(s);
+    });
+  }
+  try {
+    if (!window.JSZip) {
+      // 1) same host as this script (works even with strict CSP of the manga site)
+      // 2) jsDelivr fallback
+      const hosts = [];
+      try { hosts.push(new URL(document.currentScript.src).origin); } catch (_) {}
+      hosts.push('https://cdn.jsdelivr.net');
+      let ok = false;
+      for (const h of hosts) {
+        try { await loadScript(h + '/jszip.min.js'); ok = true; break; } catch (_) {}
+      }
+      if (!ok) throw new Error('JSZip could not be loaded — put jszip.min.js next to t.js on your host');
+    }
+  } catch (e) { prog('Error: ' + e.message); }
 
   /* ------------------------------------------------------------ GraphQL */
   async function gql(query, variables) {
@@ -160,20 +191,37 @@
     $('#xcdl-none').onclick = () => root.querySelectorAll('.xcdl-item input').forEach((i) => (i.checked = false));
     await loadChapters(sel.value);
 
-    /* ---------------------------------------------------------- download */
+    /* ------------------------------------------------------ download core */
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
+    const stats = { chDone: 0, chTotal: 0, imgDone: 0, imgTotal: 0, failed: 0 };
+    const failedList = [];   // {ch, idx, url, dir, name}
+    let zip = null;
+
+    function renderStats() {
+      $('#xcdl-stats').textContent =
+        `Chapters ${stats.chDone}/${stats.chTotal} · Images ${stats.imgDone}/${stats.imgTotal} · Failed ${stats.failed}`;
+      const box = $('#xcdl-fails');
+      box.innerHTML = failedList.slice(-300).map((f) =>
+        `<div>✗ ${f.label} p${f.idx + 1} — ${f.url}</div>`).join('');
+      $('#xcdl-retry').style.display = failedList.length ? '' : 'none';
+      $('#xcdl-retry').textContent = `Retry failed (${failedList.length})`;
+    }
+
     async function fetchImage(url) {
       let lastErr;
-      for (const via of PROXIES) {
-        try {
-          const r = await fetch(via(url), { credentials: 'omit', mode: 'cors' });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const b = await r.blob();
-          if (!b.type.startsWith('image/')) throw new Error('not an image');
-          return b;
-        } catch (e) { lastErr = e; }
+      for (let attempt = 0; attempt <= IMG_RETRIES; attempt++) {
+        for (const via of PROXIES) {
+          try {
+            const r = await fetch(via(url), { credentials: 'omit', mode: 'cors' });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const b = await r.blob();
+            if (!b.type.startsWith('image/')) throw new Error('not an image');
+            return b;
+          } catch (e) { lastErr = e; }
+        }
+        if (attempt < IMG_RETRIES) await sleep(400 * (attempt + 1));
       }
       throw lastErr || new Error('fetch failed');
     }
@@ -190,37 +238,80 @@
       return await new Promise((res) => c.toBlob(res, 'image/webp', QUALITY));
     }
 
+    async function grab(ch, idx, url, dir, label) {
+      try {
+        const b = await toWebp(await fetchImage(url));
+        zip.file(`${dir}/${String(idx + 1).padStart(4, '0')}.webp`, b);
+        stats.imgDone++;
+        // success — remove from failed list if it was a retry
+        const fi = failedList.findIndex((f) => f.url === url && f.idx === idx && f.ch.id === ch.id);
+        if (fi >= 0) { failedList.splice(fi, 1); stats.failed = failedList.length; }
+        return true;
+      } catch (e) {
+        if (!failedList.some((f) => f.url === url && f.idx === idx && f.ch.id === ch.id)) {
+          failedList.push({ ch, idx, url, dir, label });
+        }
+        stats.failed = failedList.length;
+        return false;
+      } finally {
+        renderStats();
+      }
+    }
+
+    async function downloadChapter(ch, dirBase) {
+      const num = ch.chaNum != null ? ch.chaNum : ch.serial;
+      const label = `c${num}`;
+      const dir = `${dirBase}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}c${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
+      const urls = (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls;
+      let i = 0;
+      while (i < urls.length) {
+        const batch = urls.slice(i, i + PAGE_CONCURRENCY);
+        await Promise.all(batch.map((u, k) => grab(ch, i + k, u, dir, label)));
+        i += batch.length;
+        prog(`Chapter ${label}: ${i}/${urls.length} pages`);
+      }
+    }
+
+    /* ---------------------------------------------------------- buttons */
+    $('#xcdl-retry').onclick = async () => {
+      if (!failedList.length || !zip) return;
+      $('#xcdl-retry').disabled = true;
+      const items = [...failedList];
+      prog(`Retrying ${items.length} failed pages…`);
+      for (let i = 0; i < items.length; i++) {
+        const f = items[i];
+        await grab(f.ch, f.idx, f.url, f.dir, f.label);
+        prog(`Retry ${i + 1}/${items.length}`);
+      }
+      prog(failedList.length ? 'Some pages still failing — you can retry again.' : 'All failed pages recovered ✔');
+      $('#xcdl-retry').disabled = false;
+      renderStats();
+    };
+
     $('#xcdl-dl').onclick = async () => {
       const picked = [...root.querySelectorAll('.xcdl-item input')].map((i, k) => [i.checked, chapters[k]])
         .filter(([c]) => c).map(([, ch]) => ch);
-      if (!picked.length) return;
+      if (!picked.length || !window.JSZip) return;
       $('#xcdl-dl').disabled = true;
-      const zip = new JSZip();
+      zip = new JSZip();
+      failedList.length = 0;
       const titleName = safe(await gql(Q_TITLE, { id: titleId }).then((d) => d.get_title_titleNode.data.title).catch(() => titleId));
-      let done = 0, failed = 0;
+      stats.chTotal = picked.length; stats.chDone = 0; stats.imgDone = 0; stats.failed = 0;
+      // count total pages upfront for a full progress bar
+      stats.imgTotal = 0;
+      prog('Counting pages…');
+      for (const ch of picked) {
+        try { stats.imgTotal += (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls.length; }
+        catch (_) { stats.imgTotal += 0; }
+      }
+      renderStats();
       const t0 = Date.now();
 
       for (const ch of picked) {
-        const num = ch.chaNum != null ? ch.chaNum : ch.serial;
-        const dir = `${titleName}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}c${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
-        try {
-          const urls = (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls;
-          let i = 0;
-          while (i < urls.length) {
-            const batch = urls.slice(i, i + PAGE_CONCURRENCY);
-            const results = await Promise.all(batch.map(async (u) => {
-              try { return await toWebp(await fetchImage(u)); }
-              catch (e) { failed++; return null; }
-            }));
-            results.forEach((b, k) => { if (b) zip.file(`${dir}/${String(i + k + 1).padStart(4, '0')}.webp`, b); });
-            i += batch.length;
-            prog(`Chapter c${num}: ${i}/${urls.length} pages\nTotal: ${done}/${picked.length} chapters, ${failed} failed pages`);
-          }
-        } catch (e) {
-          failed++;
-          prog(`Chapter c${num} failed: ${e.message}`);
-        }
-        done++;
+        try { await downloadChapter(ch, titleName); }
+        catch (e) { prog(`Chapter failed: ${e.message}`); failedList.push({ ch, idx: -1, url: '', dir: '', label: `c${ch.chaNum ?? ch.serial}`, chapterFail: true }); }
+        stats.chDone++;
+        renderStats();
         await sleep(120); // be gentle
       }
       prog('Packing ZIP…');
@@ -230,11 +321,12 @@
       a.download = `${titleName}.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-      prog(`Done in ${((Date.now() - t0) / 1000).toFixed(0)}s → ${a.download} (${(blob.size / 1048576).toFixed(1)} MB)`);
+      prog(`Done in ${((Date.now() - t0) / 1000).toFixed(0)}s → ${a.download} (${(blob.size / 1048576).toFixed(1)} MB)` +
+        (failedList.length ? `\n⚠ ${failedList.length} pages missing — press "Retry failed"` : ''));
+      renderStats();
       $('#xcdl-dl').disabled = false;
     };
   } catch (e) {
     prog('Error: ' + (e && e.message ? e.message : e));
-    window.__XCOMIC_DL__ = null;
   }
 })();
