@@ -85,10 +85,6 @@ body.library-open #libHeader { display: flex; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }
-.book .nested-badge {
-  position: absolute; top: 12px; right: 12px; background: #00a8ff; color: black;
-  font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: bold;
-}
 .loading { text-align: center; padding: 40px; color: #888; font-size: 14px; }
 .progress-bar { position: fixed; top: 0; left: 0; height: 3px; background: #444; z-index: 40; }
 .progress-fill { height: 100%; background: #00a8ff; width: 0%; transition: width 0.2s; }
@@ -127,10 +123,6 @@ body.library-open #libHeader { display: flex; }
 .img-placeholder {
   display: flex; align-items: center; justify-content: center;
   background: #1a1a1a; color: #555; font-size: 11px;
-}
-.img-placeholder .nested-badge {
-  position: absolute; top: 4px; right: 4px; background: #00a8ff; color: black;
-  font-size: 9px; padding: 2px 6px; border-radius: 10px; font-weight: bold; z-index: 5;
 }
 #storageInfo {
   position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
@@ -582,11 +574,9 @@ function createBookElement(book) {
   }
 
   const displayName = (book.name || '').split('/').pop();
-  const isNested = /\.(zip|cbz)\//i.test(book.name || '');
 
   div.innerHTML = `
     <img src="${thumbURL || PLACEHOLDER}" loading="lazy" alt="">
-    ${isNested ? '' : ''}
     <span title="${book.name}">${displayName}</span>
   `;
 
@@ -707,44 +697,83 @@ async function tryAutoOpenFromHash() {
   const recs = await idbGet(KEY_LIBRARY);
   if (!Array.isArray(recs) || !recs.length) return false;
 
-  let match = recs.find(r => slugify(r.name) === wanted);
-  if (!match) match = recs.find(r => slugify(r.name).endsWith(wanted));
-  if (!match) match = recs.find(r => slugify((r.name || '').split('/').pop()) === wanted);
-  if (!match) return false;
+  let match = null;
+  const getFirstPart = (name) => (name || '').split('/')[0].replace(/\.(zip|cbz)$/i, '');
 
-  if (!match.fileHandle) {
+  // 1. Exact slug match on full name
+  match = recs.find(r => slugify(r.name) === wanted);
+  
+  // 2. Exact slug match on filename only
+  if (!match) {
+    match = recs.find(r => slugify((r.name || '').split('/').pop()) === wanted);
+  }
+
+  // 3. Exact slug match on first part of name (root folder)
+  if (!match) {
+    match = recs.find(r => slugify(getFirstPart(r.name)) === wanted);
+  }
+
+  // 4. Ends-with slug match on full name
+  if (!match) {
+    match = recs.find(r => slugify(r.name).endsWith(wanted));
+  }
+
+  // 5. Ends-with slug match on filename only
+  if (!match) {
+    match = recs.find(r => slugify((r.name || '').split('/').pop()).endsWith(wanted));
+  }
+
+  // 6. Includes match on first part of name
+  if (!match) {
+    match = recs.find(r => {
+      const slug = slugify(getFirstPart(r.name));
+      return slug.includes(wanted) || wanted.includes(slug);
+    });
+  }
+
+  if (!match) {
+    console.warn("No matching manga found in library for hash:", wanted);
+    return false;
+  }
+
+  if (!match.fileHandle && !match.file) {
     showChapterInfo('⚠️ Re-open folder to access this manga');
     return false;
   }
 
   try {
-    const perm = await match.fileHandle.queryPermission({ mode: 'read' });
-    if (perm === 'granted') {
-      const file = await match.fileHandle.getFile();
+    if (match.fileHandle) {
+      const perm = await match.fileHandle.queryPermission({ mode: 'read' });
+      if (perm === 'granted') {
+        const file = await match.fileHandle.getFile();
+        setHashForManga(match.name);
+        await loadZipFile(file);
+        return true;
+      } else if (perm === 'prompt') {
+        showPermBanner(
+          `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`,
+          null,
+          async (ev) => {
+            if (!ev.target.closest('#grantLoadBtn')) return;
+            try {
+              const p2 = await match.fileHandle.requestPermission({ mode: 'read' });
+              if (p2 === 'granted') {
+                hidePermBanner();
+                const file = await match.fileHandle.getFile();
+                setHashForManga(match.name);
+                await loadZipFile(file);
+              } else {
+                hidePermBanner();
+              }
+            } catch (e) { console.warn(e); hidePermBanner(); }
+          }
+        );
+        return false;
+      }
+    } else if (match.file) {
       setHashForManga(match.name);
-      await loadZipFile(file);
+      await loadZipFile(match.file);
       return true;
-    } else if (perm === 'prompt') {
-      // Actionable banner: no auto-hide, waits for user click
-      showPermBanner(
-        `🔑 Grant access to load "<b>${(match.name||'').split('/').pop()}</b>" <button id="grantLoadBtn">Load</button>`,
-        null, // don't auto-hide
-        async (ev) => {
-          if (!ev.target.closest('#grantLoadBtn')) return;
-          try {
-            const p2 = await match.fileHandle.requestPermission({ mode: 'read' });
-            if (p2 === 'granted') {
-              hidePermBanner();
-              const file = await match.fileHandle.getFile();
-              setHashForManga(match.name);
-              await loadZipFile(file);
-            } else {
-              hidePermBanner();
-            }
-          } catch (e) { console.warn(e); hidePermBanner(); }
-        }
-      );
-      return false;
     }
   } catch (e) { console.warn('Auto-open failed:', e); }
   return false;
@@ -936,7 +965,7 @@ async function loadZipFile(file) {
           await processZip(nested, virtualPath);
         } catch (e) {}
       } else if (/\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(path)) {
-        imageEntries.push({ virtualPath, entry, zipObj, isNested: !!basePath });
+        imageEntries.push({ virtualPath, entry, zipObj });
       }
     }
   }
@@ -946,11 +975,31 @@ async function loadZipFile(file) {
   allImages = imageEntries.map(e => e.virtualPath);
   windowImageEntries = imageEntries;
 
+  // Smart folder detection: if all images are under a single root folder that has subfolders, strip it for chapter grouping
+  const rootDirs = new Set();
+  allImages.forEach(p => {
+    const firstDir = p.split('/')[0];
+    if (firstDir) rootDirs.add(firstDir);
+  });
+
+  let stripPrefix = "";
+  if (rootDirs.size === 1) {
+    const onlyRoot = Array.from(rootDirs)[0];
+    const hasDeeperFolders = allImages.some(p => p.split('/').filter(Boolean).length > 2);
+    if (hasDeeperFolders) {
+      stripPrefix = onlyRoot + "/";
+    }
+  }
+
   const folders = new Set();
   allImages.forEach(p => {
-    const parts = p.split('/').filter(Boolean);
-    if (parts.length > 1) folders.add(parts[0]);
+    const cleanPath = stripPrefix ? p.substring(stripPrefix.length) : p;
+    const parts = cleanPath.split('/').filter(Boolean);
+    if (parts.length > 1) {
+      folders.add(parts[0]);
+    }
   });
+
   folderSelect.innerHTML = '<option value="">📁 All Pages (full manga)</option>';
   foldersList = ["", ...Array.from(folders).sort((a,b) => a.localeCompare(b, undefined, { numeric: true }))];
   foldersList.filter(Boolean).forEach(f => {
@@ -960,18 +1009,21 @@ async function loadZipFile(file) {
   });
 
   currentFolder = ""; folderSelect.value = "";
-  renderPlaceholders(imageEntries);
-  showChapterInfo("📖 " + currentZipName + (imageEntries.some(e => e.isNested) ? '' : ''));
+  renderPlaceholders(imageEntries, stripPrefix);
+  showChapterInfo("📖 " + currentZipName);
   window.scrollTo(0, 0);
   if (!getMangaFromHash()) setHashForManga(currentZipName);
 }
 
-function renderPlaceholders(entries) {
+function renderPlaceholders(entries, stripPrefix = "") {
   readerEl.innerHTML = '';
   chapterStartIndex = {};
   entries.forEach((entry, i) => {
     const path = entry.virtualPath;
-    const folder = path.includes("/") ? path.split("/")[0] : "";
+    const cleanPath = stripPrefix ? path.substring(stripPrefix.length) : path;
+    const parts = cleanPath.split('/').filter(Boolean);
+    const folder = parts.length > 1 ? parts[0] : "";
+    
     if (folder && !chapterStartIndex[folder]) chapterStartIndex[folder] = { index: i, element: null };
     const ph = document.createElement("div");
     ph.className = "img-placeholder";
@@ -981,11 +1033,7 @@ function renderPlaceholders(entries) {
     ph.dataset.index = i + 1;
     ph.style.height = "400px";
     ph.style.position = "relative";
-    if (entry.isNested) {
-      const b = document.createElement('span');
-      b.className = 'nested-badge'; b.textContent = '';
-      ph.appendChild(b);
-    }
+    
     if (folder && chapterStartIndex[folder].element === null) chapterStartIndex[folder].element = ph;
     readerEl.appendChild(ph);
   });
@@ -1029,18 +1077,12 @@ function replacePlaceholderWithImage(placeholder, imageData) {
   img.dataset.index = placeholder.dataset.index;
   img.title = `Page ${placeholder.dataset.index} / ${allImages.length}`;
 
-  const hadBadge = placeholder.querySelector('.nested-badge');
-  if (hadBadge) {
-    const wrap = document.createElement('div');
-    wrap.style.position = 'relative';
-    wrap.appendChild(img);
-    wrap.appendChild(hadBadge.cloneNode(true));
-    placeholder.replaceWith(wrap);
-  } else {
-    placeholder.replaceWith(img);
-  }
+  placeholder.replaceWith(img);
+  
   const folder = placeholder.dataset.folder;
-  if (folder && chapterStartIndex[folder]?.element === placeholder) chapterStartIndex[folder].element = img;
+  if (folder && chapterStartIndex[folder]?.element === placeholder) {
+    chapterStartIndex[folder].element = img;
+  }
 }
 
 function updatePageInfo() {
@@ -1257,3 +1299,4 @@ window.addEventListener('load', async () => {
 </script>
 </body>
 </html>
+```
