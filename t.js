@@ -2,7 +2,7 @@
  * XCOMIC Downloader (remote script for bookmarklet)
  * - Reads title id from https://xcomic.me/title/<id>
  * - Lets you pick an edition (language) and select chapters
- * - Downloads pages, resizes to max width 1280, converts to WebP q=0.75
+ * - Downloads pages, resizes to max width 1280, converts to WebP q=0.75 (Client-side)
  * - Packs everything into one ZIP and triggers download
  * - Live counters, failed-pages list with retry
  * ==========================================================================*/
@@ -15,19 +15,15 @@
   const QUALITY = 0.75;
   const PAGE_CONCURRENCY = 2;   // parallel page downloads inside one chapter
   const IMG_RETRIES = 2;        // in-pass retries per image
-  // weserv.nl fair-use: 2500 uncached requests / 10 min / IP -> keep <= ~4 req/s
   const MIN_REQUEST_INTERVAL = 280; // ms between STARTS of image requests (global)
-  // Each entry: {name, make(url)} -> fetch URL. "processed" means the proxy
-  // already resized (w<=1280) and encoded WebP q75 for us.
+
+  // Updated Proxies: Direct first, then your custom Cloudflare Worker
+  // REPLACE 'https://YOUR-WORKER-NAME.YOUR-SUBDOMAIN.workers.dev' with your actual Worker URL
+  const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
+  
   const PROXIES = [
     { name: 'direct', processed: false, make: (u) => u },
-    { name: 'weserv', processed: true,
-      make: (u) => 'https://images.weserv.nl/?url=' + encodeURIComponent(u.replace(/^https?:\/\//, '')) +
-                   '&w=' + MAX_WIDTH + '&output=webp&q=' + Math.round(QUALITY * 100) },
-    { name: 'corsproxy', processed: false,
-      make: (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u) },
-    { name: 'allorigins', processed: false,
-      make: (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u) },
+    { name: 'cloudflare', processed: false, make: (u) => CF_WORKER_URL + '/?url=' + encodeURIComponent(u) },
   ];
 
   /* ---------------------------------------------------------- UI scaffold */
@@ -101,8 +97,6 @@
   }
   try {
     if (!window.JSZip) {
-      // 1) same host as this script (works even with strict CSP of the manga site)
-      // 2) jsDelivr fallback
       const hosts = [];
       try { hosts.push(new URL(document.currentScript.src).origin); } catch (_) {}
       hosts.push('https://cdn.jsdelivr.net');
@@ -110,7 +104,7 @@
       for (const h of hosts) {
         try { await loadScript(h + '/jszip.min.js'); ok = true; break; } catch (_) {}
       }
-      if (!ok) throw new Error('JSZip could not be loaded — put jszip.min.js next to t.js on your host');
+      if (!ok) throw new Error('JSZip could not be loaded');
     }
   } catch (e) { prog('Error: ' + e.message); }
 
@@ -136,7 +130,6 @@
   const titleId = m[1];
 
   try {
-    /* Editions are not in GraphQL — scrape the title page like the parser does */
     const html = await (await fetch(location.pathname)).text();
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const editions = [...doc.querySelectorAll('a[href^="/source/"]')].map((a) => {
@@ -205,7 +198,7 @@
     const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
     const stats = { chDone: 0, chTotal: 0, imgDone: 0, imgTotal: 0, failed: 0 };
-    const failedList = [];   // {ch, idx, url, dir, name}
+    const failedList = [];
     let zip = null;
 
     function renderStats() {
@@ -218,7 +211,6 @@
       $('#xcdl-retry').textContent = `Retry failed (${failedList.length})`;
     }
 
-    // Global rate limiter: at most 1 request start per MIN_REQUEST_INTERVAL.
     let lastReqStart = 0, rateChain = Promise.resolve();
     function rateLimit() {
       const p = rateChain.then(async () => {
@@ -235,11 +227,11 @@
       for (let attempt = 0; attempt <= IMG_RETRIES; attempt++) {
         for (const via of PROXIES) {
           try {
-            await rateLimit(); // one slot per image request, across ALL chapters/proxies
+            await rateLimit();
             const r = await fetch(via.make(url), { credentials: 'omit', mode: 'cors' });
             if (r.status === 429 || r.status === 403) {
               const ra = parseInt(r.headers.get('retry-after') || '0', 10);
-              await sleep((ra || 10) * 1000); // back off, don't hammer
+              await sleep((ra || 10) * 1000);
               throw new Error('HTTP ' + r.status);
             }
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -253,8 +245,9 @@
       throw lastErr || new Error('fetch failed');
     }
 
+    // Client-side resizing and WebP conversion
     async function toWebp(blob, alreadyProcessed) {
-      if (alreadyProcessed && blob.type === 'image/webp') return blob; // weserv did the work
+      if (alreadyProcessed && blob.type === 'image/webp') return blob;
       const bmp = await createImageBitmap(blob);
       const scale = Math.min(1, MAX_WIDTH / bmp.width);
       const w = Math.max(1, Math.round(bmp.width * scale));
@@ -272,7 +265,6 @@
         const b = await toWebp(blob, processed);
         zip.file(`${dir}/${String(idx + 1).padStart(4, '0')}.webp`, b);
         stats.imgDone++;
-        // success — remove from failed list if it was a retry
         const fi = failedList.findIndex((f) => f.url === url && f.idx === idx && f.ch.id === ch.id);
         if (fi >= 0) { failedList.splice(fi, 1); stats.failed = failedList.length; }
         return true;
@@ -326,7 +318,6 @@
       failedList.length = 0;
       const titleName = safe(await gql(Q_TITLE, { id: titleId }).then((d) => d.get_title_titleNode.data.title).catch(() => titleId));
       stats.chTotal = picked.length; stats.chDone = 0; stats.imgDone = 0; stats.failed = 0;
-      // count total pages upfront for a full progress bar
       stats.imgTotal = 0;
       prog('Counting pages…');
       for (const ch of picked) {
@@ -341,7 +332,7 @@
         catch (e) { prog(`Chapter failed: ${e.message}`); failedList.push({ ch, idx: -1, url: '', dir: '', label: `c${ch.chaNum ?? ch.serial}`, chapterFail: true }); }
         stats.chDone++;
         renderStats();
-        await sleep(120); // be gentle
+        await sleep(120);
       }
       prog('Packing ZIP…');
       const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
