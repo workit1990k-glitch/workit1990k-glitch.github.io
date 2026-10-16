@@ -1042,6 +1042,19 @@ function renderPlaceholders(entries, stripPrefix = "") {
   pageInfo.classList.add('visible');
 }
 
+function getMimeType(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const types = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+    'bmp': 'image/bmp'
+  };
+  return types[ext] || 'image/jpeg';
+}
+  
 function setupImageObserver() {
   if (intersectionObserver) intersectionObserver.disconnect();
   intersectionObserver = new IntersectionObserver(async (entries) => {
@@ -1056,17 +1069,19 @@ function setupImageObserver() {
       try {
         const blob = await ie.entry.async("blob");
         
-        const dataUrl = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
+        // Create a new Blob with the correct image MIME type
+        const mimeType = getMimeType(path);
+        const typedBlob = new Blob([blob], { type: mimeType });
         
-        imageCache.set(path, { url: dataUrl, blob });
-        replacePlaceholderWithImage(ph, { url: dataUrl, blob });
+        // Now the browser knows it's an image and will display it in a new tab
+        const url = URL.createObjectURL(typedBlob);
+        
+        imageCache.set(path, { url, blob: typedBlob });
+        currentBlobURLs.push(url);
+        replacePlaceholderWithImage(ph, { url, blob: typedBlob });
       } catch(e) {
-        ph.textContent = '❌ Failed to load'; ph.style.color = '#f66';
+        ph.textContent = '❌ Failed to load'; 
+        ph.style.color = '#f66';
       }
     }
   }, { rootMargin: '300px 0px', threshold: 0.01 });
