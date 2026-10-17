@@ -3,6 +3,7 @@
  * - Downloads via Cloudflare Worker, resizes to 1280px, WebP q=0.75 (Client-side)
  * - Groups chapters into ~495 MB chunks.
  * - File naming: TitleName_ch1-ch30.zip
+ * - TRUE GLOBAL WORKER POOL: N workers pull from a single flat task list.
  * ==========================================================================*/
 (async function () {
   'use strict';
@@ -11,13 +12,12 @@
 
   const MAX_WIDTH = 1280;
   const QUALITY = 0.75;
-  const PAGE_CONCURRENCY = 6;
+  const GLOBAL_CONCURRENCY = 6;      // 👈 global pool size (was PAGE_CONCURRENCY)
   const IMG_RETRIES = 1;
-  const MAX_ZIP_BYTES = 495 * 1024 * 1024; // ~495 MB per ZIP part
+  const MAX_ZIP_BYTES = 495 * 1024 * 1024;
 
-  // ⚠️ REPLACE THIS WITH YOUR ACTUAL CLOUDFLARE WORKER URL
   const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
-  
+
   const PROXIES = [
     { name: 'cloudflare', processed: false, make: (u) => CF_WORKER_URL + '/?url=' + encodeURIComponent(u) },
   ];
@@ -217,68 +217,143 @@
       return await new Promise((res) => c.toBlob(res, 'image/webp', QUALITY));
     }
 
-    async function grab(ch, idx, url, dir, label) {
-      try {
-        for (const via of PROXIES) {
-          try {
-            const r = await fetch(via.make(url), { credentials: 'omit', mode: 'cors' });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            const b = await r.blob();
-            if (!b.type.startsWith('image/')) throw new Error('not an image (' + b.type + ')');
-            
-            const processedBlob = await toWebp(b, via.processed);
-            const fileName = `${dir}/${String(idx + 1).padStart(4, '0')}.webp`;
-            
-            stats.imgDone++;
-            const fi = failedList.findIndex((f) => f.url === url && f.idx === idx && f.ch.id === ch.id);
-            if (fi >= 0) { failedList.splice(fi, 1); stats.failed = failedList.length; }
-            renderStats();
-            
-            return { name: fileName, blob: processedBlob, size: processedBlob.size };
-          } catch (e) { /* fall through to next proxy */ }
-        }
-        
-        if (!failedList.some((f) => f.url === url && f.idx === idx && f.ch.id === ch.id)) {
-          failedList.push({ ch, idx, url, dir, label });
+    /* ------------------------------------------------ grab ONE image */
+    // Task shape: { ch, chId, idx, url, dir, label }
+    // Returns { chId, name, blob, size } or null.
+    async function grabImage(task) {
+      const { ch, chId, idx, url, dir, label } = task;
+      for (const via of PROXIES) {
+        try {
+          const r = await fetch(via.make(url), { credentials: 'omit', mode: 'cors' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const b = await r.blob();
+          if (!b.type.startsWith('image/')) throw new Error('not an image (' + b.type + ')');
+
+          const processedBlob = await toWebp(b, via.processed);
+          const fileName = `${dir}/${String(idx + 1).padStart(4, '0')}.webp`;
+
+          stats.imgDone++;
+          // Remove from failedList if it was there.
+          const fi = failedList.findIndex((f) => f.url === url && f.idx === idx && f.ch.id === ch.id);
+          if (fi >= 0) { failedList.splice(fi, 1); stats.failed = failedList.length; }
+
+          return { chId, name: fileName, blob: processedBlob, size: processedBlob.size };
+        } catch (e) { /* try next proxy */ }
+      }
+
+      // All proxies failed.
+      if (!failedList.some((f) => f.url === url && f.idx === idx && f.ch.id === ch.id)) {
+        failedList.push({ ch, idx, url, dir, label });
+        stats.failed = failedList.length;
+      }
+      return null;
+    }
+
+    /* ------------------------------------------------ build allTasks */
+    // 1) Resolve page URLs for every selected chapter (cheap, sequential GraphQL).
+    // 2) Flatten into a single task array.
+    async function buildAllTasks(pickedChapters, dirBase) {
+      const allTasks = [];
+      const chapterMap = new Map(); // chId -> { ch, files: [] }
+
+      for (const ch of pickedChapters) {
+        let urls;
+        try {
+          urls = (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls;
+        } catch (e) {
+          prog(`Skipping chapter ${ch.chaNum ?? ch.serial}: ${e.message}`);
+          failedList.push({ ch, idx: -1, url: '', dir: '', label: `ch${ch.chaNum ?? ch.serial}`, chapterFail: true });
           stats.failed = failedList.length;
+          stats.chDone++;
+          renderStats();
+          continue;
         }
-        renderStats();
-        return null;
-      } catch (e) {
-        return null;
+
+        const num = ch.chaNum != null ? ch.chaNum : ch.serial;
+        const label = `ch${num}`;
+        const dir = `${dirBase}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}ch${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
+
+        chapterMap.set(ch.id, { ch, files: [] });
+        stats.imgTotal += urls.length;
+
+        for (let idx = 0; idx < urls.length; idx++) {
+          allTasks.push({ ch, chId: ch.id, idx, url: urls[idx], dir, label });
+        }
+        // Chapter appears "done" once its images are in — we track completion by imgDone below.
       }
+      renderStats();
+      return { allTasks, chapterMap };
     }
 
-    async function downloadChapter(ch, dirBase) {
-      const num = ch.chaNum != null ? ch.chaNum : ch.serial;
-      const label = `ch${num}`;
-      // Simplified internal folder structure: TitleName/ch1/
-      const dir = `${dirBase}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}ch${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
-      const urls = (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls;
-      const files = [];
-      
-      for (let i = 0; i < urls.length; i += PAGE_CONCURRENCY) {
-        const batch = urls.slice(i, i + PAGE_CONCURRENCY);
-        const results = await Promise.all(batch.map((u, k) => grab(ch, i + k, u, dir, label)));
-        for (const res of results) {
-          if (res) files.push(res);
+    /* ------------------------------------------------ GLOBAL WORKER POOL */
+    async function runWorkerPool(allTasks, chapterMap) {
+      let nextTask = 0;
+      let completed = 0;
+      let lastUIUpdate = 0;
+      const total = allTasks.length;
+      const doneChapters = new Set();
+
+      const chLabel = (ch) => `ch${ch.chaNum != null ? ch.chaNum : ch.serial}`;
+
+      async function worker(workerId) {
+        while (true) {
+          const index = nextTask++;
+          if (index >= total) return;
+          const task = allTasks[index];
+
+          let result = null;
+          try {
+            result = await grabImage(task);
+          } catch (err) {
+            console.error('Unexpected task error:', task.url, err);
+          }
+
+          if (result) {
+            const chData = chapterMap.get(result.chId);
+            if (chData) {
+              chData.files.push(result);
+              // If this chapter has all its images, mark it done.
+              const chTotal = allTasks.filter(t => t.chId === result.chId).length;
+              if (chData.files.length >= chTotal && !doneChapters.has(result.chId)) {
+                doneChapters.add(result.chId);
+                stats.chDone = doneChapters.size;
+              }
+            }
+          }
+
+          completed++;
+          const now = Date.now();
+          if (now - lastUIUpdate >= 200 || completed === total) {
+            lastUIUpdate = now;
+            renderStats();
+            prog(`Completed ${completed}/${total} image tasks`);
+          }
         }
-        prog(`Chapter ${label}: ${Math.min(i + PAGE_CONCURRENCY, urls.length)}/${urls.length} pages`);
-        await sleep(50);
       }
-      files.sort((a, b) => a.name.localeCompare(b.name));
-      return { ch, files };
+
+      await Promise.all(
+        Array.from(
+          { length: Math.min(GLOBAL_CONCURRENCY, total) },
+          (_, i) => worker(i)
+        )
+      );
+
+      // Final stats sync.
+      stats.imgDone = completed - failedList.length;
+      renderStats();
+      return chapterMap;
     }
 
+    /* ------------------------------------------------ grouping / zip */
     function groupIntoParts(chaptersData, maxSizeBytes) {
       const parts = [];
       let currentPart = { startLabel: '', endLabel: '', totalSize: 0, chapters: [] };
-      
+
       for (const chData of chaptersData) {
         const num = chData.ch.chaNum != null ? chData.ch.chaNum : chData.ch.serial;
         const label = `ch${num}`;
         const chSize = chData.files.reduce((sum, f) => sum + f.size, 0);
-        
+
         if (currentPart.totalSize + chSize > maxSizeBytes && currentPart.chapters.length > 0) {
           parts.push(currentPart);
           currentPart = { startLabel: label, endLabel: label, totalSize: chSize, chapters: [chData] };
@@ -289,16 +364,14 @@
           currentPart.chapters.push(chData);
         }
       }
-      if (currentPart.chapters.length > 0) {
-        parts.push(currentPart);
-      }
+      if (currentPart.chapters.length > 0) parts.push(currentPart);
       return parts;
     }
 
     function renderDownloadButtons(parts, titleName) {
       const list = $('#xcdl-list');
       list.innerHTML = '';
-      
+
       const header = document.createElement('div');
       header.style.padding = '10px';
       header.style.color = '#cfe0f5';
@@ -310,7 +383,7 @@
         const btn = document.createElement('button');
         btn.className = 'xcdl-btn part-btn';
         btn.innerHTML = `<span>⬇ ${part.startLabel} - ${part.endLabel}</span><span style="color:#8f9bad">${sizeMB} MB</span>`;
-        
+
         btn.onclick = async () => {
           btn.disabled = true;
           btn.querySelector('span:first-child').textContent = `⏳ Packing ${part.startLabel}-${part.endLabel}...`;
@@ -325,13 +398,10 @@
             const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            
-            // Simplified ZIP naming: TitleName_ch1-ch30.zip
             a.download = `${titleName}_${part.startLabel}-${part.endLabel}.zip`;
-            
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-            
+
             btn.querySelector('span:first-child').textContent = `✔ ${part.startLabel}-${part.endLabel}`;
             btn.style.background = '#1b3a22';
             btn.style.borderColor = '#2b8a3e';
@@ -346,26 +416,60 @@
       });
     }
 
-    /* ---------------------------------------------------------- buttons */
+    /* ---------------------------------------------------------- retry */
     $('#xcdl-retry').onclick = async () => {
       if (!failedList.length || !globalChaptersData.length) return;
       $('#xcdl-retry').disabled = true;
-      const items = [...failedList];
-      prog(`Retrying ${items.length} failed pages…`);
-      
-      for (let i = 0; i < items.length; i++) {
-        const f = items[i];
-        const chData = globalChaptersData.find(c => c.ch.id === f.ch.id);
-        if (chData) {
-          const result = await grab(f.ch, f.idx, f.url, f.dir, f.label);
-          if (result) {
-            chData.files.push(result);
-            chData.files.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Build retry tasks from the failed list (skip chapter-level failures — those
+      // need a full re-fetch of the chapter's pages, which we handle below).
+      const chapterFailures = failedList.filter(f => f.chapterFail);
+      const imageFailures = failedList.filter(f => !f.chapterFail);
+
+      const retryTasks = imageFailures.map(f => ({
+        ch: f.ch, chId: f.ch.id, idx: f.idx, url: f.url, dir: f.dir, label: f.label,
+      }));
+
+      // For chapter-level failures, re-fetch page URLs and add them as tasks.
+      for (const cf of chapterFailures) {
+        try {
+          const urls = (await gql(Q_PAGES, { id: cf.ch.id })).get_chapterNode.data.imageUrls;
+          const ch = cf.ch;
+          const num = ch.chaNum != null ? ch.chaNum : ch.serial;
+          const dir = `${currentTitleName}/${ch.volNum ? 'v' + safe(ch.volNum) + '_' : ''}ch${safe(num)}${ch.dname ? '_' + safe(ch.dname) : ''}`;
+          if (!globalChaptersData.some(c => c.ch.id === ch.id)) {
+            globalChaptersData.push({ ch, files: [] });
           }
+          for (let idx = 0; idx < urls.length; idx++) {
+            retryTasks.push({ ch, chId: ch.id, idx, url: urls[idx], dir, label: `ch${num}` });
+          }
+        } catch (e) {
+          console.warn('Chapter retry failed:', cf.label, e);
         }
-        prog(`Retry ${i + 1}/${items.length}`);
       }
-      
+
+      if (!retryTasks.length) {
+        prog('Nothing to retry.');
+        $('#xcdl-retry').disabled = false;
+        return;
+      }
+
+      // Rebuild the chapter map from globalChaptersData for easy lookup.
+      const chapterMap = new Map(globalChaptersData.map(c => [c.ch.id, c]));
+
+      // Clear failed entries we're retrying (grabImage will re-add on failure).
+      failedList.length = 0;
+      for (const f of imageFailures) {
+        if (!failedList.some(x => x.url === f.url && x.idx === f.idx && x.ch.id === f.ch.id)) {
+          // Don't pre-add — grabImage adds only on failure.
+        }
+      }
+      stats.failed = 0;
+      renderStats();
+
+      // Run the pool on just the retry tasks.
+      await runWorkerPool(retryTasks, chapterMap);
+
       prog('Re-calculating ZIP parts...');
       await sleep(100);
       const parts = groupIntoParts(globalChaptersData, MAX_ZIP_BYTES);
@@ -373,50 +477,45 @@
       $('#xcdl-retry').disabled = false;
     };
 
+    /* ---------------------------------------------------------- download */
     $('#xcdl-dl').onclick = async () => {
       const picked = [...root.querySelectorAll('.xcdl-item input')].map((i, k) => [i.checked, chapters[k]])
         .filter(([c]) => c).map(([, ch]) => ch);
       if (!picked.length || !window.JSZip) return;
-      
+
       $('#xcdl-dl').disabled = true;
       $('#xcdl-retry').style.display = 'none';
       failedList.length = 0;
       stats.chTotal = picked.length; stats.chDone = 0; stats.imgDone = 0; stats.failed = 0;
       stats.imgTotal = 0;
-      
-      prog('Counting pages…');
-      for (const ch of picked) {
-        try { stats.imgTotal += (await gql(Q_PAGES, { id: ch.id })).get_chapterNode.data.imageUrls.length; }
-        catch (_) { stats.imgTotal += 0; }
-      }
-      renderStats();
-      
+
       currentTitleName = safe(await gql(Q_TITLE, { id: titleId }).then((d) => d.get_title_titleNode.data.title).catch(() => titleId));
       const dirBase = currentTitleName;
-      globalChaptersData = [];
       const t0 = Date.now();
 
-      for (const ch of picked) {
-        try { 
-          const chData = await downloadChapter(ch, dirBase); 
-          if (chData) globalChaptersData.push(chData);
-        } catch (e) { 
-          prog(`Chapter failed: ${e.message}`); 
-          failedList.push({ ch, idx: -1, url: '', dir: '', label: `ch${ch.chaNum ?? ch.serial}`, chapterFail: true }); 
-        }
-        stats.chDone++;
-        renderStats();
+      prog('Collecting page URLs for all selected chapters…');
+      const { allTasks, chapterMap } = await buildAllTasks(picked, dirBase);
+
+      if (!allTasks.length) {
+        prog('No image tasks — nothing to download.');
+        $('#xcdl-dl').disabled = false;
+        return;
       }
+
+      prog(`Starting global worker pool (${GLOBAL_CONCURRENCY} workers) on ${allTasks.length} tasks…`);
+      globalChaptersData = [...chapterMap.values()];
+
+      await runWorkerPool(allTasks, chapterMap);
 
       prog('Calculating ZIP parts (Target: ~495 MB)...');
       await sleep(100);
-      
+
       const parts = groupIntoParts(globalChaptersData, MAX_ZIP_BYTES);
       const totalTime = ((Date.now() - t0) / 1000).toFixed(0);
       prog(`Processing complete in ${totalTime}s. Select a part below to download.`);
-      
+
       renderDownloadButtons(parts, currentTitleName);
-      
+
       if (failedList.length > 0) {
         $('#xcdl-retry').style.display = '';
       }
