@@ -1,6 +1,6 @@
-// down.js - Manga Downloader Script (xcomic.to GraphQL + Client-Side Resize/Convert)
+// down.js - Manga Downloader Script ( GraphQL + Client-Side Resize/Convert)
 // Loaded via bookmarklet
-// Version: 2024-03-20-XCOMIC (ALL Images WebP + Smart Resize + Save ID + Progress + Edition Filter)
+// Version: 2024-03-20-XCOMIC (ALL Images WebP + Smart Resize + Save ID + Progress + Edition Selector)
 
 (function() {
   'use strict';
@@ -16,7 +16,7 @@
   const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
   const SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
-  // XCOMIC GraphQL queries (copied from working downloader)
+  // XCOMIC GraphQL queries
   const Q_TITLE = `query($id:ID!){get_title_titleNode(id:$id){id data{title}}}`;
   const Q_CHAPTERS = `query($select:Select_Comic_ChapterList){get_comic_chapterList_fullList(select:$select){paging{next} items{id data{id dname chaNum serial volNum datePublic}}}}`;
   const Q_PAGES = `query($id:ID!){get_chapterNode(id:$id){id data{imageUrls}}}`;
@@ -49,9 +49,7 @@
   let currentTitleId = '';
   let editions = [];             // [{ id, count, flag }]
   let currentEditionId = '';
-
-  // Edition filter (replaces scanlator filter)
-  let selectedEditions = new Set();
+  let isLoadingEdition = false;
 
   // ============ UTILS ============
   const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
@@ -102,7 +100,6 @@
       return { id: a.getAttribute('href').split('/')[2] || '', count, flag };
     }).filter((e) => e.id && e.count > 0);
 
-    // Sort desc by count; biggest (likely English) first.
     list.sort((a, b) => b.count - a.count);
     return list;
   };
@@ -129,7 +126,6 @@
       if (!next) break;
       page = next;
     }
-    // Sort ascending by vol then chapter number
     chapters.sort((a, b) => {
       const va = Number(a.vol) || 0, vb = Number(b.vol) || 0;
       if (va !== vb) return va - vb;
@@ -140,7 +136,7 @@
     return chapters;
   };
 
-  // ============ IMAGE CONVERTER (unchanged core) ============
+  // ============ IMAGE CONVERTER ============
   const resizeImage = async (imageUrl, originalBlob) => {
     return new Promise(async (resolve) => {
       try {
@@ -213,7 +209,7 @@
     });
   };
 
-  // ★ KEY CHANGE: images must route through the Cloudflare Worker proxy
+  // Images must route through the Cloudflare Worker proxy
   const fetchImageBlob = async (url) => {
     const proxied = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
     const response = await fetch(proxied, { credentials: 'omit', mode: 'cors' });
@@ -223,7 +219,7 @@
     return blob;
   };
 
-  // ============ PARALLEL DOWNLOADER (unchanged) ============
+  // ============ PARALLEL DOWNLOADER ============
   const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
     const results = [];
     const executing = new Set();
@@ -250,7 +246,7 @@
     return Promise.all(results);
   };
 
-  // ============ PARALLEL CHAPTER FETCHER (unchanged flow) ============
+  // ============ PARALLEL CHAPTER FETCHER ============
   const fetchChaptersParallel = async (chapters, onProgress, isRefetch = false) => {
     const results = new Map();
     const executing = new Set();
@@ -316,7 +312,6 @@
 
   const fetchChapterImages = async (chapterId, chapterNum, showLog = true) => {
     try {
-      // ★ KEY CHANGE: fetch page URLs via GraphQL
       const data = await fetchRetry(() => gql(Q_PAGES, { id: chapterId }));
       const imageUrls = (data.get_chapterNode && data.get_chapterNode.data && data.get_chapterNode.data.imageUrls) || [];
 
@@ -328,7 +323,6 @@
       const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
         const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
         try {
-          // ★ fetchImageBlob now proxies through CF Worker
           const originalBlob = await fetchImageBlob(originalUrl);
           const { blob: finalBlob, converted, resized, savings, originalSize, newSize } =
             await resizeImage(originalUrl, originalBlob);
@@ -436,10 +430,7 @@
     }, 3000);
   };
 
-  /* ============================================================
-     UI  —  The HTML/CSS below is unchanged from your down.js
-     EXCEPT: "scanlator filters" → "edition filters" (labels only)
-     ============================================================ */
+  // ============ UI ============
   const createOverlay = () => {
     const overlay = document.createElement('div');
     overlay.id = 'mdx-overlay';
@@ -517,11 +508,13 @@
         .mdx-batch-summary { background:#2f3549; padding:10px; border-radius:6px; margin-top:10px; font-size:12px; color:#7982a9; display:none; }
         .mdx-batch-summary.active { display:block; }
         .mdx-batch-summary strong { color:#c0caf5; }
-        .mdx-scanlator-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; background:#2f3549; border:1px solid #414868; border-radius:16px; font-size:10px; color:#c0caf5; cursor:pointer; transition:all 0.15s; user-select:none; }
+        .mdx-scanlator-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; background:#2f3549; border:1px solid #414868; border-radius:16px; font-size:10px; color:#c0caf5; cursor:pointer; transition:all 0.15s; user-select:none; pointer-events:auto; font-family:inherit; }
         .mdx-scanlator-chip:hover { background:#414868; }
         .mdx-scanlator-chip.active { background:#e0af68; color:#1a1b26; border-color:#f0bf78; font-weight:600; }
-        .mdx-scanlator-chip input { display:none; }
+        .mdx-scanlator-chip:disabled { opacity:0.5; cursor:wait; }
+        .mdx-scanlator-chip:disabled:hover { background:#2f3549; }
         .mdx-scanlator-count { font-size:9px; color:#7982a9; background:#1a1b26; padding:2px 6px; border-radius:10px; }
+        .mdx-scanlator-chip.active .mdx-scanlator-count { background:#c08a3e; color:#1a1b26; }
         .mdx-image-progress { font-size:10px; color:#7982a9; margin-top:6px; display:flex; align-items:center; gap:6px; }
         .mdx-image-bar { flex:1; height:4px; background:#1a1b26; border-radius:2px; overflow:hidden; }
         .mdx-image-fill { height:100%; background:#7aa2f7; transition:width 0.2s; }
@@ -535,83 +528,102 @@
     return { overlay, close };
   };
 
-  /* -------- Edition filter (renamed from scanlator) -------- */
+  /* -------- Edition selector (single-select, reloads chapters) -------- */
   const renderScanlatorFilters = () => {
     const container = document.getElementById('mdx-scanlator-filters');
     if (!container) return;
     container.innerHTML = '';
 
     editions.forEach(ed => {
-      const chip = document.createElement('label');
-      chip.className = 'mdx-scanlator-chip' + (selectedEditions.has(ed.id) ? ' active' : '');
+      const isActive = ed.id === currentEditionId;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'mdx-scanlator-chip' + (isActive ? ' active' : '');
+      chip.disabled = isLoadingEdition || isFetching;
+      chip.title = isActive ? 'Currently loaded edition' : 'Click to load this edition';
       chip.innerHTML = `
-        <input type="checkbox" value="${ed.id}" ${selectedEditions.has(ed.id) ? 'checked' : ''}>
         <span>${ed.flag || '🌐'} ${ed.id}</span>
         <span class="mdx-scanlator-count">${ed.count}</span>
       `;
-      chip.addEventListener('click', (e) => { e.preventDefault(); toggleScanlator(ed.id); });
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        switchEdition(ed.id);
+      });
       container.appendChild(chip);
     });
+  };
 
-    if (editions.length > 1) {
-      const allChip = document.createElement('label');
-      allChip.className = 'mdx-scanlator-chip' + (selectedEditions.size === 0 ? ' active' : '');
-      allChip.innerHTML = `<input type="checkbox"> <span>🌐 All</span>`;
-      allChip.addEventListener('click', (e) => { e.preventDefault(); clearScanlatorFilter(); });
-      container.insertBefore(allChip, container.firstChild);
+  const switchEdition = async (editionId) => {
+    if (editionId === currentEditionId || isLoadingEdition || isFetching) return;
+    isLoadingEdition = true;
+    renderScanlatorFilters();
+
+    try {
+      log(`🌐 Switching edition → ${editionId}...`, 'info');
+      currentEditionId = editionId;
+      selectedChapters.clear();
+      chapterDataCache.clear();
+
+      allChapters = await fetchAllChapters(editionId);
+
+      if (allChapters.length) {
+        const last = allChapters[allChapters.length - 1];
+        latestChapter = String(last.number);
+      } else {
+        latestChapter = '?';
+      }
+
+      const summary = document.getElementById('mdx-batch-summary');
+      if (summary) summary.classList.remove('active');
+
+      log(`✓ Loaded ${allChapters.length} chapters from ${editionId}`, 'success');
+    } catch (err) {
+      log(`❌ Edition switch failed: ${err.message}`, 'error');
+    } finally {
+      isLoadingEdition = false;
+      renderScanlatorFilters();
+      renderChapters();
+      updateCount();
     }
   };
 
-  const toggleScanlator = (name) => {
-    if (selectedEditions.has(name)) selectedEditions.delete(name);
-    else selectedEditions.add(name);
-    renderScanlatorFilters();
-    renderChapters();
-  };
-
-  const clearScanlatorFilter = () => {
-    selectedEditions.clear();
-    renderScanlatorFilters();
-    renderChapters();
-  };
-
-  // "scanlator" now means "edition"
-  const isChapterFiltered = (chapter) => {
-    if (selectedEditions.size === 0) return true;
-    return selectedEditions.has(chapter.edition);
-  };
-
+  // "Select Filtered" now selects all currently-loaded (single edition) chapters
   const selectByScanlator = () => {
-    if (isFetching) return;
+    if (isFetching || isLoadingEdition) return;
     selectedChapters.clear();
-    allChapters.forEach(ch => {
-      if (isChapterFiltered(ch)) selectedChapters.add(ch.chapter_id);
-    });
+    allChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
     renderChapters();
     updateCount();
   };
+
+  // Only one edition is loaded at a time, so filter is trivially true
+  const isChapterFiltered = (_chapter) => true;
 
   const renderChapters = () => {
     const list = document.getElementById('mdx-chap-list');
     if (!list) return;
     list.innerHTML = '';
 
+    if (!allChapters.length) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:#7982a9;">No chapters loaded. Pick an edition above.</div>';
+      return;
+    }
+
     allChapters.forEach(ch => {
       const item = document.createElement('div');
       const isSelected = selectedChapters.has(ch.chapter_id);
       const cacheData = chapterDataCache.get(ch.chapter_id);
-      const isFiltered = isChapterFiltered(ch);
 
       item.className = 'mdx-chap-item' +
         (isSelected ? ' selected' : '') +
         (cacheData ? ' fetched' : '') +
         (isFetching && isSelected ? ' fetching' : '');
 
-      if (!isFiltered) { item.style.opacity = '0.5'; item.style.pointerEvents = 'none'; }
       item.dataset.chapterId = ch.chapter_id;
 
       item.addEventListener('click', (e) => {
-        if (isFiltered && e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
+        if (e.target.type !== 'checkbox' && !e.target.classList.contains('mdx-refetch-btn')) {
           toggleChapter(ch.chapter_id);
         }
       });
@@ -623,7 +635,7 @@
       checkbox.type = 'checkbox';
       checkbox.className = 'mdx-chap-check';
       checkbox.checked = isSelected;
-      checkbox.disabled = isFetching || !isFiltered;
+      checkbox.disabled = isFetching;
       checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
       checkbox.addEventListener('click', (e) => e.stopPropagation());
 
@@ -684,7 +696,7 @@
         item.appendChild(statusDiv);
       }
 
-      if (isFetching && isSelected && !cacheData && isFiltered) {
+      if (isFetching && isSelected && !cacheData) {
         const progressDiv = document.createElement('div');
         progressDiv.className = 'mdx-image-progress';
         progressDiv.id = `mdx-img-progress-${ch.chapter_id}`;
@@ -716,7 +728,7 @@
 
   const selectAll = () => {
     if (isFetching) return;
-    allChapters.forEach(ch => { if (isChapterFiltered(ch)) selectedChapters.add(ch.chapter_id); });
+    allChapters.forEach(ch => selectedChapters.add(ch.chapter_id));
     renderChapters();
     updateCount();
   };
@@ -733,7 +745,6 @@
     selectedChapters.clear();
     const seen = new Map();
     allChapters.forEach(ch => {
-      if (!isChapterFiltered(ch)) return;
       const num = parseFloat(ch.number);
       if (!isNaN(num)) {
         const intNum = Math.floor(num);
@@ -768,7 +779,7 @@
         : '';
     }
     if (btnFetch) {
-      btnFetch.disabled = selectedChapters.size === 0 || isFetching;
+      btnFetch.disabled = selectedChapters.size === 0 || isFetching || isLoadingEdition;
       btnFetch.textContent = isFetching ? '⏳ FETCHING...' : `📥 FETCH (${selectedChapters.size} Ch)`;
     }
     if (btnPause) {
@@ -811,7 +822,7 @@
     updateCount();
     document.getElementById('mdx-console').classList.add('active');
 
-    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id) && isChapterFiltered(ch));
+    const selected = allChapters.filter(ch => selectedChapters.has(ch.chapter_id));
     selected.sort((a, b) => {
       const na = parseFloat(a.number), nb = parseFloat(b.number);
       if (!isNaN(na) && !isNaN(nb)) return na - nb;
@@ -863,7 +874,7 @@
       const c = chapterDataCache.get(id);
       if (c && (c.status === 'partial' || c.status === 'failed')) {
         const ch = allChapters.find(x => x.chapter_id === id);
-        if (ch && isChapterFiltered(ch)) failedChapters.push(ch);
+        if (ch) failedChapters.push(ch);
       }
     });
     if (failedChapters.length === 0) { log('❌ No failed chapters to refetch', 'error'); return; }
@@ -976,7 +987,6 @@
         if (rangeStart === null) rangeStart = chapterNum;
         rangeEnd = chapterNum;
 
-        // Folder keeps vol + edition for clarity
         const folderName = `Ch.${ch.number}${ch.vol ? ' (v' + ch.vol + ')' : ''}${ch.name ? ' - ' + ch.name : ''}`;
         const folder = currentZip.folder(folderName);
         cacheData.blobs.forEach(b => {
@@ -1078,7 +1088,7 @@
       const rawTitle = (titleData.get_title_titleNode && titleData.get_title_titleNode.data && titleData.get_title_titleNode.data.title) || 'manga';
       mangaTitle = safe(rawTitle) || 'manga';
 
-      // Editions discovery (equivalent of scanlator groups)
+      // Editions discovery
       editions = await fetchEditions();
       if (!editions.length) throw new Error('No readable editions found on this title');
       currentEditionId = editions[0].id;
@@ -1086,7 +1096,6 @@
       // Fetch chapters for the default edition
       allChapters = await fetchAllChapters(currentEditionId);
 
-      // latestChapter = highest number
       if (allChapters.length) {
         const last = allChapters[allChapters.length - 1];
         latestChapter = String(last.number);
@@ -1105,10 +1114,10 @@
             <span>📖 Select Chapters (${allChapters.length} total)</span>
             <span style="font-size:11px;color:#7982a9;">Click to toggle</span>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span style="font-size:11px;color:#7982a9;">Edition filter:</span>
+              <span style="font-size:11px;color:#7982a9;">Edition:</span>
               <div id="mdx-scanlator-filters" style="display:flex;gap:4px;flex-wrap:wrap;"></div>
-              <button id="mdx-btn-scanlator-select" class="mdx-btn mdx-btn-secondary" style="padding:4px 10px;font-size:11px;" title="Select chapters matching chosen editions">
-                ✅ Select Filtered
+              <button id="mdx-btn-scanlator-select" class="mdx-btn mdx-btn-secondary" style="padding:4px 10px;font-size:11px;" title="Select all chapters in current edition">
+                ✅ Select All
               </button>
             </div>
           </div>
@@ -1151,7 +1160,7 @@
       log(`📚 Loaded: ${mangaTitle}`, 'info');
       log(`🆔 Title ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
-      log(`🌐 Editions: ${editions.map(e => e.id).join(', ')}`, 'info');
+      log(`🌐 Editions: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'info');
       log(`🎨 Convert: ${RESIZE_CONFIG.maxWidth}px max width, ${Math.round(RESIZE_CONFIG.quality * 100)}% ${RESIZE_CONFIG.format.split('/')[1].toUpperCase()}${RESIZE_CONFIG.skipIfLarger ? ', skip if larger' : ''}`, 'info');
     } catch (err) {
       console.error('Init error:', err);
