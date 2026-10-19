@@ -221,7 +221,7 @@
         <span id="main-progress-text">0%</span>
       </div>
       <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
-        ⚡ Data Saver enabled + Parallel downloading (No client-side conversion)
+        ⚡ Data Saver enabled + Multi-fallback CORS proxy + Parallel downloading
       </div>
     </div>
   </div>
@@ -254,7 +254,7 @@
     // ============ UTILS ============
     const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
-    // Smart fetch: tries direct first, falls back to proxy if CORS blocks it
+    // Smart fetch for API: tries direct first, falls back to proxy if CORS blocks it
     const fetchApi = async (url) => {
       try {
         const response = await fetch(url, { credentials: 'omit', mode: 'cors' });
@@ -328,22 +328,56 @@
       return chapters;
     };
 
-    // ============ IMAGE FETCHING ============
+    // ============ ROBUST IMAGE FETCHING (4-Tier Fallback) ============
     const fetchImageBlob = async (url) => {
+      const errors = [];
+      
+      // Attempt 1: Direct fetch (may work with certain browser extensions like "Allow CORS")
       try {
-        const response = await fetch(url, { credentials: 'omit', mode: 'cors' });
+        const response = await fetch(url, { 
+          credentials: 'omit', 
+          mode: 'cors',
+          headers: { 'Referer': 'https://mangadex.org' }
+        });
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const blob = await response.blob();
-        if (!blob.type.startsWith('image/')) throw new Error('not an image (' + blob.type + ')');
+        if (blob.size === 0) throw new Error('Empty response');
         return blob;
-      } catch (e) {
-        const proxied = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
-        const response2 = await fetch(proxied, { credentials: 'omit', mode: 'cors' });
+      } catch (e) { errors.push(`Direct: ${e.message}`); }
+
+      // Attempt 2: User's Cloudflare Worker
+      // NOTE: If this returns 404/403, your worker code MUST add 'Referer': 'https://mangadex.org' 
+      // to its fetch request headers, otherwise MangaDex will reject it.
+      try {
+        const proxiedUrl = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
+        const response2 = await fetch(proxiedUrl, { credentials: 'omit', mode: 'cors' });
         if (!response2.ok) throw new Error('HTTP ' + response2.status);
         const blob2 = await response2.blob();
-        if (!blob2.type.startsWith('image/')) throw new Error('not an image (' + blob2.type + ')');
+        if (blob2.size === 0) throw new Error('Empty response');
         return blob2;
-      }
+      } catch (e) { errors.push(`Worker: ${e.message}`); }
+
+      // Attempt 3: Public CORS Proxy 1 (corsproxy.io - highly reliable for MangaDex)
+      try {
+        const publicProxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+        const response3 = await fetch(publicProxyUrl, { credentials: 'omit', mode: 'cors' });
+        if (!response3.ok) throw new Error('HTTP ' + response3.status);
+        const blob3 = await response3.blob();
+        if (blob3.size === 0) throw new Error('Empty response');
+        return blob3;
+      } catch (e) { errors.push(`Proxy1: ${e.message}`); }
+
+      // Attempt 4: Public CORS Proxy 2 (allorigins.win - backup if the first is rate-limited)
+      try {
+        const publicProxyUrl2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+        const response4 = await fetch(publicProxyUrl2, { credentials: 'omit', mode: 'cors' });
+        if (!response4.ok) throw new Error('HTTP ' + response4.status);
+        const blob4 = await response4.blob();
+        if (blob4.size === 0) throw new Error('Empty response');
+        return blob4;
+      } catch (e) { errors.push(`Proxy2: ${e.message}`); }
+
+      throw new Error('All fetch methods failed: ' + errors.join(' | '));
     };
 
     // ============ CONCURRENCY & FETCHING ============
@@ -920,7 +954,7 @@
         log(`🆔 Manga ID: ${mangaId}`, 'log-info');
         log(`📖 Latest Chapter: ${latestChapter}`, 'log-info');
         log(`👥 Groups: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'log-info');
-        log(`⚡ Data Saver enabled + Parallel downloading`, 'log-info');
+        log(`⚡ Data Saver enabled + Multi-fallback proxy fetching`, 'log-info');
 
       } catch (err) {
         document.getElementById('loading-state').style.display = 'none';
