@@ -58,7 +58,7 @@
     .chip {
       display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-tertiary);
       border: 1px solid var(--border); border-radius: 16px; font-size: 12px; color: var(--text-primary);
-      cursor: pointer; transition: all 0.15s; user-select: none;
+      cursor: pointer; transition: all 0.15s; user-select: none; white-space: nowrap;
     }
     .chip:hover { background: var(--border); }
     .chip.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent-hover); font-weight: 600; }
@@ -126,7 +126,7 @@
 
   <div class="input-group">
     <input type="text" id="manga-input" placeholder="Paste MangaDex URL (e.g., https://mangadex.org/title/12345) or ID">
-    <select id="lang-select" style="max-width: 150px;">
+    <select id="lang-select" style="max-width: 150px;" title="Default language to filter on load">
       <option value="en">English</option>
       <option value="pt-br">Português (BR)</option>
       <option value="es">Español</option>
@@ -151,9 +151,9 @@
         </div>
       </div>
       <div class="filters">
-        <span style="font-size: 12px; color: var(--text-secondary);">Group:</span>
-        <div id="scanlator-filters"></div>
-        <button class="btn-secondary" id="btn-select-group" style="padding: 6px 12px; font-size: 12px;" title="Select all chapters in current group">✅ Select Group</button>
+        <span style="font-size: 12px; color: var(--text-secondary);">Language:</span>
+        <div id="lang-filters"></div>
+        <button class="btn-secondary" id="btn-select-lang" style="padding: 6px 12px; font-size: 12px;" title="Select all chapters in current language">✅ Select Lang</button>
       </div>
     </div>
 
@@ -211,12 +211,12 @@
       'sk': '🇸🇰 Slovenčina', 'lt': '🇱🇹 Lietuvių', 'lv': '🇱🇻 Latviešu', 'et': '🇪🇪 Eesti',
       'sl': '🇸🇮 Slovenščina', 'hr': '🇭🇷 Hrvatski', 'sr': '🇷🇸 Srpski', 'el': '🇬🇷 Ελληνικά',
       'pt': '🇵🇹 Português', 'hi': '🇮🇳 हिन्दी', 'bn': '🇧🇩 বাংলা', 'fa': '🇮🇷 فارسی',
-      'ur': '🇵🇰 اردو', 'default': '🌐 Unknown'
+      'ur': '🇵🇰 اردو', 'unknown': '🌐 Unknown'
     };
 
     let allChapters = [], selectedChapters = new Set(), mangaTitle = 'manga', mangaId = '', latestChapter = '?';
     let isDownloading = false, isFetching = false, isPaused = false, pauseResolve = null, fetchCancelled = false;
-    let chapterDataCache = new Map(), editions = [], currentEditionId = 'ALL', isLoadingEdition = false;
+    let chapterDataCache = new Map(), editions = [], currentLangId = 'ALL', isLoadingEdition = false;
 
     const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
@@ -240,20 +240,29 @@
       }
     };
 
-    const generateEditions = (chapters) => {
+    // Group chapters by Language instead of Scanlation Group
+    const generateLanguages = (chapters) => {
       const counts = {};
-      chapters.forEach(ch => { counts[ch.group] = (counts[ch.group] || 0) + 1; });
-      return Object.entries(counts).map(([name, count]) => ({ id: name, count: count, flag: '👥' })).sort((a, b) => b.count - a.count);
+      chapters.forEach(ch => { 
+        counts[ch.lang] = (counts[ch.lang] || 0) + 1; 
+      });
+      return Object.entries(counts).map(([code, count]) => ({ 
+        id: code, 
+        name: LANG_MAP[code] || `🌐 ${code.toUpperCase()}`,
+        count: count, 
+        flag: '🌐' 
+      })).sort((a, b) => b.count - a.count);
     };
 
-    const getFilteredChapters = () => currentEditionId === 'ALL' ? allChapters : allChapters.filter(ch => ch.group === currentEditionId);
+    const getFilteredChapters = () => currentLangId === 'ALL' ? allChapters : allChapters.filter(ch => ch.lang === currentLangId);
 
-    const fetchAllChapters = async (id, lang) => {
+    // Fetch ALL languages (removed translatedLanguage filter)
+    const fetchAllChapters = async (id) => {
       const chapters = [];
       let offset = 0;
       const limit = 500;
       while (true) {
-        const url = `https://api.mangadex.org/manga/${id}/feed?limit=${limit}&offset=${offset}&order[chapter]=asc&order[volume]=asc&includes[]=scanlation_group&translatedLanguage[]=${lang}`;
+        const url = `https://api.mangadex.org/manga/${id}/feed?limit=${limit}&offset=${offset}&order[chapter]=asc&order[volume]=asc&includes[]=scanlation_group`;
         const data = await fetchApi(url);
         if (data.result === 'error') throw new Error(data.errors ? data.errors.map(e => e.detail).join(', ') : 'Failed to fetch chapters');
         for (const item of data.data) {
@@ -434,37 +443,38 @@
       logEl.scrollTop = logEl.scrollHeight;
     };
 
-    const renderScanlatorFilters = () => {
-      const container = document.getElementById('scanlator-filters');
+    const renderLangFilters = () => {
+      const container = document.getElementById('lang-filters');
       container.innerHTML = '';
       editions.forEach(ed => {
-        const isActive = ed.id === currentEditionId;
+        const isActive = ed.id === currentLangId;
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'chip' + (isActive ? ' active' : '');
         chip.disabled = isLoadingEdition || isFetching;
-        chip.innerHTML = `<span>${ed.flag} ${ed.id}</span><span class="chip-count">${ed.count}</span>`;
-        chip.addEventListener('click', () => switchEdition(ed.id));
+        chip.innerHTML = `<span>${ed.flag} ${ed.name}</span><span class="chip-count">${ed.count}</span>`;
+        chip.addEventListener('click', () => switchLang(ed.id));
         container.appendChild(chip);
       });
     };
 
-    const switchEdition = async (editionId) => {
-      if (editionId === currentEditionId || isLoadingEdition || isFetching) return;
+    const switchLang = async (langId) => {
+      if (langId === currentLangId || isLoadingEdition || isFetching) return;
       isLoadingEdition = true;
-      renderScanlatorFilters();
+      renderLangFilters();
       try {
-        log(`🌐 Switching group → ${editionId}...`, 'log-info');
-        currentEditionId = editionId;
+        const langName = editions.find(e => e.id === langId)?.name || langId;
+        log(`🌐 Switching language → ${langName}...`, 'log-info');
+        currentLangId = langId;
         selectedChapters.clear();
         chapterDataCache.clear();
         document.getElementById('batch-summary').classList.remove('active');
-        log(`✓ Filtered to ${getFilteredChapters().length} chapters for ${editionId}`, 'log-success');
+        log(`✓ Filtered to ${getFilteredChapters().length} chapters in this language`, 'log-success');
       } catch (err) {
-        log(`❌ Group switch failed: ${err.message}`, 'log-error');
+        log(`❌ Language switch failed: ${err.message}`, 'log-error');
       } finally {
         isLoadingEdition = false;
-        renderScanlatorFilters();
+        renderLangFilters();
         renderChapters();
         updateCount();
       }
@@ -475,7 +485,7 @@
       list.innerHTML = '';
       const filtered = getFilteredChapters();
       if (!filtered.length) {
-        list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">No chapters found for this group.</div>';
+        list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">No chapters found for this language.</div>';
         return;
       }
       filtered.forEach(ch => {
@@ -581,7 +591,14 @@
       });
       renderChapters(); updateCount();
     };
-    const selectByGroup = () => { if (!isFetching && !isLoadingEdition) { selectedChapters.clear(); getFilteredChapters().forEach(ch => selectedChapters.add(ch.chapter_id)); renderChapters(); updateCount(); } };
+    const selectByLang = () => { 
+      if (!isFetching && !isLoadingEdition) { 
+        selectedChapters.clear(); 
+        getFilteredChapters().forEach(ch => selectedChapters.add(ch.chapter_id)); 
+        renderChapters(); 
+        updateCount(); 
+      } 
+    };
 
     const updateCount = () => {
       document.getElementById('selected-count').textContent = selectedChapters.size;
@@ -783,9 +800,9 @@
       }
     };
 
-    const initDownloader = async (inputId, lang) => {
+    const initDownloader = async (inputId, defaultLang) => {
       allChapters = []; selectedChapters.clear(); chapterDataCache.clear(); editions = [];
-      currentEditionId = 'ALL'; isFetching = false; isDownloading = false;
+      currentLangId = 'ALL'; isFetching = false; isDownloading = false;
       document.getElementById('main-ui').style.display = 'none';
       document.getElementById('loading-state').style.display = 'block';
       document.getElementById('loading-text').textContent = 'Fetching manga details...';
@@ -800,13 +817,17 @@
         const attrs = titleData.data.attributes;
         mangaTitle = safe(attrs.title.en || attrs.title.ja || attrs.title['ja-ro'] || Object.values(attrs.title)[0] || 'manga');
         
-        document.getElementById('loading-text').textContent = 'Fetching chapters...';
-        allChapters = await fetchAllChapters(mangaId, lang);
+        document.getElementById('loading-text').textContent = 'Fetching all chapters (all languages)...';
+        allChapters = await fetchAllChapters(mangaId);
         if (allChapters.length) latestChapter = String(allChapters[allChapters.length - 1].number);
         else latestChapter = '?';
 
-        editions = generateEditions(allChapters);
-        editions.unshift({ id: 'ALL', count: allChapters.length, flag: '🌐' });
+        editions = generateLanguages(allChapters);
+        editions.unshift({ id: 'ALL', name: '🌍 All Languages', count: allChapters.length, flag: '🌍' });
+
+        // Smart default: pre-select the language the user chose in the dropdown, if it exists
+        const hasDefaultLang = editions.some(e => e.id === defaultLang);
+        currentLangId = hasDefaultLang ? defaultLang : 'ALL';
 
         document.getElementById('manga-title-display').textContent = mangaTitle;
         document.getElementById('manga-id-display').textContent = mangaId;
@@ -815,14 +836,15 @@
         document.getElementById('loading-state').style.display = 'none';
         document.getElementById('main-ui').style.display = 'flex';
 
-        renderScanlatorFilters();
+        renderLangFilters();
         renderChapters();
         updateCount();
 
+        const activeLangName = editions.find(e => e.id === currentLangId)?.name || 'All Languages';
         log(`📚 Loaded: ${mangaTitle}`, 'log-success');
         log(`🆔 Manga ID: ${mangaId}`, 'log-info');
         log(`📖 Latest Chapter: ${latestChapter}`, 'log-info');
-        log(`👥 Groups: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'log-info');
+        log(`🌐 Showing: ${activeLangName} (${getFilteredChapters().length} chapters)`, 'log-info');
         log(`⚡ Data Saver enabled + Cloudflare Worker Proxy Only`, 'log-info');
 
       } catch (err) {
@@ -848,7 +870,7 @@
     document.getElementById('btn-all').addEventListener('click', selectAll);
     document.getElementById('btn-none').addEventListener('click', deselectAll);
     document.getElementById('btn-unique').addEventListener('click', selectUnique);
-    document.getElementById('btn-select-group').addEventListener('click', selectByGroup);
+    document.getElementById('btn-select-lang').addEventListener('click', selectByLang);
     document.getElementById('btn-fetch').addEventListener('click', fetchSelected);
     document.getElementById('btn-pause').addEventListener('click', togglePause);
     document.getElementById('btn-refetch-all').addEventListener('click', refetchAllFailed);
