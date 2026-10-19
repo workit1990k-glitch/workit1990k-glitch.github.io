@@ -81,6 +81,7 @@
     .chap-num { font-weight: 600; color: var(--text-primary); }
     .chap-meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
     .chap-group { font-size: 11px; color: var(--success); margin-top: 2px; }
+    .chap-lang { font-size: 11px; color: var(--info); margin-top: 2px; }
     .chap-status { margin-top: 8px; padding: 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 11px; }
     .status-success { color: var(--success); }
     .status-partial { color: var(--accent); }
@@ -186,7 +187,7 @@
         <span id="main-progress-text">0%</span>
       </div>
       <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
-        ⚡ Data Saver enabled + Custom Cloudflare Worker Proxy + Parallel downloading
+        ⚡ Data Saver enabled + Cloudflare Worker Proxy Only + Parallel downloading
       </div>
     </div>
   </div>
@@ -197,6 +198,21 @@
     const MAX_ZIP_SIZE = 495 * 1024 * 1024;
     const PARALLEL_IMAGES = 3;
     const PARALLEL_CHAPTERS = 3;
+
+    const LANG_MAP = {
+      'en': '🇬🇧 English', 'pt-br': '🇧🇷 Português (BR)', 'es': '🇪🇸 Español', 'es-la': '🇲🇽 Español (LA)',
+      'fr': '🇫🇷 Français', 'de': '🇩🇪 Deutsch', 'ja': '🇯🇵 日本語', 'ru': '🇷🇺 Русский',
+      'it': '🇮🇹 Italiano', 'zh': '🇨🇳 中文', 'ko': '🇰🇷 한국어', 'vi': '🇻🇳 Tiếng Việt',
+      'tr': '🇹🇷 Türkçe', 'pl': '🇵🇱 Polski', 'id': '🇮🇩 Bahasa Indonesia', 'th': '🇹🇭 ไทย',
+      'ar': '🇸🇦 العربية', 'he': '🇮🇱 עברית', 'tl': '🇵🇭 Filipino', 'uk': '🇺🇦 Українська',
+      'ro': '🇷🇴 Română', 'hu': '🇭🇺 Magyar', 'ca': '🏴 Català', 'bg': '🇧🇬 Български',
+      'mn': '🇲🇳 Монгол', 'ms': '🇲🇾 Melayu', 'nl': '🇳🇱 Nederlands', 'sv': '🇸🇪 Svenska',
+      'da': '🇩🇰 Dansk', 'fi': '🇫🇮 Suomi', 'no': '🇳🇴 Norsk', 'cs': '🇨🇿 Čeština',
+      'sk': '🇸🇰 Slovenčina', 'lt': '🇱🇹 Lietuvių', 'lv': '🇱🇻 Latviešu', 'et': '🇪🇪 Eesti',
+      'sl': '🇸🇮 Slovenščina', 'hr': '🇭🇷 Hrvatski', 'sr': '🇷🇸 Srpski', 'el': '🇬🇷 Ελληνικά',
+      'pt': '🇵🇹 Português', 'hi': '🇮🇳 हिन्दी', 'bn': '🇧🇩 বাংলা', 'fa': '🇮🇷 فارسی',
+      'ur': '🇵🇰 اردو', 'default': '🌐 Unknown'
+    };
 
     let allChapters = [], selectedChapters = new Set(), mangaTitle = 'manga', mangaId = '', latestChapter = '?';
     let isDownloading = false, isFetching = false, isPaused = false, pauseResolve = null, fetchCancelled = false;
@@ -244,7 +260,14 @@
           const attrs = item.attributes;
           const groupRel = item.relationships.find(r => r.type === 'scanlation_group');
           const groupName = groupRel && groupRel.attributes ? groupRel.attributes.name : 'No Group';
-          chapters.push({ chapter_id: item.id, number: attrs.chapter || '0', name: attrs.title || '', vol: attrs.volume || '', group: groupName });
+          chapters.push({ 
+            chapter_id: item.id, 
+            number: attrs.chapter || '0', 
+            name: attrs.title || '', 
+            vol: attrs.volume || '', 
+            group: groupName,
+            lang: attrs.translatedLanguage || 'unknown'
+          });
         }
         if (data.data.length < limit) break;
         offset += limit;
@@ -259,24 +282,14 @@
       return chapters;
     };
 
-    // ============ ROBUST IMAGE FETCHING (Direct -> Fixed Worker) ============
+    // ============ CLOUDFLARE WORKER ONLY IMAGE FETCHING ============
     const fetchImageBlob = async (url) => {
-      // Attempt 1: Direct fetch (works if user has a CORS browser extension)
-      try {
-        const response = await fetch(url, { credentials: 'omit', mode: 'cors', headers: { 'Referer': 'https://mangadex.org' } });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const blob = await response.blob();
-        if (blob.size === 0) throw new Error('Empty response');
-        return blob;
-      } catch (e) {
-        // Attempt 2: Fixed Cloudflare Worker (Now sends correct Referer: mangadex.org)
-        const proxiedUrl = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
-        const response2 = await fetch(proxiedUrl, { credentials: 'omit', mode: 'cors' });
-        if (!response2.ok) throw new Error('Worker HTTP ' + response2.status);
-        const blob2 = await response2.blob();
-        if (blob2.size === 0) throw new Error('Empty response from worker');
-        return blob2;
-      }
+      const proxiedUrl = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
+      const response = await fetch(proxiedUrl, { credentials: 'omit', mode: 'cors' });
+      if (!response.ok) throw new Error('Worker HTTP ' + response.status);
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error('Empty response from worker');
+      return blob;
     };
 
     const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
@@ -481,9 +494,15 @@
         checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
         checkbox.addEventListener('click', (e) => e.stopPropagation());
 
+        const langInfo = LANG_MAP[ch.lang] || `🌐 ${ch.lang.toUpperCase()}`;
         const info = document.createElement('div');
         info.className = 'chap-info';
-        info.innerHTML = `<div class="chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div><div class="chap-meta">${ch.vol ? 'Vol.' + ch.vol + ' · ' : ''}ID: ${ch.chapter_id}</div><div class="chap-group">👥 ${ch.group}</div>`;
+        info.innerHTML = `
+          <div class="chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div>
+          <div class="chap-meta">${ch.vol ? 'Vol.' + ch.vol + ' · ' : ''}ID: ${ch.chapter_id}</div>
+          <div class="chap-group">👥 ${ch.group}</div>
+          <div class="chap-lang">🗣️ ${langInfo}</div>
+        `;
         item.appendChild(checkbox);
         item.appendChild(info);
 
@@ -804,7 +823,7 @@
         log(`🆔 Manga ID: ${mangaId}`, 'log-info');
         log(`📖 Latest Chapter: ${latestChapter}`, 'log-info');
         log(`👥 Groups: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'log-info');
-        log(`⚡ Data Saver enabled + Custom Cloudflare Worker Proxy`, 'log-info');
+        log(`⚡ Data Saver enabled + Cloudflare Worker Proxy Only`, 'log-info');
 
       } catch (err) {
         document.getElementById('loading-state').style.display = 'none';
