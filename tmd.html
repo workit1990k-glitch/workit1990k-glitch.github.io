@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MangaDex Downloader (Data Saver + WebP)</title>
+  
+  <!-- External Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #1a1b26;
+      --bg-secondary: #24283b;
+      --bg-tertiary: #2f3549;
+      --border: #414868;
+      --text-primary: #c0caf5;
+      --text-secondary: #7982a9;
+      --accent: #e0af68;
+      --accent-hover: #f0bf78;
+      --success: #9ece6a;
+      --error: #f7768e;
+      --info: #7aa2f7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.5rem; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+    
+    .input-group {
+      display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;
+      background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border);
+    }
+    .input-group input, .input-group select {
+      flex: 1; min-width: 200px; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg-primary); color: var(--text-primary); font-size: 14px; outline: none;
+    }
+    .input-group input:focus { border-color: var(--accent); }
+    
+    button {
+      padding: 10px 18px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background 0.2s; color: var(--bg-primary);
+    }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn-success { background: var(--success); }
+    .btn-success:hover { background: #b5e38a; }
+    .btn-save { background: #007bff; color: #fff; }
+    .btn-save:hover { background: #0056b3; }
+
+    #loading-state { text-align: center; padding: 40px; color: var(--text-secondary); display: none; }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #main-ui { display: none; flex-direction: column; gap: 16px; }
+    
+    .header-bar {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+      padding: 12px 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);
+    }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--bg-tertiary);
+      border: 1px solid var(--border); border-radius: 16px; font-size: 12px; color: var(--text-primary);
+      cursor: pointer; transition: all 0.15s; user-select: none;
+    }
+    .chip:hover { background: var(--border); }
+    .chip.active { background: var(--accent); color: var(--bg-primary); border-color: var(--accent-hover); font-weight: 600; }
+    .chip-count { font-size: 10px; background: var(--bg-primary); padding: 2px 6px; border-radius: 10px; color: var(--text-secondary); }
+    .chip.active .chip-count { background: rgba(0,0,0,0.2); color: var(--bg-primary); }
+
+    #chapter-list {
+      display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto;
+      padding: 4px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);
+    }
+    .chap-item {
+      display: flex; align-items: center; padding: 12px 14px; background: var(--bg-primary);
+      border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.15s; border: 1px solid transparent;
+    }
+    .chap-item:hover { background: var(--bg-tertiary); }
+    .chap-item.selected { border-color: var(--accent); }
+    .chap-item.fetched { background: #2a303c; }
+    .chap-item.fetching { opacity: 0.6; pointer-events: none; }
+    
+    .chap-check { width: 18px; height: 18px; margin-right: 12px; cursor: pointer; accent-color: var(--accent); }
+    .chap-info { flex: 1; }
+    .chap-num { font-weight: 600; color: var(--text-primary); }
+    .chap-meta { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .chap-group { font-size: 11px; color: var(--success); margin-top: 2px; }
+
+    .chap-status {
+      margin-top: 8px; padding: 8px; background: var(--bg-secondary); border-radius: 4px; font-size: 11px;
+    }
+    .status-success { color: var(--success); }
+    .status-partial { color: var(--accent); }
+    .status-failed { color: var(--error); }
+    
+    .failed-list { margin-top: 6px; padding: 6px; background: var(--bg-primary); border-radius: 4px; max-height: 80px; overflow-y: auto; }
+    .failed-item { padding: 3px 6px; margin: 2px 0; background: var(--bg-tertiary); border-radius: 3px; font-size: 10px; color: var(--error); }
+    
+    .refetch-btn {
+      margin-top: 6px; padding: 4px 10px; background: var(--error); color: var(--bg-primary);
+      border: none; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .refetch-btn:hover { background: #ff8fa3; }
+
+    .progress-bar-container { margin-top: 8px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+    .progress-bar { flex: 1; height: 4px; background: var(--bg-primary); border-radius: 2px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--info); transition: width 0.2s; }
+
+    .footer-bar {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+      padding: 14px 16px; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border);
+    }
+    .stats { font-size: 13px; color: var(--text-secondary); display: flex; gap: 16px; flex-wrap: wrap; }
+    .stats strong { color: var(--accent); }
+    .stats .size-strong { color: var(--success); }
+
+    #console-panel {
+      background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+      max-height: 200px; display: flex; flex-direction: column;
+    }
+    #console-log { flex: 1; overflow-y: auto; font-family: monospace; font-size: 11px; margin-bottom: 8px; }
+    .log-line { padding: 2px 6px; margin: 2px 0; border-radius: 4px; }
+    .log-info { color: var(--text-secondary); }
+    .log-success { color: var(--success); background: rgba(158,206,106,0.1); }
+    .log-error { color: var(--error); background: rgba(247,118,142,0.1); }
+    .log-image { color: var(--info); font-size: 10px; }
+
+    .batch-summary {
+      background: var(--bg-tertiary); padding: 10px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); display: none;
+    }
+    .batch-summary.active { display: block; }
+    .batch-summary strong { color: var(--text-primary); }
+  </style>
+</head>
+<body>
+
+  <h1>📚 MangaDex Downloader <span style="font-size: 0.7em; color: var(--text-secondary); font-weight: normal;">(Data Saver + WebP)</span></h1>
+
+  <div class="input-group">
+    <input type="text" id="manga-input" placeholder="Paste MangaDex URL (e.g., https://mangadex.org/title/12345) or ID">
+    <select id="lang-select" style="max-width: 150px;">
+      <option value="en">English</option>
+      <option value="pt-br">Português (BR)</option>
+      <option value="es">Español</option>
+      <option value="fr">Français</option>
+      <option value="de">Deutsch</option>
+      <option value="ja">Japanese</option>
+    </select>
+    <button class="btn-primary" id="load-btn">Load Manga</button>
+  </div>
+
+  <div id="loading-state">
+    <div class="spinner"></div>
+    <div id="loading-text">Fetching manga details...</div>
+  </div>
+
+  <div id="main-ui">
+    <div class="header-bar">
+      <div>
+        <strong id="manga-title-display" style="font-size: 16px;">Manga Title</strong>
+        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+          ID: <span id="manga-id-display">-</span> | Total Chapters: <span id="total-chap-display">0</span>
+        </div>
+      </div>
+      <div class="filters">
+        <span style="font-size: 12px; color: var(--text-secondary);">Group:</span>
+        <div id="scanlator-filters"></div>
+        <button class="btn-secondary" id="btn-select-group" style="padding: 6px 12px; font-size: 12px;" title="Select all chapters in current group">✅ Select Group</button>
+      </div>
+    </div>
+
+    <div id="chapter-list"></div>
+
+    <div class="batch-summary" id="batch-summary"></div>
+
+    <div class="footer-bar">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-secondary" id="btn-all">All</button>
+        <button class="btn-secondary" id="btn-none">None</button>
+        <button class="btn-secondary" id="btn-unique">Unique Only</button>
+      </div>
+      
+      <div class="stats">
+        <span><strong id="selected-count">0</strong> selected</span>
+        <span id="total-size-stat"></span>
+      </div>
+
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-save" id="btn-save" title="Save manga ID to external list">💾 SAVE ID</button>
+        <button class="btn-secondary" id="btn-pause" style="display: none;">⏸ PAUSE</button>
+        <button class="btn-secondary" id="btn-refetch-all" disabled>🔄 REFETCH FAILED</button>
+        <button class="btn-success" id="btn-fetch" disabled>📥 FETCH</button>
+        <button class="btn-primary" id="btn-download" disabled>📦 DOWNLOAD</button>
+      </div>
+    </div>
+
+    <div id="console-panel">
+      <div id="console-log"></div>
+      <div class="progress-bar-container">
+        <span>Progress:</span>
+        <div class="progress-bar"><div class="progress-fill" id="main-progress-fill" style="width: 0%"></div></div>
+        <span id="main-progress-text">0%</span>
+      </div>
+      <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
+        ⚡ Data Saver enabled + Client-side WebP conversion (Max 1280px, 75% quality)
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============ CONFIG ============
+    const CF_WORKER_URL = 'https://xcom.yuush.workers.dev';
+    const SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
+
+    const RESIZE_CONFIG = {
+      maxWidth: 1280,
+      quality: 0.75,
+      format: 'image/webp',
+      skipIfLarger: true,
+    };
+
+    const MAX_ZIP_SIZE = 495 * 1024 * 1024;
+    const PARALLEL_IMAGES = 3;
+    const PARALLEL_CHAPTERS = 3;
+
+    // ============ STATE ============
+    let allChapters = [];
+    let selectedChapters = new Set();
+    let mangaTitle = 'manga';
+    let mangaId = '';
+    let latestChapter = '?';
+    let isDownloading = false;
+    let isFetching = false;
+    let isPaused = false;
+    let pauseResolve = null;
+    let fetchCancelled = false;
+    let chapterDataCache = new Map();
+    let editions = [];
+    let currentEditionId = 'ALL';
+    let isLoadingEdition = false;
+
+    // ============ UTILS ============
+    const safe = (s) => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+
+    const fetchRetry = async (fn, retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try { return await fn(); } 
+        catch (e) {
+          if (i === retries - 1) throw e;
+          await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
+        }
+      }
+    };
+
+    const generateEditions = (chapters) => {
+      const counts = {};
+      chapters.forEach(ch => { counts[ch.group] = (counts[ch.group] || 0) + 1; });
+      return Object.entries(counts).map(([name, count]) => ({
+        id: name, count: count, flag: '👥'
+      })).sort((a, b) => b.count - a.count);
+    };
+
+    const getFilteredChapters = () => {
+      if (currentEditionId === 'ALL') return allChapters;
+      return allChapters.filter(ch => ch.group === currentEditionId);
+    };
+
+    const fetchAllChapters = async (id, lang) => {
+      const chapters = [];
+      let offset = 0;
+      const limit = 500;
+      while (true) {
+        const url = `https://api.mangadex.org/manga/${id}/feed?limit=${limit}&offset=${offset}&order[chapter]=asc&order[volume]=asc&includes[]=scanlation_group&translatedLanguage[]=${lang}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.result === 'error') throw new Error(data.errors ? data.errors.map(e => e.detail).join(', ') : 'Failed to fetch chapters');
+        
+        for (const item of data.data) {
+          const attrs = item.attributes;
+          const groupRel = item.relationships.find(r => r.type === 'scanlation_group');
+          const groupName = groupRel && groupRel.attributes ? groupRel.attributes.name : 'No Group';
+          
+          chapters.push({
+            chapter_id: item.id,
+            number: attrs.chapter || '0',
+            name: attrs.title || '',
+            vol: attrs.volume || '',
+            group: groupName,
+          });
+        }
+        if (data.data.length < limit) break;
+        offset += limit;
+      }
+      
+      chapters.sort((a, b) => {
+        const va = parseFloat(a.vol) || 0, vb = parseFloat(b.vol) || 0;
+        if (va !== vb) return va - vb;
+        const na = parseFloat(a.number), nb = parseFloat(b.number);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+      });
+      return chapters;
+    };
+
+    // ============ IMAGE PROCESSING ============
+    const resizeImage = async (imageUrl, originalBlob) => {
+      return new Promise(async (resolve) => {
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          const objectUrl = URL.createObjectURL(originalBlob);
+
+          img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const { width, height } = img;
+            let drawWidth = width, drawHeight = height;
+            
+            if (width > RESIZE_CONFIG.maxWidth) {
+              const ratio = RESIZE_CONFIG.maxWidth / width;
+              drawWidth = RESIZE_CONFIG.maxWidth;
+              drawHeight = Math.round(height * ratio);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = drawWidth;
+            canvas.height = drawHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
+
+            canvas.toBlob((convertedBlob) => {
+              canvas.remove();
+              img.src = '';
+              if (!convertedBlob) {
+                resolve({ blob: originalBlob, converted: false, resized: false, originalSize: originalBlob.size, newSize: originalBlob.size });
+                return;
+              }
+              const wasResized = width > RESIZE_CONFIG.maxWidth;
+              if (RESIZE_CONFIG.skipIfLarger && convertedBlob.size >= originalBlob.size) {
+                resolve({ blob: originalBlob, converted: false, resized: wasResized, originalSize: originalBlob.size, newSize: originalBlob.size });
+                return;
+              }
+              const savings = ((1 - convertedBlob.size / originalBlob.size) * 100).toFixed(1) + '%';
+              resolve({
+                blob: convertedBlob, converted: true, resized: wasResized,
+                originalSize: originalBlob.size, newSize: convertedBlob.size, savings,
+              });
+            }, RESIZE_CONFIG.format, RESIZE_CONFIG.quality);
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve({ blob: originalBlob, converted: false, resized: false, originalSize: originalBlob.size, newSize: originalBlob.size });
+          };
+          img.src = objectUrl;
+        } catch (err) {
+          resolve({ blob: originalBlob, converted: false, resized: false, originalSize: originalBlob.size, newSize: originalBlob.size });
+        }
+      });
+    };
+
+    const fetchImageBlob = async (url) => {
+      try {
+        const response = await fetch(url, { credentials: 'omit', mode: 'cors' });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('not an image (' + blob.type + ')');
+        return blob;
+      } catch (e) {
+        const proxied = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
+        const response2 = await fetch(proxied, { credentials: 'omit', mode: 'cors' });
+        if (!response2.ok) throw new Error('HTTP ' + response2.status);
+        const blob2 = await response2.blob();
+        if (!blob2.type.startsWith('image/')) throw new Error('not an image (' + blob2.type + ')');
+        return blob2;
+      }
+    };
+
+    // ============ CONCURRENCY & FETCHING ============
+    const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
+      const results = [];
+      const executing = new Set();
+      let completed = 0;
+
+      for (let i = 0; i < tasks.length; i++) {
+        if (fetchCancelled) break;
+        const task = tasks[i];
+        const promise = Promise.resolve().then(() => task()).then(result => {
+          executing.delete(promise);
+          completed++;
+          if (onImageProgress) onImageProgress(completed, tasks.length);
+          return { index: i, success: true, result };
+        }).catch(error => {
+          executing.delete(promise);
+          completed++;
+          if (onImageProgress) onImageProgress(completed, tasks.length);
+          return { index: i, success: false, error };
+        });
+        results.push(promise);
+        executing.add(promise);
+        if (executing.size >= concurrencyLimit) await Promise.race(executing);
+      }
+      return Promise.all(results);
+    };
+
+    const fetchChapterImages = async (chapterId, chapterNum, showLog = true) => {
+      try {
+        const response = await fetch(`https://api.mangadex.org/at-home/server/${chapterId}`);
+        const data = await response.json();
+        if (data.result === 'error') throw new Error(data.errors ? data.errors.map(e => e.detail).join(', ') : 'Failed to fetch chapter images');
+        
+        const baseUrl = data.baseUrl;
+        const hash = data.chapter.hash;
+        const filenames = data.chapter.dataSaver; // DATA SAVER ENDPOINT
+        const imageUrls = filenames.map(f => `${baseUrl}/data-saver/${hash}/${f}`);
+
+        if (!imageUrls.length) {
+          return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [], convertedCount: 0, savedBytes: 0 };
+        }
+
+        let downloadedCount = 0;
+        const downloadTasks = imageUrls.map((originalUrl, index) => async () => {
+          const fileName = `page_${String(index + 1).padStart(3, '0')}.webp`;
+          try {
+            const originalBlob = await fetchImageBlob(originalUrl);
+            const { blob: finalBlob, converted, resized, savings, originalSize, newSize } = await resizeImage(originalUrl, originalBlob);
+            downloadedCount++;
+
+            if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageUrls.length)) {
+              const convertNote = converted ? ` 🎨-${savings}` : '';
+              const resizeNote = resized ? ` ✂️` : '';
+              log(`🖼️ Ch.${chapterNum}: ${downloadedCount}/${imageUrls.length} images${convertNote}${resizeNote}`, 'log-image');
+            }
+            return { fileName, blob: finalBlob, size: finalBlob.size, index, success: true, converted, resized, originalSize, newSize };
+          } catch (e) {
+            return { fileName, index, success: false, error: e.message, originalUrl: originalUrl.substring(0, 100) };
+          }
+        });
+
+        const results = await downloadWithConcurrency(downloadTasks, PARALLEL_IMAGES, (completed, total) => {
+          if (showLog && completed % 10 === 0 && completed < total) {
+            log(`⏳ Ch.${chapterNum}: ${completed}/${total} images...`, 'log-info');
+          }
+        });
+
+        const blobs = [];
+        let totalSize = 0, convertedCount = 0, savedBytes = 0;
+        const failedDetails = [];
+
+        results.forEach(result => {
+          if (result.success && result.result.success) {
+            const r = result.result;
+            blobs.push({ fileName: r.fileName, blob: r.blob, size: r.size });
+            totalSize += r.size;
+            if (r.converted) {
+              convertedCount++;
+              if (r.newSize < r.originalSize) savedBytes += (r.originalSize - r.newSize);
+            }
+          } else {
+            const errorResult = result.success ? result.result : result.error;
+            failedDetails.push({ index: result.index, fileName: errorResult.fileName, error: errorResult.error || 'Unknown error', url: errorResult.originalUrl || 'N/A' });
+          }
+        });
+
+        const failedCount = failedDetails.length;
+        const status = failedCount === 0 ? 'success' : (blobs.length > 0 ? 'partial' : 'failed');
+        return { blobs, size: totalSize, total: imageUrls.length, failed: failedCount, failedDetails, status, convertedCount, savedBytes };
+      } catch (err) {
+        console.error('fetchChapterImages error:', err);
+        return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], convertedCount: 0, savedBytes: 0 };
+      }
+    };
+
+    const fetchChaptersParallel = async (chapters, onProgress, isRefetch = false) => {
+      const executing = new Set();
+      let completed = 0;
+
+      for (let i = 0; i < chapters.length; i++) {
+        if (fetchCancelled) break;
+        while (isPaused && !fetchCancelled) {
+          await new Promise(resolve => { pauseResolve = resolve; });
+        }
+        if (fetchCancelled) break;
+        while (executing.size >= PARALLEL_CHAPTERS) await Promise.race(executing);
+
+        const chapter = chapters[i];
+        log(`📥 ${isRefetch ? 'Re-' : ''}Fetching Chapter ${chapter.number}...`, 'log-info');
+
+        const promise = (async () => {
+          try {
+            const data = await fetchChapterImages(chapter.chapter_id, chapter.number, false);
+            chapterDataCache.set(chapter.chapter_id, data);
+            completed++;
+            onProgress(completed, chapters.length);
+
+            const mb = (data.size / 1024 / 1024).toFixed(2);
+            const convertInfo = data.convertedCount > 0 ? ` | 🎨 ${data.convertedCount} converted (${formatBytes(data.savedBytes)} saved)` : '';
+            const statusEmoji = data.status === 'success' ? '✓' : data.status === 'partial' ? '⚠' : '❌';
+            log(`${statusEmoji} Ch.${chapter.number}: ${data.total - data.failed}/${data.total} images, ${mb}MB${convertInfo}`, data.status === 'success' ? 'log-success' : 'log-error');
+
+            if (data.failedDetails && data.failedDetails.length > 0) {
+              data.failedDetails.slice(0, 3).forEach(fail => log(`  ❌ Image ${fail.index + 1}: ${fail.error}`, 'log-error'));
+              if (data.failedDetails.length > 3) log(`  ... and ${data.failedDetails.length - 3} more failed`, 'log-error');
+            }
+            renderChapters();
+            updateCount();
+          } catch (err) {
+            log(`❌ Chapter ${chapter.number} error: ${err.message}`, 'log-error');
+            chapterDataCache.set(chapter.chapter_id, { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], convertedCount: 0, savedBytes: 0 });
+            completed++;
+            onProgress(completed, chapters.length);
+            renderChapters();
+            updateCount();
+          }
+        })();
+
+        executing.add(promise);
+        promise.finally(() => executing.delete(promise));
+      }
+      await Promise.all(executing);
+    };
+
+    // ============ UI FUNCTIONS ============
+    const formatBytes = (bytes) => {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+
+    const log = (msg, type = 'log-info') => {
+      const logEl = document.getElementById('console-log');
+      if (!logEl) return;
+      const line = document.createElement('div');
+      line.className = `log-line ${type}`;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    };
+
+    const renderScanlatorFilters = () => {
+      const container = document.getElementById('scanlator-filters');
+      container.innerHTML = '';
+      editions.forEach(ed => {
+        const isActive = ed.id === currentEditionId;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip' + (isActive ? ' active' : '');
+        chip.disabled = isLoadingEdition || isFetching;
+        chip.innerHTML = `<span>${ed.flag} ${ed.id}</span><span class="chip-count">${ed.count}</span>`;
+        chip.addEventListener('click', () => switchEdition(ed.id));
+        container.appendChild(chip);
+      });
+    };
+
+    const switchEdition = async (editionId) => {
+      if (editionId === currentEditionId || isLoadingEdition || isFetching) return;
+      isLoadingEdition = true;
+      renderScanlatorFilters();
+      try {
+        log(`🌐 Switching group → ${editionId}...`, 'log-info');
+        currentEditionId = editionId;
+        selectedChapters.clear();
+        chapterDataCache.clear();
+        document.getElementById('batch-summary').classList.remove('active');
+        log(`✓ Filtered to ${getFilteredChapters().length} chapters for ${editionId}`, 'log-success');
+      } catch (err) {
+        log(`❌ Group switch failed: ${err.message}`, 'log-error');
+      } finally {
+        isLoadingEdition = false;
+        renderScanlatorFilters();
+        renderChapters();
+        updateCount();
+      }
+    };
+
+    const renderChapters = () => {
+      const list = document.getElementById('chapter-list');
+      list.innerHTML = '';
+      const filtered = getFilteredChapters();
+      
+      if (!filtered.length) {
+        list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);">No chapters found for this group.</div>';
+        return;
+      }
+
+      filtered.forEach(ch => {
+        const item = document.createElement('div');
+        const isSelected = selectedChapters.has(ch.chapter_id);
+        const cacheData = chapterDataCache.get(ch.chapter_id);
+
+        item.className = 'chap-item' + (isSelected ? ' selected' : '') + (cacheData ? ' fetched' : '') + (isFetching && isSelected ? ' fetching' : '');
+        item.addEventListener('click', (e) => {
+          if (e.target.type !== 'checkbox' && !e.target.classList.contains('refetch-btn')) toggleChapter(ch.chapter_id);
+        });
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'chap-check';
+        checkbox.checked = isSelected;
+        checkbox.disabled = isFetching;
+        checkbox.addEventListener('change', () => toggleChapter(ch.chapter_id));
+        checkbox.addEventListener('click', (e) => e.stopPropagation());
+
+        const info = document.createElement('div');
+        info.className = 'chap-info';
+        info.innerHTML = `
+          <div class="chap-num">Ch.${ch.number}${ch.name ? ' — ' + ch.name : ''}</div>
+          <div class="chap-meta">${ch.vol ? 'Vol.' + ch.vol + ' · ' : ''}ID: ${ch.chapter_id}</div>
+          <div class="chap-group">👥 ${ch.group}</div>
+        `;
+
+        item.appendChild(checkbox);
+        item.appendChild(info);
+
+        if (cacheData) {
+          const statusDiv = document.createElement('div');
+          statusDiv.className = 'chap-status';
+          const statusClass = cacheData.status === 'success' ? 'status-success' : cacheData.status === 'partial' ? 'status-partial' : 'status-failed';
+          const successCount = cacheData.total - cacheData.failed;
+          const convertText = cacheData.convertedCount > 0 ? ` | 🎨 ${cacheData.convertedCount} (${formatBytes(cacheData.savedBytes)} saved)` : '';
+          
+          statusDiv.innerHTML = `<div class="${statusClass}"><strong>${cacheData.status === 'success' ? '✓' : '⚠'} ${cacheData.status.toUpperCase()}</strong> | ${formatBytes(cacheData.size)} | ${successCount}/${cacheData.total} images${cacheData.failed > 0 ? ` (${cacheData.failed} failed)` : ''}${convertText}</div>`;
+          
+          if (cacheData.failedDetails && cacheData.failedDetails.length > 0) {
+            const failedList = document.createElement('div');
+            failedList.className = 'failed-list';
+            failedList.innerHTML = '<strong style="color:var(--error)">Failed Images:</strong>';
+            cacheData.failedDetails.slice(0, 5).forEach(fail => {
+              const failItem = document.createElement('div');
+              failItem.className = 'failed-item';
+              failItem.textContent = `Page ${fail.index + 1}: ${fail.error}`;
+              failedList.appendChild(failItem);
+            });
+            if (cacheData.failedDetails.length > 5) {
+              const moreItem = document.createElement('div');
+              moreItem.className = 'failed-item';
+              moreItem.textContent = `... and ${cacheData.failedDetails.length - 5} more`;
+              failedList.appendChild(moreItem);
+            }
+            statusDiv.appendChild(failedList);
+          }
+          if (cacheData.failed > 0) {
+            const refetchBtn = document.createElement('button');
+            refetchBtn.className = 'refetch-btn';
+            refetchBtn.textContent = `🔄 Re-fetch ${cacheData.failed} Failed`;
+            refetchBtn.addEventListener('click', (e) => { e.stopPropagation(); refetchChapter(ch.chapter_id); });
+            statusDiv.appendChild(refetchBtn);
+          }
+          item.appendChild(statusDiv);
+        }
+
+        if (isFetching && isSelected && !cacheData) {
+          const progressDiv = document.createElement('div');
+          progressDiv.className = 'progress-bar-container';
+          progressDiv.id = `mdx-img-progress-${ch.chapter_id}`;
+          progressDiv.innerHTML = `<span>🖼️ Loading...</span><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><span id="mdx-img-count-${ch.chapter_id}">0/0</span>`;
+          item.appendChild(progressDiv);
+        }
+        list.appendChild(item);
+      });
+    };
+
+    const updateImageProgress = (chapterId, downloaded, total) => {
+      const fill = document.querySelector(`#mdx-img-progress-${chapterId} .progress-fill`);
+      const count = document.getElementById(`mdx-img-count-${chapterId}`);
+      if (fill) fill.style.width = `${(downloaded / total) * 100}%`;
+      if (count) count.textContent = `${downloaded}/${total}`;
+    };
+
+    const toggleChapter = (id) => {
+      if (isFetching) return;
+      if (selectedChapters.has(id)) selectedChapters.delete(id);
+      else selectedChapters.add(id);
+      renderChapters();
+      updateCount();
+    };
+
+    const selectAll = () => { if (!isFetching) { getFilteredChapters().forEach(ch => selectedChapters.add(ch.chapter_id)); renderChapters(); updateCount(); } };
+    const deselectAll = () => { if (!isFetching) { selectedChapters.clear(); renderChapters(); updateCount(); } };
+    const selectUnique = () => {
+      if (isFetching) return;
+      selectedChapters.clear();
+      const seen = new Map();
+      getFilteredChapters().forEach(ch => {
+        const num = parseFloat(ch.number);
+        if (!isNaN(num)) {
+          const intNum = Math.floor(num);
+          if (!seen.has(intNum)) { seen.set(intNum, ch.chapter_id); selectedChapters.add(ch.chapter_id); }
+        }
+      });
+      renderChapters(); updateCount();
+    };
+    const selectByGroup = () => { if (!isFetching && !isLoadingEdition) { selectedChapters.clear(); getFilteredChapters().forEach(ch => selectedChapters.add(ch.chapter_id)); renderChapters(); updateCount(); } };
+
+    const updateCount = () => {
+      document.getElementById('selected-count').textContent = selectedChapters.size;
+      
+      let fetchedSize = 0, fetchedCount = 0, failedCount = 0;
+      selectedChapters.forEach(id => {
+        const cacheData = chapterDataCache.get(id);
+        if (cacheData && cacheData.blobs.length > 0) { fetchedSize += cacheData.size; fetchedCount++; }
+        if (cacheData && (cacheData.status === 'partial' || cacheData.status === 'failed')) failedCount++;
+      });
+
+      const sizeStat = document.getElementById('total-size-stat');
+      sizeStat.innerHTML = fetchedCount > 0 ? `Total: <strong class="size-strong">${formatBytes(fetchedSize)}</strong> (${fetchedCount}/${selectedChapters.size} fetched)` : '';
+
+      const btnFetch = document.getElementById('btn-fetch');
+      btnFetch.disabled = selectedChapters.size === 0 || isFetching || isLoadingEdition;
+      btnFetch.textContent = isFetching ? '⏳ FETCHING...' : `📥 FETCH (${selectedChapters.size} Ch)`;
+
+      const btnPause = document.getElementById('btn-pause');
+      btnPause.style.display = isFetching ? 'inline-block' : 'none';
+      btnPause.textContent = isPaused ? '▶ RESUME' : '⏸ PAUSE';
+
+      const btnDownload = document.getElementById('btn-download');
+      btnDownload.disabled = fetchedCount === 0 || isDownloading;
+      btnDownload.textContent = isDownloading ? '⏳ DOWNLOADING...' : `📦 DOWNLOAD (${fetchedCount} Ch)`;
+
+      const btnRefetchAll = document.getElementById('btn-refetch-all');
+      btnRefetchAll.disabled = failedCount === 0 || isFetching;
+      btnRefetchAll.textContent = failedCount > 0 ? `🔄 REFETCH FAILED (${failedCount})` : '🔄 REFETCH FAILED';
+    };
+
+    const updateProgress = (current, total) => {
+      const pct = Math.round((current / total) * 100);
+      document.getElementById('main-progress-fill').style.width = `${pct}%`;
+      document.getElementById('main-progress-text').textContent = `${pct}%`;
+    };
+
+    // ============ ACTIONS ============
+    const fetchSelected = async () => {
+      if (selectedChapters.size === 0 || isFetching) return;
+      isFetching = true; isPaused = false; fetchCancelled = false;
+      renderChapters(); updateCount();
+
+      const selected = getFilteredChapters().filter(ch => selectedChapters.has(ch.chapter_id));
+      selected.sort((a, b) => {
+        const na = parseFloat(a.number), nb = parseFloat(b.number);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+      });
+
+      log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'log-info');
+      log(`⚡ Data Saver + ${PARALLEL_IMAGES} parallel images + WebP convert @${Math.round(RESIZE_CONFIG.quality * 100)}%`, 'log-info');
+
+      try {
+        await fetchChaptersParallel(selected, (completed, total) => updateProgress(completed, total), false);
+        
+        const successCount = [...selectedChapters].filter(id => { const c = chapterDataCache.get(id); return c && c.status === 'success'; }).length;
+        const totalImages = [...selectedChapters].reduce((s, id) => { const c = chapterDataCache.get(id); return s + (c ? c.total - c.failed : 0); }, 0);
+        const totalFailed = [...selectedChapters].reduce((s, id) => { const c = chapterDataCache.get(id); return s + (c ? c.failed : 0); }, 0);
+        const totalConverted = [...selectedChapters].reduce((s, id) => { const c = chapterDataCache.get(id); return s + (c ? c.convertedCount : 0); }, 0);
+        const totalSaved = [...selectedChapters].reduce((s, id) => { const c = chapterDataCache.get(id); return s + (c ? c.savedBytes : 0); }, 0);
+        
+        const convertNote = totalConverted > 0 ? ` | 🎨 ${totalConverted} converted (${formatBytes(totalSaved)} saved)` : '';
+        log(`🎉 Fetch complete! ${successCount}/${selected.length} chapters, ${totalImages} images, ${totalFailed} failed${convertNote}`, 'log-success');
+
+        const summary = document.getElementById('batch-summary');
+        summary.innerHTML = `<strong>Fetch Summary:</strong> ${successCount} chapters ready. ${totalFailed} images failed.${convertNote ? `<br>✨ ${convertNote.trim()}` : ''}`;
+        summary.classList.add('active');
+      } catch (err) {
+        log(`❌ Fetch error: ${err.message}`, 'log-error');
+      } finally {
+        isFetching = false; isPaused = false;
+        renderChapters(); updateCount();
+      }
+    };
+
+    const refetchChapter = async (chapterId) => {
+      const ch = getFilteredChapters().find(c => c.chapter_id === chapterId);
+      if (!ch) return;
+      log(`🔄 Re-fetching Chapter ${ch.number}...`, 'log-info');
+      try {
+        const data = await fetchChapterImages(chapterId, ch.number, true);
+        chapterDataCache.set(chapterId, data);
+        const mb = (data.size / 1024 / 1024).toFixed(2);
+        const convertNote = data.convertedCount > 0 ? ` | 🎨 ${data.convertedCount} (${formatBytes(data.savedBytes)} saved)` : '';
+        log(`${data.status === 'success' ? '✓' : '⚠'} Chapter ${ch.number} re-fetched: ${data.total - data.failed}/${data.total} images, ${mb}MB${convertNote}`, data.status === 'success' ? 'log-success' : 'log-error');
+        renderChapters(); updateCount();
+      } catch (err) {
+        log(`❌ Re-fetch error: ${err.message}`, 'log-error');
+      }
+    };
+
+    const refetchAllFailed = async () => {
+      const failedChapters = [];
+      selectedChapters.forEach(id => {
+        const c = chapterDataCache.get(id);
+        if (c && (c.status === 'partial' || c.status === 'failed')) {
+          const ch = getFilteredChapters().find(x => x.chapter_id === id);
+          if (ch) failedChapters.push(ch);
+        }
+      });
+      if (failedChapters.length === 0) { log('❌ No failed chapters to refetch', 'log-error'); return; }
+
+      isFetching = true; isPaused = false; fetchCancelled = false;
+      renderChapters(); updateCount();
+      log(`🔄 Starting refetch: ${failedChapters.length} failed chapters`, 'log-info');
+      try {
+        await fetchChaptersParallel(failedChapters, (completed, total) => updateProgress(completed, total), true);
+        log(`🎉 Refetch complete!`, 'log-success');
+      } catch (err) {
+        log(`❌ Refetch error: ${err.message}`, 'log-error');
+      } finally {
+        isFetching = false; isPaused = false;
+        renderChapters(); updateCount();
+      }
+    };
+
+    const togglePause = () => {
+      if (!isFetching) return;
+      isPaused = !isPaused;
+      if (isPaused) { log('⏸ Fetching paused', 'log-info'); if (pauseResolve) pauseResolve(); }
+      else log('▶ Fetching resumed', 'log-info');
+      updateCount();
+    };
+
+    const downloadSelected = async () => {
+      const fetchedChapters = [...selectedChapters].filter(id => {
+        const c = chapterDataCache.get(id);
+        return c && c.blobs.length > 0;
+      });
+      if (fetchedChapters.length === 0 || isDownloading) {
+        log('❌ No fetched chapters to download. Please fetch first!', 'log-error');
+        return;
+      }
+      isDownloading = true;
+      document.getElementById('btn-download').disabled = true;
+      log(`📦 Starting download: ${fetchedChapters.length} chapters`, 'log-info');
+
+      const selected = getFilteredChapters().filter(ch => fetchedChapters.includes(ch.chapter_id));
+      selected.sort((a, b) => {
+        const na = parseFloat(a.number), nb = parseFloat(b.number);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+      });
+
+      let currentZip = new JSZip();
+      let currentZipSize = 0;
+      let zipIndex = 1;
+      let rangeStart = null, rangeEnd = null;
+
+      const saveZip = async (isFinal) => {
+        if (currentZipSize === 0) return;
+        let rangeStr = `part${zipIndex}`;
+        if (rangeStart !== null && rangeEnd !== null) rangeStr = `Ch${Math.floor(rangeStart)}-${Math.floor(rangeEnd)}`;
+        const zipName = `${mangaTitle} ${rangeStr}.zip`;
+        log('🗜️ Generating ZIP...', 'log-info');
+        try {
+          const content = await currentZip.generateAsync({ type: 'blob', compression: 'STORE' });
+          saveAs(content, zipName);
+          log(`✓ Saved: ${zipName}`, 'log-success');
+        } catch (err) {
+          log(`❌ ZIP save failed: ${err.message}`, 'log-error');
+        }
+        zipIndex++;
+        currentZip = new JSZip();
+        currentZipSize = 0;
+        rangeStart = null;
+      };
+
+      try {
+        for (let i = 0; i < selected.length; i++) {
+          const ch = selected[i];
+          const cacheData = chapterDataCache.get(ch.chapter_id);
+          if (!cacheData || cacheData.blobs.length === 0) continue;
+          
+          log(`📦 Adding Chapter ${ch.number} to ZIP...`, 'log-info');
+          const chapterNum = parseFloat(ch.number);
+          if (rangeStart === null) rangeStart = chapterNum;
+          rangeEnd = chapterNum;
+
+          const folderName = `Ch.${ch.number}${ch.vol ? ' (v' + ch.vol + ')' : ''}${ch.name ? ' - ' + ch.name : ''}`;
+          const folder = currentZip.folder(folderName);
+          cacheData.blobs.forEach(b => { if (b && b.fileName && b.blob) folder.file(b.fileName, b.blob); });
+          
+          currentZipSize += cacheData.size;
+          log(`✓ Added ${cacheData.blobs.length} images (${formatBytes(cacheData.size)})`, 'log-success');
+          updateProgress(i + 1, selected.length);
+          
+          if (currentZipSize >= MAX_ZIP_SIZE && i < selected.length - 1) await saveZip(false);
+        }
+        await saveZip(true);
+        log('🎉 Download complete!', 'log-success');
+        await saveMangaToList();
+      } catch (err) {
+        log(`❌ Download error: ${err.message}`, 'log-error');
+      } finally {
+        isDownloading = false;
+        document.getElementById('btn-download').disabled = false;
+      }
+    };
+
+    const saveMangaToList = async () => {
+      if (!mangaId || !latestChapter) return;
+      try {
+        log('💾 Saving manga ID to list...', 'log-info');
+        const response = await fetch(SAVE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manga_id: mangaId, latest_chapter: latestChapter }),
+        });
+        const result = await response.json();
+        if (result.success) {
+          log(`✓ Saved ${mangaId}:${latestChapter} to list!`, 'log-success');
+        } else {
+          throw new Error(result.error || 'Save failed');
+        }
+      } catch (err) {
+        log(`❌ Save failed: ${err.message}`, 'log-error');
+      }
+    };
+
+    // ============ INITIALIZATION ============
+    const initDownloader = async (inputId, lang) => {
+      // Reset state
+      allChapters = [];
+      selectedChapters.clear();
+      chapterDataCache.clear();
+      editions = [];
+      currentEditionId = 'ALL';
+      isFetching = false;
+      isDownloading = false;
+      
+      document.getElementById('main-ui').style.display = 'none';
+      document.getElementById('loading-state').style.display = 'block';
+      document.getElementById('loading-text').textContent = 'Fetching manga details...';
+      document.getElementById('console-log').innerHTML = '';
+      document.getElementById('batch-summary').classList.remove('active');
+      updateProgress(0, 1);
+
+      try {
+        mangaId = inputId;
+        const titleResponse = await fetch(`https://api.mangadex.org/manga/${mangaId}?includes[]=cover_art`);
+        const titleData = await titleResponse.json();
+        if (titleData.result === 'error') throw new Error(titleData.errors ? titleData.errors.map(e => e.detail).join(', ') : 'Failed to fetch manga');
+        
+        const attrs = titleData.data.attributes;
+        mangaTitle = safe(attrs.title.en || attrs.title.ja || attrs.title['ja-ro'] || Object.values(attrs.title)[0] || 'manga');
+        
+        document.getElementById('loading-text').textContent = 'Fetching chapters...';
+        allChapters = await fetchAllChapters(mangaId, lang);
+        
+        if (allChapters.length) latestChapter = String(allChapters[allChapters.length - 1].number);
+        else latestChapter = '?';
+
+        editions = generateEditions(allChapters);
+        editions.unshift({ id: 'ALL', count: allChapters.length, flag: '🌐' });
+
+        document.getElementById('manga-title-display').textContent = mangaTitle;
+        document.getElementById('manga-id-display').textContent = mangaId;
+        document.getElementById('total-chap-display').textContent = allChapters.length;
+
+        document.getElementById('loading-state').style.display = 'none';
+        document.getElementById('main-ui').style.display = 'flex';
+
+        renderScanlatorFilters();
+        renderChapters();
+        updateCount();
+
+        log(`📚 Loaded: ${mangaTitle}`, 'log-success');
+        log(`🆔 Manga ID: ${mangaId}`, 'log-info');
+        log(`📖 Latest Chapter: ${latestChapter}`, 'log-info');
+        log(`👥 Groups: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'log-info');
+        log(`🎨 Convert: Data Saver + ${RESIZE_CONFIG.maxWidth}px max width, ${Math.round(RESIZE_CONFIG.quality * 100)}% WebP`, 'log-info');
+
+      } catch (err) {
+        document.getElementById('loading-state').style.display = 'none';
+        alert(`Error: ${err.message}`);
+        console.error('Init error:', err);
+      }
+    };
+
+    // ============ EVENT LISTENERS ============
+    document.getElementById('load-btn').addEventListener('click', () => {
+      const input = document.getElementById('manga-input').value.trim();
+      const lang = document.getElementById('lang-select').value;
+      if (!input) { alert('Please enter a MangaDex URL or ID'); return; }
+      
+      const match = input.match(/\/(?:title|manga)\/([^/?]+)/i) || [null, input];
+      const titleId = match[1];
+      
+      if (!titleId || titleId.length < 5) {
+        alert('Invalid MangaDex URL or ID. Please check the link.');
+        return;
+      }
+      initDownloader(titleId, lang);
+    });
+
+    document.getElementById('btn-all').addEventListener('click', selectAll);
+    document.getElementById('btn-none').addEventListener('click', deselectAll);
+    document.getElementById('btn-unique').addEventListener('click', selectUnique);
+    document.getElementById('btn-select-group').addEventListener('click', selectByGroup);
+    document.getElementById('btn-fetch').addEventListener('click', fetchSelected);
+    document.getElementById('btn-pause').addEventListener('click', togglePause);
+    document.getElementById('btn-refetch-all').addEventListener('click', refetchAllFailed);
+    document.getElementById('btn-download').addEventListener('click', downloadSelected);
+    document.getElementById('btn-save').addEventListener('click', saveMangaToList);
+
+    // Allow Enter key in input
+    document.getElementById('manga-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') document.getElementById('load-btn').click();
+    });
+  </script>
+</body>
+</html>
