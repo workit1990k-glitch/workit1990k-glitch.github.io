@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MangaDotNet Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body { background-color: #0f111a; color: #c0caf5; font-family: system-ui, -apple-system, sans-serif; }
+        .card { background-color: #1a1b26; border: 1px solid #414868; }
+        .btn-primary { background-color: #e0af68; color: #1a1b26; font-weight: 600; transition: all 0.2s; }
+        .btn-primary:hover { background-color: #f0bf78; }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background-color: #2f3549; color: #c0caf5; border: 1px solid #414868; transition: all 0.2s; }
+        .btn-secondary:hover { background-color: #414868; }
+        .chapter-item { transition: all 0.15s; border: 1px solid transparent; }
+        .chapter-item:hover { background-color: #2f3549; }
+        .chapter-item.selected { border-color: #e0af68; background-color: #2a303c; }
+        .edition-chip { transition: all 0.15s; }
+        .edition-chip.active { background-color: #e0af68; color: #1a1b26; border-color: #f0bf78; font-weight: 600; }
+        .log-entry { font-family: monospace; font-size: 0.75rem; padding: 2px 0; border-bottom: 1px solid #2f3549; }
+        .log-info { color: #7982a9; }
+        .log-success { color: #9ece6a; }
+        .log-error { color: #f7768e; }
+        .log-warn { color: #e0af68; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1b26; }
+        ::-webkit-scrollbar-thumb { background: #414868; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #565f89; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-5xl mx-auto space-y-6">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-[#e0af68] mb-2">📚 MangaDotNet Downloader</h1>
+            <p class="text-sm text-[#7982a9]">Paste a manga URL, select chapters, and download as ZIP. <span class="text-[#9ece6a]">(WebP conversion is always ON)</span></p>
+        </div>
+
+        <!-- Configuration -->
+        <div class="card rounded-xl p-6 space-y-4">
+            <div>
+                <label class="block text-xs font-semibold text-[#7982a9] uppercase mb-1">Manga URL</label>
+                <div class="flex gap-2">
+                    <input type="text" id="mangaUrl" placeholder="https://mangadot.net/manga/123-some-manga" 
+                        class="flex-1 bg-[#0f111a] border border-[#414868] rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-[#e0af68] text-white">
+                    <button id="loadBtn" class="btn-primary px-6 py-2 rounded-lg whitespace-nowrap">Load Chapters</button>
+                </div>
+            </div>
+            
+            <div>
+                <label class="block text-xs font-semibold text-[#7982a9] uppercase mb-1">Cloudflare Worker Proxy URL</label>
+                <input type="text" id="workerUrl" value="https://your-worker-name.workers.dev/" 
+                    class="w-full bg-[#0f111a] border border-[#414868] rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-[#e0af68] text-white font-mono">
+                <p class="text-[10px] text-[#f7768e] mt-1">
+                    ⚠️ <strong>Required:</strong> All API and image requests will route exclusively through this worker.<br>
+                    <span class="text-[#7982a9]">(Note: Ensure your Worker script has <code>'Referer': 'https://mangadot.net/'</code> instead of mangadex.org to avoid hotlink blocks)</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Manga Info & Filters (Hidden by default) -->
+        <div id="mangaInfoSection" class="hidden space-y-4">
+            <div class="card rounded-xl p-6 flex flex-col md:flex-row gap-6 items-start">
+                <div class="flex-1">
+                    <h2 id="mangaTitle" class="text-2xl font-bold text-white mb-2">Manga Title</h2>
+                    <p id="mangaStats" class="text-sm text-[#7982a9] mb-4">0 chapters found</p>
+                    
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <span class="text-xs font-semibold text-[#7982a9] uppercase">Filter Edition:</span>
+                        <div id="editionFilters" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end gap-2 min-w-[200px]">
+                    <span class="text-sm text-[#7982a9]"><span id="selectedCount">0</span> selected</span>
+                    <div class="flex gap-2">
+                        <button id="selectAllBtn" class="btn-secondary px-3 py-1.5 rounded text-xs">All</button>
+                        <button id="selectNoneBtn" class="btn-secondary px-3 py-1.5 rounded text-xs">None</button>
+                        <button id="selectUniqueBtn" class="btn-secondary px-3 py-1.5 rounded text-xs">Unique Only</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chapter List -->
+            <div class="card rounded-xl overflow-hidden">
+                <div class="max-h-[500px] overflow-y-auto p-2" id="chapterList">
+                    <!-- Chapters injected here -->
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="card rounded-xl p-6 space-y-4">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div class="text-xs text-[#7982a9] bg-[#0f111a] px-3 py-2 rounded border border-[#414868]">
+                        ⚙️ <strong>Processing:</strong> Max 1280px width • WebP @ 75% quality • Skips if larger
+                    </div>
+                    <button id="downloadBtn" class="btn-primary px-8 py-3 rounded-lg text-base disabled:opacity-50 disabled:cursor-not-allowed">
+                        📦 Download Selected (<span id="selectedCountBtn">0</span>)
+                    </button>
+                </div>
+                
+                <!-- Progress -->
+                <div id="progressSection" class="hidden space-y-2">
+                    <div class="flex justify-between text-xs text-[#7982a9]">
+                        <span id="progressText">Initializing...</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+                    <div class="h-2 bg-[#0f111a] rounded-full overflow-hidden">
+                        <div id="progressBar" class="h-full bg-[#9ece6a] transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- Console Log -->
+                <div class="bg-[#0f111a] rounded-lg p-3 h-40 overflow-y-auto border border-[#414868] font-mono text-xs" id="consoleLog">
+                    <div class="log-entry log-info">[System] Ready. Paste a URL and click Load.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // STATE & CONFIG
+        // ==========================================
+        const state = {
+            mangaId: null,
+            title: 'Unknown Manga',
+            allChapters: [],
+            filteredChapters: [],
+            selectedIds: new Set(),
+            currentEdition: 'all',
+            editions: [],
+            isDownloading: false
+        };
+
+        const API_BASE = 'https://mangadot.net/api';
+
+        // ==========================================
+        // UTILS
+        // ==========================================
+        const getProxyUrl = (targetUrl) => {
+            const workerUrl = document.getElementById('workerUrl').value.trim();
+            if (!workerUrl || workerUrl === 'https://mdn.yuush.workers.dev/') {
+                throw new Error("Please configure your Cloudflare Worker URL first!");
+            }
+            const separator = workerUrl.endsWith('?') || workerUrl.endsWith('&') ? '' : (workerUrl.includes('?') ? '&' : '?');
+            return `${workerUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
+        };
+
+        const log = (msg, type = 'info') => {
+            const consoleEl = document.getElementById('consoleLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            consoleEl.appendChild(entry);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        };
+
+        const formatBytes = (bytes) => {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        };
+
+        const safeFilename = (str) => String(str).replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+
+        // ==========================================
+        // API FUNCTIONS (Strictly via Worker)
+        // ==========================================
+        const fetchJson = async (url) => {
+            const response = await fetch(getProxyUrl(url), {
+                headers: { 'accept': 'application/json' }
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        };
+
+        const fetchBlob = async (url) => {
+            const response = await fetch(getProxyUrl(url));
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.blob();
+        };
+
+        const extractId = (url) => {
+            const match = url.match(/\/manga\/(\d+)/i);
+            return match ? match[1] : null;
+        };
+
+        // ==========================================
+        // CORE LOGIC
+        // ==========================================
+        const loadManga = async () => {
+            const url = document.getElementById('mangaUrl').value.trim();
+            const mangaId = extractId(url);
+            
+            if (!mangaId) {
+                log('Invalid MangaDotNet URL. Expected format: /manga/<id>', 'error');
+                return;
+            }
+
+            state.mangaId = mangaId;
+            state.selectedIds.clear();
+            document.getElementById('loadBtn').disabled = true;
+            document.getElementById('loadBtn').textContent = 'Loading...';
+            log(`Fetching data for manga ID: ${mangaId} via Worker...`, 'info');
+
+            try {
+                log('Fetching manga info...', 'info');
+                const mangaData = await fetchJson(`${API_BASE}/manga/${mangaId}/`);
+                state.title = safeFilename(mangaData.title || mangaData.name || 'Manga');
+                document.getElementById('mangaTitle').textContent = state.title;
+                
+                log('Fetching chapter list...', 'info');
+                const chaptersData = await fetchJson(`${API_BASE}/manga/${mangaId}/chapters/list`);
+                let chapters = Array.isArray(chaptersData) ? chaptersData : (chaptersData.chapters || chaptersData.data || []);
+
+                state.allChapters = chapters.map(ch => ({
+                    id: String(ch.id || ch.chapter_id || ch._id),
+                    number: ch.chapter != null ? ch.chapter : (ch.number != null ? ch.number : (ch.name || '?')),
+                    title: ch.title || ch.name || '',
+                    volume: ch.volume || ch.vol || '',
+                    edition: ch.language || ch.scanlator || ch.group || 'Unknown'
+                })).sort((a, b) => {
+                    const na = parseFloat(a.number), nb = parseFloat(b.number);
+                    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+                    return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+                });
+
+                const edMap = new Map();
+                state.allChapters.forEach(ch => {
+                    if (!edMap.has(ch.edition)) edMap.set(ch.edition, 0);
+                    edMap.set(ch.edition, edMap.get(ch.edition) + 1);
+                });
+                
+                state.editions = [{ id: 'all', count: state.allChapters.length, label: 'All' }];
+                edMap.forEach((count, id) => {
+                    state.editions.push({ id, count, label: id });
+                });
+
+                document.getElementById('mangaStats').textContent = `${state.allChapters.length} total chapters found`;
+                renderEditions();
+                filterChapters('all');
+                
+                document.getElementById('mangaInfoSection').classList.remove('hidden');
+                log(`Successfully loaded ${state.allChapters.length} chapters!`, 'success');
+
+            } catch (err) {
+                log(`Failed to load: ${err.message}. Check your Worker URL and logs.`, 'error');
+                console.error(err);
+            } finally {
+                document.getElementById('loadBtn').disabled = false;
+                document.getElementById('loadBtn').textContent = 'Load Chapters';
+            }
+        };
+
+        const renderEditions = () => {
+            const container = document.getElementById('editionFilters');
+            container.innerHTML = '';
+            state.editions.forEach(ed => {
+                const btn = document.createElement('button');
+                btn.className = `edition-chip px-3 py-1 rounded-full text-xs border border-[#414868] ${ed.id === state.currentEdition ? 'active' : 'bg-[#2f3549] text-[#c0caf5]'}`;
+                btn.textContent = `${ed.label} (${ed.count})`;
+                btn.onclick = () => filterChapters(ed.id);
+                container.appendChild(btn);
+            });
+        };
+
+        const filterChapters = (editionId) => {
+            state.currentEdition = editionId;
+            state.filteredChapters = editionId === 'all' 
+                ? state.allChapters 
+                : state.allChapters.filter(ch => ch.edition === editionId);
+            
+            state.selectedIds = new Set(
+                Array.from(state.selectedIds).filter(id => 
+                    state.filteredChapters.some(ch => ch.id === id)
+                )
+            );
+            
+            renderEditions();
+            renderChapters();
+            updateCount();
+        };
+
+        const renderChapters = () => {
+            const list = document.getElementById('chapterList');
+            list.innerHTML = '';
+
+            if (state.filteredChapters.length === 0) {
+                list.innerHTML = '<div class="text-center text-[#7982a9] py-8">No chapters found for this filter.</div>';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            state.filteredChapters.forEach(ch => {
+                const div = document.createElement('div');
+                const isSelected = state.selectedIds.has(ch.id);
+                div.className = `chapter-item flex items-center gap-3 p-3 rounded-lg cursor-pointer ${isSelected ? 'selected' : ''}`;
+                div.onclick = (e) => {
+                    if (e.target.type !== 'checkbox') toggleChapter(ch.id);
+                };
+
+                div.innerHTML = `
+                    <input type="checkbox" class="w-4 h-4 rounded border-[#414868] bg-[#0f111a] text-[#e0af68] focus:ring-0 cursor-pointer" 
+                        ${isSelected ? 'checked' : ''} onchange="toggleChapter('${ch.id}')">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-sm font-semibold text-[#c0caf5] truncate">
+                            Ch. ${ch.number} ${ch.title ? '- ' + ch.title : ''}
+                        </div>
+                        <div class="text-xs text-[#7982a9]">
+                            ${ch.volume ? 'Vol. ' + ch.volume + ' • ' : ''} ${ch.edition}
+                        </div>
+                    </div>
+                `;
+                fragment.appendChild(div);
+            });
+            list.appendChild(fragment);
+        };
+
+        window.toggleChapter = (id) => {
+            if (state.isDownloading) return;
+            if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+            else state.selectedIds.add(id);
+            renderChapters();
+            updateCount();
+        };
+
+        const updateCount = () => {
+            document.getElementById('selectedCount').textContent = state.selectedIds.size;
+            document.getElementById('selectedCountBtn').textContent = state.selectedIds.size;
+            document.getElementById('downloadBtn').disabled = state.selectedIds.size === 0 || state.isDownloading;
+        };
+
+        // ==========================================
+        // DOWNLOAD LOGIC (WebP ALWAYS ON)
+        // ==========================================
+        const resizeImageToWebP = (blob) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                const url = URL.createObjectURL(blob);
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    const maxWidth = 1280;
+                    let w = img.width, h = img.height;
+                    
+                    if (w > maxWidth) {
+                        h = Math.round(h * (maxWidth / w));
+                        w = maxWidth;
+                    }
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, 0, 0, w, h);
+                    
+                    canvas.toBlob((newBlob) => {
+                        // Use new WebP blob if valid, otherwise fallback to original
+                        if (newBlob && newBlob.size > 0) {
+                            resolve(newBlob);
+                        } else {
+                            resolve(blob);
+                        }
+                    }, 'image/webp', 0.75);
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    resolve(blob); // Fallback to original on error
+                };
+                img.src = url;
+            });
+        };
+
+        const downloadSelected = async () => {
+            if (state.selectedIds.size === 0 || state.isDownloading) return;
+            
+            state.isDownloading = true;
+            updateCount();
+            
+            const progressSection = document.getElementById('progressSection');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const progressPercent = document.getElementById('progressPercent');
+            
+            progressSection.classList.remove('hidden');
+            log(`Starting download of ${state.selectedIds.size} chapters...`, 'info');
+            log(`⚠️ WebP conversion (1280px max, 75% quality) is active for all images.`, 'warn');
+
+            const zip = new JSZip();
+            const selectedChapters = state.allChapters.filter(ch => state.selectedIds.has(ch.id))
+                .sort((a, b) => {
+                    const na = parseFloat(a.number), nb = parseFloat(b.number);
+                    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+                    return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+                });
+
+            try {
+                for (let i = 0; i < selectedChapters.length; i++) {
+                    const ch = selectedChapters[i];
+                    progressText.textContent = `Fetching chapter info: Ch. ${ch.number}`;
+                    progressBar.style.width = `${(i / selectedChapters.length) * 100}%`;
+                    progressPercent.textContent = `${Math.round((i / selectedChapters.length) * 100)}%`;
+
+                    try {
+                        const imgData = await fetchJson(`${API_BASE}/uploads/${ch.id}/images`);
+                        const images = imgData.images || [];
+
+                        if (images.length === 0) {
+                            log(`Ch. ${ch.number}: No images found, skipping.`, 'warn');
+                            continue;
+                        }
+
+                        const folderName = `Ch.${ch.number}${ch.volume ? ' (v' + ch.volume + ')' : ''}${ch.title ? ' - ' + ch.title : ''}`;
+                        const folder = zip.folder(folderName);
+
+                        for (let j = 0; j < images.length; j++) {
+                            const img = images[j];
+                            const imgUrl = img.url.startsWith('http') ? img.url : `https://mangadot.net${img.url}`;
+                            
+                            // Force .webp extension since we always convert
+                            const baseName = (img.filename || `page_${String(j + 1).padStart(3, '0')}`).replace(/\.[^/.]+$/, "");
+                            const finalFilename = `${baseName}.webp`;
+
+                            try {
+                                let blob = await fetchBlob(imgUrl);
+                                
+                                // ALWAYS convert to WebP
+                                blob = await resizeImageToWebP(blob);
+
+                                folder.file(finalFilename, blob);
+                                
+                                const overallProgress = ((i + (j / images.length)) / selectedChapters.length) * 100;
+                                progressBar.style.width = `${overallProgress}%`;
+                                progressPercent.textContent = `${Math.round(overallProgress)}%`;
+                                progressText.textContent = `Downloading & Converting: Ch. ${ch.number} (${j + 1}/${images.length})`;
+
+                            } catch (err) {
+                                log(`Failed to download image ${j + 1} of Ch. ${ch.number}: ${err.message}`, 'error');
+                            }
+                        }
+                        log(`✓ Added Ch. ${ch.number} (${images.length} images) to ZIP`, 'success');
+
+                    } catch (err) {
+                        log(`Failed to process Ch. ${ch.number}: ${err.message}`, 'error');
+                    }
+                }
+
+                progressText.textContent = 'Generating ZIP file... (This may take a moment)';
+                progressBar.style.width = '100%';
+                progressPercent.textContent = '100%';
+                
+                log('Compressing files...', 'info');
+                const content = await zip.generateAsync({ 
+                    type: 'blob', 
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                }, (metadata) => {
+                    progressText.textContent = `Compressing: ${Math.round(metadata.percent)}%`;
+                });
+
+                const rangeStr = selectedChapters.length === 1 
+                    ? `Ch.${selectedChapters[0].number}` 
+                    : `Ch.${selectedChapters[0].number}-${selectedChapters[selectedChapters.length - 1].number}`;
+                
+                const finalName = `${state.title} [${rangeStr}].zip`;
+                saveAs(content, finalName);
+                log(`🎉 Download complete: ${finalName} (${formatBytes(content.size)})`, 'success');
+
+            } catch (err) {
+                log(`Critical download error: ${err.message}`, 'error');
+            } finally {
+                state.isDownloading = false;
+                updateCount();
+                setTimeout(() => {
+                    progressSection.classList.add('hidden');
+                    progressBar.style.width = '0%';
+                }, 3000);
+            }
+        };
+
+        // ==========================================
+        // EVENT LISTENERS
+        // ==========================================
+        document.getElementById('loadBtn').addEventListener('click', loadManga);
+        document.getElementById('downloadBtn').addEventListener('click', downloadSelected);
+        
+        document.getElementById('selectAllBtn').addEventListener('click', () => {
+            state.filteredChapters.forEach(ch => state.selectedIds.add(ch.id));
+            renderChapters();
+            updateCount();
+        });
+        
+        document.getElementById('selectNoneBtn').addEventListener('click', () => {
+            state.selectedIds.clear();
+            renderChapters();
+            updateCount();
+        });
+        
+        document.getElementById('selectUniqueBtn').addEventListener('click', () => {
+            state.selectedIds.clear();
+            const seen = new Set();
+            state.filteredChapters.forEach(ch => {
+                const num = Math.floor(parseFloat(ch.number)) || ch.number;
+                if (!seen.has(num)) {
+                    seen.add(num);
+                    state.selectedIds.add(ch.id);
+                }
+            });
+            renderChapters();
+            updateCount();
+        });
+
+        document.getElementById('mangaUrl').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadManga();
+        });
+    </script>
+</body>
+</html>
