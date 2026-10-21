@@ -14,7 +14,7 @@
 
   // ============ CONFIG ============
   const API_BASE = 'https://mangadot.net/api';
-  const CF_WORKER_URL = 'https://xcom.yuush.workers.dev'; // Fallback for image proxy if direct fetch fails
+  const CF_WORKER_URL = 'https://mdn.yuush.workers.dev'; // Fallback for image proxy if direct fetch fails
   const SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
   const RESIZE_CONFIG = {
