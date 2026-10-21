@@ -226,7 +226,7 @@ const fetchImageBlob = async (url) => {
     for (let attempt = 1; attempt <= 5; attempt++) {
         await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
         
-        const retryUrl = url + (url.includes('?') ? '&' : '?') + '_retry=1';
+        const retryUrl = url + (url.includes('?') ? '?' : '?') + '_retry=1';
         try {
             const blob = await getValidBlob(await fetch(retryUrl, fetchOptions));
             if (blob) return blob;
