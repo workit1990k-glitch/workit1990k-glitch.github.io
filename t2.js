@@ -14,8 +14,6 @@
 
   // ============ CONFIG ============
   const API_BASE = 'https://mangadot.net/api';
-  const CF_WORKER_URL = 'https://mdn.yuush.workers.dev'; // Fallback for image proxy if direct fetch fails
-  const SAVE_URL = 'https://tiny-night-7d75.yuush.workers.dev/save';
 
   const RESIZE_CONFIG = {
     maxWidth: 1280,
@@ -206,29 +204,40 @@ return chapters.map(ch => ({
     });
   };
 
-  const fetchImageBlob = async (url) => {
-    // Try direct fetch first (works natively on mangadot.net)
-    try {
-      const response = await fetch(url + (url.includes('?') ? '&' : '?') + '_retry=1', {
-        credentials: 'include',
-        mode: 'cors'
-      });
-      if (response.ok) {
+const fetchImageBlob = async (url) => {
+    const fetchOptions = { credentials: 'include', mode: 'cors' };
+
+    // Helper to check if the response is a valid image blob
+    const getValidBlob = async (response) => {
+        if (!response.ok) return null;
         const blob = await response.blob();
-        if (blob.type.startsWith('image/')) return blob;
-      }
+        return blob.type.startsWith('image/') ? blob : null;
+    };
+
+    // 1. First Attempt: Direct download WITHOUT ?_retry=1
+    try {
+        const blob = await getValidBlob(await fetch(url, fetchOptions));
+        if (blob) return blob;
     } catch (e) {
-      // Fallback to worker
+        // Failed (network error or invalid response), will proceed to retries
     }
-    
-    // Fallback to Cloudflare Worker proxy
-    const proxied = CF_WORKER_URL + '/?url=' + encodeURIComponent(url);
-    const response = await fetch(proxied, { credentials: 'omit', mode: 'cors' });
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    const blob = await response.blob();
-    if (!blob.type.startsWith('image/')) throw new Error('not an image (' + blob.type + ')');
-    return blob;
-  };
+
+    // 2. Retry Loop: WITH ?_retry=1, up to 5 times, 2 seconds delay between each
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        
+        const retryUrl = url + (url.includes('?') ? '&' : '?') + '_retry=1';
+        try {
+            const blob = await getValidBlob(await fetch(retryUrl, fetchOptions));
+            if (blob) return blob;
+        } catch (e) {
+            // Failed, continue to next attempt
+        }
+    }
+
+    // If all attempts fail, throw an error
+    throw new Error('Failed to download image after 5 retries: ' + url);
+};
 
   // ============ PARALLEL DOWNLOADER ============
   const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
