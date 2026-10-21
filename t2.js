@@ -1076,9 +1076,14 @@ const fetchImageBlob = async (url) => {
       mangaId = titleId;
 
       log('📡 Fetching manga info...', 'info');
-      const mangaData = await fetchMangaInfo(titleId);
-      const rawTitle = mangaData.title || mangaData.name || 'manga';
-      mangaTitle = safe(rawTitle) || 'manga';
+// 1. Try to get the title directly from the page's DOM
+const domTitleEl = document.querySelector('header h1');
+const domTitle = domTitleEl ? domTitleEl.textContent.trim() : '';
+
+// 2. Fallback to API data if DOM title is not found
+const mangaData = await fetchMangaInfo(titleId);
+const rawTitle = domTitle || mangaData.title || mangaData.name || 'manga';
+mangaTitle = safe(rawTitle) || 'manga';
 
       log('📡 Fetching chapters...', 'info');
       globalAllChapters = await fetchAllChapters(titleId);
