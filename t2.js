@@ -85,40 +85,66 @@
     return data.data || data;
   };
 
-  const fetchAllChapters = async (mangaId) => {
-    const data = await fetchRetry(() => fetchJson(`${API_BASE}/manga/${mangaId}/chapters/list`));
-    let chapters = [];
-    if (Array.isArray(data)) {
-      chapters = data;
-    } else if (data.chapters) {
-      chapters = data.chapters;
-    } else if (data.data) {
-      chapters = data.data;
+const fetchAllChapters = async (mangaId) => {
+	const data = await fetchRetry(() => fetchJson(`${API_BASE}/manga/${mangaId}/chapters/list`));
+	let chapters = [];
+	if (Array.isArray(data)) {
+		chapters = data;
+	} else if (data.chapters) {
+		chapters = data.chapters;
+	} else if (data.data) {
+		chapters = data.data;
+	}
+	return chapters.map(ch => ({
+		chapter_id: String(ch.id || ch.chapter_id || ch._id),
+		number: ch.chapter_number != null ? ch.chapter_number : (ch.chapter != null ? ch.chapter : (ch.number != null ? ch.number : '?')),
+		name: ch.chapter_title || ch.title || ch.name || '',
+		vol: ch.volume_number != null ? ch.volume_number : (ch.volume || ch.vol || ''),
+		edition: ch.scanlator_name || ch.group_name || ch.language || 'default',
+		source: ch.source || 'unknown' // <-- ADD THIS LINE
+	})).sort((a, b) => {
+		const va = Number(a.vol) || 0, vb = Number(b.vol) || 0;
+		if (va !== vb) return va - vb;
+		const na = parseFloat(a.number), nb = parseFloat(b.number);
+		if (!isNaN(na) && !isNaN(nb)) return na - nb;
+		return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+	});
+};
+
+const getChapterImages = async (chapterId, chapterSource) => {
+    // Scraper chapters require /api/chapters/{id}/images
+    // User uploads require /api/uploads/{id}/images
+    const isScraper = chapterSource === 'scraper';
+    const primaryEndpoint = isScraper 
+        ? `${API_BASE}/chapters/${chapterId}/images` 
+        : `${API_BASE}/uploads/${chapterId}/images`;
+        
+    const fallbackEndpoint = isScraper 
+        ? `${API_BASE}/uploads/${chapterId}/images` 
+        : `${API_BASE}/chapters/${chapterId}/images`;
+
+    let data;
+    try {
+        data = await fetchRetry(() => fetchJson(primaryEndpoint));
+        // If primary returns empty images, try fallback
+        if (!data.images || data.images.length === 0) {
+            data = await fetchRetry(() => fetchJson(fallbackEndpoint));
+        }
+    } catch (e) {
+        // If primary fails completely, try fallback
+        data = await fetchRetry(() => fetchJson(fallbackEndpoint));
     }
     
-return chapters.map(ch => ({
-    chapter_id: String(ch.id || ch.chapter_id || ch._id),
-    number: ch.chapter_number != null ? ch.chapter_number : (ch.chapter != null ? ch.chapter : (ch.number != null ? ch.number : '?')),
-    name: ch.chapter_title || ch.title || ch.name || '',
-    vol: ch.volume_number != null ? ch.volume_number : (ch.volume || ch.vol || ''),
-    edition: ch.scanlator_name || ch.group_name || ch.language || 'default'
-})).sort((a, b) => {
-      const va = Number(a.vol) || 0, vb = Number(b.vol) || 0;
-      if (va !== vb) return va - vb;
-      const na = parseFloat(a.number), nb = parseFloat(b.number);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
-    });
-  };
-
-  const getChapterImages = async (chapterId) => {
-    const data = await fetchRetry(() => fetchJson(`${API_BASE}/uploads/${chapterId}/images`));
     const images = data.images || [];
-    return images.map((img, index) => ({
-      url: img.url.startsWith('http') ? img.url : `https://mangadot.net${img.url}`,
-      filename: img.filename || `page_${String(index + 1).padStart(3, '0')}.jpg`
-    }));
-  };
+    return images.map((img, index) => {
+        const urlParts = img.url.split('/');
+        const extractedFilename = urlParts[urlParts.length - 1];
+        return {
+            url: img.url.startsWith('http') ? img.url : `https://mangadot.net${img.url}`,
+            filename: img.filename || extractedFilename || `page_${String(index + 1).padStart(3, '0')}.webp`
+        };
+    });
+};
 
   const buildEditions = (chapters) => {
     const map = new Map();
@@ -286,7 +312,7 @@ const fetchImageBlob = async (url) => {
 
       const promise = (async () => {
         try {
-          const data = await fetchChapterImages(chapter.chapter_id, chapterNum, false);
+const data = await fetchChapterImages(chapter.chapter_id, chapterNum, chapter.source, false);
           chapterDataCache.set(chapter.chapter_id, data);
           results.set(chapter.chapter_id, data);
           completed++;
@@ -330,9 +356,9 @@ const fetchImageBlob = async (url) => {
     return results;
   };
 
-  const fetchChapterImages = async (chapterId, chapterNum, showLog = true) => {
-    try {
-      const imageItems = await getChapterImages(chapterId);
+const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog = true) => {
+	try {
+		const imageItems = await getChapterImages(chapterId, chapterSource);
       if (!imageItems.length) {
         return { blobs: [], size: 0, total: 0, failed: 0, status: 'empty', failedDetails: [], convertedCount: 0, savedBytes: 0 };
       }
@@ -906,7 +932,7 @@ const fetchImageBlob = async (url) => {
     if (!ch) return;
     log(`🔄 Re-fetching Chapter ${ch.number}...`, 'info');
     try {
-      const data = await fetchChapterImages(chapterId, ch.number, true);
+const data = await fetchChapterImages(chapterId, ch.number, ch.source, true);
       chapterDataCache.set(chapterId, data);
       const mb = (data.size / 1024 / 1024).toFixed(2);
       const convertNote = data.convertedCount > 0 ? ` | 🎨 ${data.convertedCount} (${formatBytes(data.savedBytes)} saved)` : '';
