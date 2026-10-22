@@ -23,7 +23,7 @@
   };
 
   const MAX_ZIP_SIZE = 495 * 1024 * 1024;
-  const PARALLEL_IMAGES = 3;
+  const PARALLEL_IMAGES = 6;
   const PARALLEL_CHAPTERS = 3;
 
   // ============ STATE ============
@@ -58,7 +58,7 @@
         return await fn();
       } catch (e) {
         if (i === retries - 1) throw e;
-        await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
+        await new Promise((res) => setTimeout(res, 100 * (i + 1)));
       }
     }
   };
