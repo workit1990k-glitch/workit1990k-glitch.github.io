@@ -15,18 +15,11 @@
   // ============ CONFIG ============
   const API_BASE = 'https://mangadot.net/api';
 
-  // wsrv.nl proxy handles resize + WebP conversion server-side
-  const WSRV_CONFIG = {
-    base: 'https://wsrv.nl/',
-    width: 1280,
-    output: 'jpg',
-    quality: 75,
-  };
-
-  // wsrv.nl free tier limit: 2500 images per 10 minutes
-  const RATE_LIMIT = {
-    maxRequests: 2500,
-    windowMs: 10 * 60 * 1000, // 10 minutes
+  const RESIZE_CONFIG = {
+    maxWidth: 1280,
+    quality: 0.75,
+    format: 'image/webp',
+    skipIfLarger: true,
   };
 
   const MAX_ZIP_SIZE = 495 * 1024 * 1024;
@@ -70,45 +63,6 @@
     }
   };
 
-  // ============ RATE LIMITER (wsrv.nl: 2500 req / 10 min) ============
-  const rateLimiter = (() => {
-    const timestamps = []; // ms epochs of each accepted request
-    let chain = Promise.resolve();
-
-    const prune = (now) => {
-      const cutoff = now - RATE_LIMIT.windowMs;
-      while (timestamps.length && timestamps[0] <= cutoff) timestamps.shift();
-    };
-
-    // Returns a promise that resolves when it's safe to fire a request.
-    const acquire = () => {
-      // Serialize acquisitions so concurrent callers can't overshoot.
-      chain = chain.then(async () => {
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          const now = Date.now();
-          prune(now);
-          if (timestamps.length < RATE_LIMIT.maxRequests) {
-            timestamps.push(now);
-            return;
-          }
-          // Wait until the oldest request falls out of the window.
-          const waitMs = timestamps[0] + RATE_LIMIT.windowMs - now + 50;
-          log(`⏳ wsrv.nl rate limit reached (${timestamps.length}/${RATE_LIMIT.maxRequests}); waiting ${Math.ceil(waitMs / 1000)}s...`, 'info');
-          await new Promise(r => setTimeout(r, Math.max(waitMs, 100)));
-        }
-      });
-      return chain;
-    };
-
-    const remaining = () => {
-      prune(Date.now());
-      return Math.max(0, RATE_LIMIT.maxRequests - timestamps.length);
-    };
-
-    return { acquire, remaining };
-  })();
-	
   const fetchJson = async (url) => {
     const r = await fetch(url, {
       method: 'GET',
@@ -157,16 +111,6 @@ const fetchAllChapters = async (mangaId) => {
 	});
 };
 
-  const buildWsrvUrl = (originalUrl) => {
-    const params = new URLSearchParams({
-      url: originalUrl,
-      w: String(WSRV_CONFIG.width),
-      output: WSRV_CONFIG.output,
-      q: String(WSRV_CONFIG.quality),
-    });
-    return `${WSRV_CONFIG.base}?${params.toString()}`;
-  };
-	
 const getChapterImages = async (chapterId, chapterSource) => {
     // Scraper chapters require /api/chapters/{id}/images
     // User uploads require /api/uploads/{id}/images
@@ -213,42 +157,113 @@ const getChapterImages = async (chapterId, chapterSource) => {
     return list;
   };
 
-  const fetchImageBlob = async (originalUrl) => {
-const fetchOptions = { mode: 'cors', referrerPolicy: 'no-referrer' };
-	  
+  // ============ IMAGE CONVERTER ============
+  const resizeImage = async (imageUrl, originalBlob) => {
+    return new Promise(async (resolve) => {
+      try {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        const objectUrl = URL.createObjectURL(originalBlob);
+
+        img.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const { width, height } = img;
+
+          let drawWidth = width, drawHeight = height;
+          if (width > RESIZE_CONFIG.maxWidth) {
+            const ratio = RESIZE_CONFIG.maxWidth / width;
+            drawWidth = RESIZE_CONFIG.maxWidth;
+            drawHeight = Math.round(height * ratio);
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = drawWidth;
+          canvas.height = drawHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, drawWidth, drawHeight);
+
+          canvas.toBlob(
+            (convertedBlob) => {
+              canvas.remove();
+              img.src = '';
+              if (!convertedBlob) {
+                resolve({
+                  blob: originalBlob, converted: false, resized: false,
+                  originalSize: originalBlob.size, newSize: originalBlob.size,
+                });
+                return;
+              }
+              const wasResized = width > RESIZE_CONFIG.maxWidth;
+              if (RESIZE_CONFIG.skipIfLarger && convertedBlob.size >= originalBlob.size) {
+                resolve({
+                  blob: originalBlob, converted: false, resized: wasResized,
+                  originalSize: originalBlob.size, newSize: originalBlob.size,
+                });
+                return;
+              }
+              const savings = ((1 - convertedBlob.size / originalBlob.size) * 100).toFixed(1) + '%';
+              resolve({
+                blob: convertedBlob, converted: true, resized: wasResized,
+                originalSize: originalBlob.size, newSize: convertedBlob.size, savings,
+              });
+            },
+            RESIZE_CONFIG.format,
+            RESIZE_CONFIG.quality
+          );
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve({
+            blob: originalBlob, converted: false, resized: false,
+            originalSize: originalBlob.size, newSize: originalBlob.size,
+          });
+        };
+        img.src = objectUrl;
+      } catch (err) {
+        resolve({
+          blob: originalBlob, converted: false, resized: false,
+          originalSize: originalBlob.size, newSize: originalBlob.size,
+        });
+      }
+    });
+  };
+
+const fetchImageBlob = async (url) => {
+    const fetchOptions = { credentials: 'include', mode: 'cors' };
+
+    // Helper to check if the response is a valid image blob
     const getValidBlob = async (response) => {
-      if (!response.ok) return null;
-      const blob = await response.blob();
-      return blob.type.startsWith('image/') ? blob : null;
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return blob.type.startsWith('image/') ? blob : null;
     };
 
-    const wsrvUrl = buildWsrvUrl(originalUrl);
-
-    // 1. First attempt (direct wsrv.nl, rate-limited)
-    await rateLimiter.acquire();
+    // 1. First Attempt: Direct download WITHOUT ?_retry=1
     try {
-      const blob = await getValidBlob(await fetch(wsrvUrl, fetchOptions));
-      if (blob) return blob;
-    } catch (e) {
-      // fall through to retries
-    }
-
-    // 2. Retries with cache-busting param, up to 5 attempts, 2s apart
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      await rateLimiter.acquire();
-
-      const retryUrl = wsrvUrl + (wsrvUrl.includes('?') ? '&' : '?') + '_retry=' + attempt;
-      try {
-        const blob = await getValidBlob(await fetch(retryUrl, fetchOptions));
+        const blob = await getValidBlob(await fetch(url, fetchOptions));
         if (blob) return blob;
-      } catch (e) {
-        // continue
-      }
+    } catch (e) {
+        // Failed (network error or invalid response), will proceed to retries
     }
 
-    throw new Error('Failed to download image after 5 retries: ' + originalUrl);
-  };
+    // 2. Retry Loop: WITH ?_retry=1, up to 5 times, 2 seconds delay between each
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+        
+        const retryUrl = url + (url.includes('?') ? '?' : '?') + '_retry=1';
+        try {
+            const blob = await getValidBlob(await fetch(retryUrl, fetchOptions));
+            if (blob) return blob;
+        } catch (e) {
+            // Failed, continue to next attempt
+        }
+    }
+
+    // If all attempts fail, throw an error
+    throw new Error('Failed to download image after 5 retries: ' + url);
+};
 
   // ============ PARALLEL DOWNLOADER ============
   const downloadWithConcurrency = async (tasks, concurrencyLimit, onImageProgress) => {
@@ -352,14 +367,18 @@ const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog 
       const downloadTasks = imageItems.map((item, index) => async () => {
         const fileName = item.filename || `page_${String(index + 1).padStart(3, '0')}.webp`;
         try {
-          const blob = await fetchImageBlob(item.url);
+          const originalBlob = await fetchImageBlob(item.url);
+          const { blob: finalBlob, converted, resized, savings, originalSize, newSize } =
+            await resizeImage(item.url, originalBlob);
           downloadedCount++;
 
           if (showLog && (downloadedCount % 5 === 0 || downloadedCount === imageItems.length)) {
             const imgWord = downloadedCount === 1 ? 'image' : 'images';
-            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageItems.length} ${imgWord} (via wsrv.nl)`, 'image-success');
+            const convertNote = converted ? ` 🎨-${savings}` : '';
+            const resizeNote = resized ? ` ✂️` : '';
+            log(`🖼️ Chapter ${chapterNum}: ${downloadedCount}/${imageItems.length} ${imgWord}${convertNote}${resizeNote}`, 'image-success');
           }
-          return { fileName, blob, size: blob.size, index, success: true };
+          return { fileName, blob: finalBlob, size: finalBlob.size, index, success: true, converted, resized, originalSize, newSize };
         } catch (e) {
           return {
             fileName, index, success: false, error: e.message,
@@ -376,7 +395,7 @@ const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog 
       });
 
       const blobs = [];
-      let totalSize = 0;
+      let totalSize = 0, convertedCount = 0, savedBytes = 0;
       const failedDetails = [];
 
       results.forEach(result => {
@@ -384,6 +403,10 @@ const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog 
           const r = result.result;
           blobs.push({ fileName: r.fileName, blob: r.blob, size: r.size });
           totalSize += r.size;
+          if (r.converted) {
+            convertedCount++;
+            if (r.newSize < r.originalSize) savedBytes += (r.originalSize - r.newSize);
+          }
         } else {
           const errorResult = result.success ? result.result : result.error;
           failedDetails.push({
@@ -397,7 +420,7 @@ const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog 
 
       const failedCount = failedDetails.length;
       const status = failedCount === 0 ? 'success' : (blobs.length > 0 ? 'partial' : 'failed');
-      return { blobs, size: totalSize, total: imageItems.length, failed: failedCount, failedDetails, status };
+      return { blobs, size: totalSize, total: imageItems.length, failed: failedCount, failedDetails, status, convertedCount, savedBytes };
     } catch (err) {
       console.error('fetchChapterImages error:', err);
       return { blobs: [], size: 0, total: 0, failed: 0, status: 'error', error: err.message, failedDetails: [], convertedCount: 0, savedBytes: 0 };
@@ -840,6 +863,7 @@ const fetchChapterImages = async (chapterId, chapterNum, chapterSource, showLog 
     });
 
     log(`📥 Starting fetch: ${selected.length} chapters (${PARALLEL_CHAPTERS} parallel)`, 'info');
+    log(`⚡ ${PARALLEL_IMAGES} parallel images + WebP convert @${Math.round(RESIZE_CONFIG.quality * 100)}%`, 'info');
 
     try {
       await fetchChaptersParallel(selected, (completed, total) => updateProgress(completed, total), false);
@@ -1050,7 +1074,20 @@ const data = await fetchChapterImages(chapterId, ch.number, ch.source, true);
   };
 
   const init = async () => {
-
+    // WebP support check
+    const supportsWebP = () => {
+      const canvas = document.createElement('canvas');
+      return new Promise(resolve => {
+        try { canvas.toBlob(blob => resolve(!!blob), 'image/webp', 0.75); }
+        catch (e) { resolve(false); }
+      });
+    };
+    const webpSupported = await supportsWebP();
+    if (!webpSupported) {
+      console.warn('⚠️ WebP export not supported, falling back to PNG');
+      RESIZE_CONFIG.format = 'image/png';
+      RESIZE_CONFIG.quality = 0.92;
+    }
 
 
 (function(a,b){if("function"==typeof define&&define.amd)define([],b);else if("undefined"!=typeof exports)b();else{b(),a.FileSaver={exports:{}}.exports}})(window,function(){"use strict";function b(a,b){return"undefined"==typeof b?b={autoBom:!1}:"object"!=typeof b&&(console.warn("Deprecated: Expected third argument to be a object"),b={autoBom:!b}),b.autoBom&&/^\s*(?:text\/\S*|application\/xml|\S*\/\S*\+xml)\s*;.*charset\s*=\s*utf-8/i.test(a.type)?new Blob(["\uFEFF",a],{type:a.type}):a}function c(a,b,c){var d=new XMLHttpRequest;d.open("GET",a),d.responseType="blob",d.onload=function(){g(d.response,b,c)},d.onerror=function(){console.error("could not download file")},d.send()}function d(a){var b=new XMLHttpRequest;b.open("HEAD",a,!1);try{b.send()}catch(a){}return 200<=b.status&&299>=b.status}function e(a){try{a.dispatchEvent(new MouseEvent("click"))}catch(c){var b=document.createEvent("MouseEvents");b.initMouseEvent("click",!0,!0,window,0,0,0,80,20,!1,!1,!1,!1,0,null),a.dispatchEvent(b)}}var f="object"==typeof window&&window.window===window?window:"object"==typeof self&&self.self===self?self:"object"==typeof global&&global.global===global?global:void 0,a=f.navigator&&/Macintosh/.test(navigator.userAgent)&&/AppleWebKit/.test(navigator.userAgent)&&!/Safari/.test(navigator.userAgent),g=f.saveAs||("object"!=typeof window||window!==f?function(){}:"download"in HTMLAnchorElement.prototype&&!a?function(b,g,h){var i=f.URL||f.webkitURL,j=document.createElement("a");g=g||b.name||"download",j.download=g,j.rel="noopener","string"==typeof b?(j.href=b,j.origin===location.origin?e(j):d(j.href)?c(b,g,h):e(j,j.target="_blank")):(j.href=i.createObjectURL(b),setTimeout(function(){i.revokeObjectURL(j.href)},4E4),setTimeout(function(){e(j)},0))}:"msSaveOrOpenBlob"in navigator?function(f,g,h){if(g=g||f.name||"download","string"!=typeof f)navigator.msSaveOrOpenBlob(b(f,h),g);else if(d(f))c(f,g,h);else{var i=document.createElement("a");i.href=f,i.target="_blank",setTimeout(function(){e(i)})}}:function(b,d,e,g){if(g=g||open("","_blank"),g&&(g.document.title=g.document.body.innerText="downloading..."),"string"==typeof b)return c(b,d,e);var h="application/octet-stream"===b.type,i=/constructor/i.test(f.HTMLElement)||f.safari,j=/CriOS\/[\d]+/.test(navigator.userAgent);if((j||h&&i||a)&&"undefined"!=typeof FileReader){var k=new FileReader;k.onloadend=function(){var a=k.result;a=j?a:a.replace(/^data:[^;]*;/,"data:attachment/file;"),g?g.location.href=a:location=a,g=null},k.readAsDataURL(b)}else{var l=f.URL||f.webkitURL,m=l.createObjectURL(b);g?g.location=m:location.href=m,g=null,setTimeout(function(){l.revokeObjectURL(m)},4E4)}});f.saveAs=g.saveAs=g,"undefined"!=typeof module&&(module.exports=g)});
@@ -1134,7 +1171,7 @@ mangaTitle = safe(rawTitle) || 'manga';
       consoleEl.innerHTML = `
         <div id="mdx-console-log"></div>
         <div id="mdx-progress"><div id="mdx-progress-fill" style="width:0%"></div></div>
-               <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images → wsrv.nl</div>
+        <div class="mdx-parallel-info">⚡ ${PARALLEL_CHAPTERS} parallel chapters × ${PARALLEL_IMAGES} parallel images + WebP convert</div>
       `;
       document.body.appendChild(consoleEl);
 
@@ -1147,9 +1184,8 @@ mangaTitle = safe(rawTitle) || 'manga';
       log(`🆔 Title ID: ${mangaId}`, 'info');
       log(`📖 Latest Chapter: ${latestChapter}`, 'info');
       log(`🌐 Editions: ${editions.map(e => e.id + ' (' + e.count + ')').join(', ')}`, 'info');
-      log(`🎨 Convert: wsrv.nl @ ${WSRV_CONFIG.width}px width, q${WSRV_CONFIG.quality} WebP`, 'info');
-      log(`🚦 wsrv.nl rate limit: ${RATE_LIMIT.maxRequests} images / ${RATE_LIMIT.windowMs / 60000} min`, 'info');
-	} catch (err) {
+      log(`🎨 Convert: ${RESIZE_CONFIG.maxWidth}px max width, ${Math.round(RESIZE_CONFIG.quality * 100)}% ${RESIZE_CONFIG.format.split('/')[1].toUpperCase()}${RESIZE_CONFIG.skipIfLarger ? ', skip if larger' : ''}`, 'info');
+    } catch (err) {
       console.error('Init error:', err);
       const body = document.getElementById('mdx-body');
       if (body) {
